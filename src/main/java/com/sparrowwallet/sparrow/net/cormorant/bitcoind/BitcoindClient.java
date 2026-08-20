@@ -122,8 +122,7 @@ public class BitcoindClient {
         BlockchainInfo blockchainInfo = getBitcoindService().getBlockchainInfo();
         pruned = blockchainInfo.pruned();
         pruneHeight = blockchainInfo.pruneheight();
-        VerboseBlockHeader blockHeader = getBitcoindService().getBlockHeader(blockchainInfo.bestblockhash());
-        tip = blockHeader.getBlockHeader();
+        tip = new ElectrumBlockHeader(blockchainInfo.blocks(), getBitcoindService().getBlockHeader(blockchainInfo.bestblockhash(), false));
         timer.schedule(new PollTask(), 5000, 5000);
 
         if(blockchainInfo.initialblockdownload() && networkInfo.networkactive()) {
@@ -145,8 +144,7 @@ public class BitcoindClient {
             }
 
             blockchainInfo = getBitcoindService().getBlockchainInfo();
-            blockHeader = getBitcoindService().getBlockHeader(blockchainInfo.bestblockhash());
-            tip = blockHeader.getBlockHeader();
+            tip = new ElectrumBlockHeader(blockchainInfo.blocks(), getBitcoindService().getBlockHeader(blockchainInfo.bestblockhash(), false));
         }
 
         List<String> loadedWallets;
@@ -721,8 +719,8 @@ public class BitcoindClient {
                 updateStore(listSinceBlock);
 
                 if(currentBlock == null || !currentBlock.equals(listSinceBlock.lastblock())) {
-                    VerboseBlockHeader blockHeader = getBitcoindService().getBlockHeader(listSinceBlock.lastblock());
-                    tip = blockHeader.getBlockHeader();
+                    int height = getBitcoindService().getBlockchainInfo().blocks();
+                    tip = new ElectrumBlockHeader(height, getBitcoindService().getBlockHeader(listSinceBlock.lastblock(), false));
                     Cormorant.getEventBus().post(tip);
                 }
 
