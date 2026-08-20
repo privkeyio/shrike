@@ -1,6 +1,6 @@
 # Reproducing the BLAKE2b regtest verification
 
-How to run this fork against a solo regtest chain that activates the BLAKE2b proof of work at a low height, to confirm the wallet connects, syncs, sends and confirms across the activation.
+How to run Shrike against a solo regtest chain that activates the BLAKE2b proof of work at a low height, to confirm the wallet connects, syncs, sends and confirms across the activation.
 
 This requires a build of Bitcoin Knots from the `__base_29_blake2` branch, which is not included in this repository. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below.
 
@@ -39,7 +39,7 @@ cli generatetoaddress 1 $ADDR
 cli getblockheader $(cli getblockhash 20) false | tr -d '\n' | wc -c   # 328 hex chars, 164 bytes
 ```
 
-The node does not create a wallet on its own, hence the `createwallet`. The alias names that wallet explicitly because once Sparrow connects, Cormorant loads a second wallet on the node, and unqualified wallet RPCs then fail with error -19 ("Multiple wallets are loaded").
+The node does not create a wallet on its own, hence the `createwallet`. The alias names that wallet explicitly because once Shrike connects, Cormorant loads a second wallet on the node, and unqualified wallet RPCs then fail with error -19 ("Multiple wallets are loaded").
 
 Block 20 onwards carries the 164 byte v2 header and is hashed with BLAKE2b. `generatetoaddress` satisfies the coinbase headline requirement by itself, since the node builds the coinbase from its own block template.
 
@@ -52,29 +52,33 @@ cli getblockheader $(cli getblockhash 20) | grep header_version        # 2
 
 That field comes from [bitcoinknots PR #363](https://github.com/bitcoinknots/bitcoin/pull/363), which is not yet merged into `__base_29_blake2`, so it is absent on a plain build of that branch. The serialised length check above shows the same transition on any build and is the primary check.
 
-## Point Sparrow at it
+## Point Shrike at it
 
 ```
 SPARROW_NETWORK=regtest ./sparrow
 ```
 
-In the connection settings choose the **Bitcoin Core** server type, with URL `127.0.0.1:18443` and the RPC user and password above. Sparrow should connect and sync past the activation height.
+The environment variable and the launch script keep their upstream names; only the application was renamed, so `SPARROW_NETWORK` is correct here despite the mismatch.
+
+In the connection settings choose the **Bitcoin Core** server type, with URL `127.0.0.1:18443` and the RPC user and password above. Shrike should connect and sync past the activation height.
+
+Shrike keeps its configuration for this test in `~/.shrike/regtest`, separate from both its mainnet directory and anything belonging to an upstream Sparrow install.
 
 ## Send a transaction
 
-Coinbase outputs need 100 confirmations before they can be spent, so mine to a Sparrow receive address and then mature it:
+Coinbase outputs need 100 confirmations before they can be spent, so mine to a Shrike receive address and then mature it:
 
 ```
-SPARROW_ADDR=<receive address from Sparrow>
-cli generatetoaddress 1 $SPARROW_ADDR
+SHRIKE_ADDR=<receive address from Shrike>
+cli generatetoaddress 1 $SHRIKE_ADDR
 cli generatetoaddress 100 $ADDR
 ```
 
-The balance should appear in Sparrow once the funding block is mined, and become spendable after the 100 further blocks. Send from Sparrow to an address from `cli getnewaddress`, then confirm it:
+The balance should appear in Shrike once the funding block is mined, and become spendable after the 100 further blocks. Send from Shrike to an address from `cli getnewaddress`, then confirm it:
 
 ```
 cli generatetoaddress 1 $ADDR
 cli gettransaction <txid>
 ```
 
-The transaction should show one confirmation in both Sparrow and the node.
+The transaction should show one confirmation in both Shrike and the node.

@@ -1,16 +1,18 @@
-# Sparrow — BLAKE2b Fork
+# Shrike
 
-This is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork chain proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) — everything below this section is upstream's documentation, and describes Sparrow rather than this fork.
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork chain proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) — everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
 
-It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. That chain has no public network: the proof-of-work change is proposed, not live. This fork is therefore intended for developers and testing, not for holding funds.
+It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. That chain has no public network: the proof-of-work change is proposed, not live. Shrike is therefore intended for developers and testing, not for holding funds.
 
-The v2 header parsing and serialisation, and the proof-of-work hash pipeline, live in the drongo submodule, which points at [AcesHigh70/drongo](https://github.com/AcesHigh70/drongo) branch `blake2b-header`. The lark submodule remains upstream's. Within Sparrow itself, the bundled Cormorant now uses raw header hex from bitcoind rather than rebuilding headers from verbose JSON.
+Shrike carries its own application identity, so it runs alongside an existing Sparrow without sharing any state with it. Its configuration, wallets and log file live in `~/.shrike` and the corresponding XDG directories, rather than the `~/.sparrow` that upstream uses, and the two have separate single instance locks. The version reports as `2.5.4-blake2b.1`, being the upstream version this fork is based on with a suffix identifying it.
+
+The v2 header parsing and serialisation, and the proof-of-work hash pipeline, live in the drongo submodule, which points at [AcesHigh70/drongo](https://github.com/AcesHigh70/drongo) branch `blake2b-header`. The lark submodule remains upstream's. Within the wallet itself, the bundled Cormorant now uses raw header hex from bitcoind rather than rebuilding headers from verbose JSON.
 
 The drongo unit tests assert every stage of the proof-of-work pipeline against the reference implementation's own test vectors (`block_header_v2.json` from [luke-jr/bitcoin](https://github.com/luke-jr/bitcoin), branch `pow_hf_blake2b`). The wallet has also been verified end to end against a live forked regtest node: connect, sync, send and confirm. Instructions to [reproduce that verification](docs/blake2b-regtest.md) are provided.
 
-Building is the same as upstream, except that the drongo submodule must come from this fork. Clone with `git clone --recursive`, or run `git submodule update --init` if you have already cloned without it.
+Building is the same as upstream, except that the drongo submodule must come from this fork. Clone with `git clone --recursive`, or run `git submodule update --init` if you have already cloned without it. Note that the packaging metadata still carries upstream's names, so a build installs to the same location an upstream package would — running from source is the way to keep the two separate for now.
 
-No release binaries are published for this fork. Build from source.
+No release binaries are published for Shrike. Build from source.
 
 ---
 
