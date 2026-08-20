@@ -46,7 +46,7 @@ public class SparrowWallet {
         }
 
         if(args.version) {
-            System.out.println("Sparrow Wallet " + APP_VERSION);
+            System.out.println(APP_NAME + " " + APP_VERSION + APP_VERSION_SUFFIX);
             System.exit(0);
         }
 

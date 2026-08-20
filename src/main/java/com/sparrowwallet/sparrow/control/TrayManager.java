@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.control;
 
 import com.sparrowwallet.drongo.OsType;
+import com.sparrowwallet.sparrow.SparrowWallet;
 import javafx.application.Platform;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
@@ -44,9 +45,9 @@ public class TrayManager {
 
             BaseMultiResolutionImage mrImage = new BaseMultiResolutionImage(imgList.toArray(new Image[0]));
 
-            this.trayIcon = new TrayIcon(mrImage, "Sparrow", popupMenu);
+            this.trayIcon = new TrayIcon(mrImage, SparrowWallet.APP_NAME, popupMenu);
 
-            MenuItem miExit = new MenuItem("Quit Sparrow");
+            MenuItem miExit = new MenuItem("Quit " + SparrowWallet.APP_NAME);
             miExit.addActionListener(e -> {
                 SwingUtilities.invokeLater(() -> { tray.remove(this.trayIcon); });
                 Platform.exit();

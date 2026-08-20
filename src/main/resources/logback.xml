@@ -42,11 +42,11 @@
     <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator"/>
 
     <define name="appDir" class="com.sparrowwallet.drongo.PropertyDefiner">
-        <application>sparrow</application>
+        <application>shrike</application>
     </define>
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>${appDir}/sparrow.log</file>
+        <file>${appDir}/shrike.log</file>
         <encoder>
             <pattern>%date %level [%thread] %logger{10} [%file:%line] %msg%n</pattern>
         </encoder>

@@ -81,6 +81,9 @@ import static com.sparrowwallet.sparrow.control.DownloadVerifierDialog.*;
 public class AppController implements Initializable {
     private static final Logger log = LoggerFactory.getLogger(AppController.class);
 
+    //Must match the file configured in logback.xml, which cannot reference this constant
+    public static final String LOG_FILE_NAME = SparrowWallet.APP_ID + ".log";
+
     public static final String DRAG_OVER_CLASS = "drag-over";
     public static final int TAB_LABEL_MAX_WIDTH = 300;
     public static final double TAB_LABEL_GRAPHIC_OPACITY_INACTIVE = 0.8;
@@ -275,7 +278,7 @@ public class AppController implements Initializable {
             closeTab.setDisable(tabs.getTabs().isEmpty());
             if(tabs.getTabs().isEmpty()) {
                 Stage tabStage = (Stage) tabs.getScene().getWindow();
-                tabStage.setTitle("Sparrow");
+                tabStage.setTitle(SparrowWallet.APP_NAME);
                 saveTransaction.setVisible(true);
                 saveTransaction.setDisable(true);
                 exportWallet.setDisable(true);
@@ -524,7 +527,7 @@ public class AppController implements Initializable {
     }
 
     public void showLogFile(ActionEvent event) throws IOException {
-        File logFile = new File(Storage.getStateHome(), "sparrow.log");
+        File logFile = new File(Storage.getStateHome(), LOG_FILE_NAME);
         if(logFile.exists()) {
             AppServices.get().getApplication().getHostServices().showDocument(logFile.toPath().toUri().toString());
         } else {
@@ -713,7 +716,7 @@ public class AppController implements Initializable {
                 Platform.runLater(() -> {
                     Throwable e = failEvent.getSource().getException();
                     log.error("Error fetching transaction " + txId.toString(), e);
-                    showErrorDialog("Error fetching transaction", "The server returned an error when fetching the transaction. The server response is contained in sparrow.log");
+                    showErrorDialog("Error fetching transaction", "The server returned an error when fetching the transaction. The server response is contained in " + LOG_FILE_NAME);
                 });
             });
             transactionReferenceService.start();
@@ -2735,7 +2738,7 @@ public class AppController implements Initializable {
             String tabName = event.getTabName();
             if(tabs.getScene() != null) {
                 Stage tabStage = (Stage)tabs.getScene().getWindow();
-                tabStage.setTitle("Sparrow - " + tabName);
+                tabStage.setTitle(SparrowWallet.APP_NAME + " - " + tabName);
             }
 
             if(event instanceof TransactionTabSelectedEvent) {
