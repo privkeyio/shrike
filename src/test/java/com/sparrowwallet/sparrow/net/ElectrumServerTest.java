@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -15,6 +16,14 @@ public class ElectrumServerTest {
 
     private static final String BLOCK_800000_HEADER_HEX = "00601d3455bb9fbd966b3ea2dc42d0c22722e4c0c1729fad17210100000000000000000055087fab0c8f3f89f8bcfd4df26c504d81b0a88e04907161838c0c53001af09135edbd64943805175e955e06";
     private static final long BLOCK_800000_TIME_SECS = 1690168629L;
+
+    /**
+     * A v2 (BLAKE2b) header, 164 bytes rather than 80, taken from drongo's BlockHeaderPoWHashTest. It meets its
+     * claimed target under the BLAKE2b hash, with a target inside the regtest proof of work limit.
+     */
+    private static final String V2_HEADER_HEX = "000000a01f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010000112233445566778899aabbccddeeff00102030405060708090a0b0c0d0e0f0a8913577ffff00200df0ad0b3a000000efcdab89ffeeddccbbaa998877665544332211005802000003005c000000000000000000000000000000000040d10c008967452301efcdab8967452301efcdab8967452301efcdab8967452301efcdab";
+    private static final long V2_HEADER_TIME_SECS = 2000000000L;
+    private static final int V2_HEADER_HEIGHT = 840000;
 
     @BeforeEach
     public void setUp() {
@@ -34,6 +43,22 @@ public class ElectrumServerTest {
     public void acceptsGenuineHeaderRegardlessOfAgeAndAnnouncedHeight() {
         assertNull(ElectrumServer.getTipValidationError(tip(0, GENESIS_HEADER_HEX), (GENESIS_TIME_SECS + 3600) * 1000));
         assertNull(ElectrumServer.getTipValidationError(tip(950000, GENESIS_HEADER_HEX), System.currentTimeMillis()));
+    }
+
+    /**
+     * A v2 header carries 84 bytes of additional fields and has its proof of work measured against the BLAKE2b
+     * hash rather than SHA256d. Tip validation reads the length from the header and defers the proof of work
+     * check to drongo, so it needs no version handling of its own. This pins that, so a length assumption
+     * reintroduced here could not silently start rejecting every server on the BLAKE2b chain.
+     */
+    @Test
+    public void acceptsVersion2Header() {
+        //The claimed target is easier than the mainnet limit, so this header is only valid on regtest.
+        //The surrounding setUp and tearDown leave the network as the other tests expect it.
+        Network.set(Network.REGTEST);
+
+        assertEquals(164, Utils.hexToBytes(V2_HEADER_HEX).length);
+        assertNull(ElectrumServer.getTipValidationError(tip(V2_HEADER_HEIGHT, V2_HEADER_HEX), (V2_HEADER_TIME_SECS + 3600) * 1000));
     }
 
     @Test
