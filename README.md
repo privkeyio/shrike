@@ -1,3 +1,19 @@
+# Sparrow — BLAKE2b Fork
+
+This is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork chain proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) — everything below this section is upstream's documentation, and describes Sparrow rather than this fork.
+
+It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. That chain has no public network: the proof-of-work change is proposed, not live. This fork is therefore intended for developers and testing, not for holding funds.
+
+The v2 header parsing and serialisation, and the proof-of-work hash pipeline, live in the drongo submodule, which points at [AcesHigh70/drongo](https://github.com/AcesHigh70/drongo) branch `blake2b-header`. The lark submodule remains upstream's. Within Sparrow itself, the bundled Cormorant now uses raw header hex from bitcoind rather than rebuilding headers from verbose JSON.
+
+The drongo unit tests assert every stage of the proof-of-work pipeline against the reference implementation's own test vectors (`block_header_v2.json` from [luke-jr/bitcoin](https://github.com/luke-jr/bitcoin), branch `pow_hf_blake2b`). The wallet has also been verified end to end against a live forked regtest node: connect, sync, send and confirm. Instructions to [reproduce that verification](docs/blake2b-regtest.md) are provided.
+
+Building is the same as upstream, except that the drongo submodule must come from this fork. Clone with `git clone --recursive`, or run `git submodule update --init` if you have already cloned without it.
+
+No release binaries are published for this fork. Build from source.
+
+---
+
 # Sparrow Bitcoin Wallet
 
 Sparrow is a modern desktop Bitcoin wallet application supporting most hardware wallets and built on common standards such as PSBT, with an emphasis on transparency and usability.
@@ -101,7 +117,7 @@ Specifying a home folder with the `-d` argument disables XDG resolution entirely
 
 ## Reporting Issues
 
-Please use the [Issues](https://github.com/sparrowwallet/sparrow/issues) tab above to report an issue. If possible, look in the sparrow.log file in the configuration directory for information helpful in debugging. 
+Please use the [Issues](https://github.com/AcesHigh70/sparrow/issues) tab above to report an issue with this fork. Issues that are not specific to the BLAKE2b fork should be reported [upstream](https://github.com/sparrowwallet/sparrow/issues) instead. If possible, look in the sparrow.log file in the configuration directory for information helpful in debugging. 
 
 ## License
 
