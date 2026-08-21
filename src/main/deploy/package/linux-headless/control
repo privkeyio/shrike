@@ -1,12 +1,10 @@
-Package: sparrowserver
+Package: shrikeserver
 Version: ${version}-1
 Section: utils
-Maintainer: Craig Raw <mail@sparrowwallet.com>
+Maintainer: AcesHigh70 <6564423+AcesHigh70@users.noreply.github.com>
 Priority: optional
 Architecture: ${arch}
-Conflicts: sparrow (<= 2.1.4)
-Replaces: sparrow (<= 2.1.4)
-Provides: sparrowserver
-Description: Sparrow Server
+Provides: shrikeserver
+Description: Shrike Server
 Depends: libc6, zlib1g
 Installed-Size: ${size}

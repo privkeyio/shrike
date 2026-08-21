@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Shrike
+Comment=Shrike
+Exec=/opt/shrike/bin/Shrike %U
+Icon=/opt/shrike/lib/Shrike.png
+Terminal=false
+Type=Application
+Categories=Finance;Network;
+MimeType=application/psbt;application/bitcoin-transaction;application/pgp-signature
+StartupWMClass=Shrike
+SingleMainWindow=true

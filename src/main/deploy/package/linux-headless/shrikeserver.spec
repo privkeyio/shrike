@@ -1,5 +1,5 @@
-Summary: Sparrow Server
-Name: sparrowserver
+Summary: Shrike Server
+Name: shrikeserver
 Version: ${version}
 Release: 1
 License: ASL 2.0
@@ -13,8 +13,7 @@ URL: https://sparrowwallet.com
 Prefix: /opt
 %endif
 
-Provides: sparrowserver
-Obsoletes: sparrow <= 2.1.4
+Provides: shrikeserver
 
 %if "xutils" != "x"
 Group: utils
@@ -38,7 +37,7 @@ Autoreq: 0
 %define default_filesystem / /opt /usr /usr/bin /usr/lib /usr/local /usr/local/bin /usr/local/lib
 
 %description
-Sparrow Server
+Shrike Server
 
 %global __os_install_post %{nil}
 
@@ -48,8 +47,8 @@ Sparrow Server
 
 %install
 rm -rf %{buildroot}
-install -d -m 755 %{buildroot}/opt/sparrowserver
-cp -r %{_sourcedir}/opt/sparrowserver/* %{buildroot}/opt/sparrowserver
+install -d -m 755 %{buildroot}/opt/shrikeserver
+cp -r %{_sourcedir}/opt/shrikeserver/* %{buildroot}/opt/shrikeserver
 if [ "$(echo %{_sourcedir}/lib/systemd/system/*.service)" != '%{_sourcedir}/lib/systemd/system/*.service' ]; then
   install -d -m 755 %{buildroot}/lib/systemd/system
   cp %{_sourcedir}/lib/systemd/system/*.service %{buildroot}/lib/systemd/system

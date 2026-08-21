@@ -95,12 +95,12 @@ The binaries (and installers) will be placed in the `build/jpackage` folder.
 
 Verify the built binaries against the released binaries on https://github.com/sparrowwallet/sparrow/releases.
 
-Note that you will be verifying the files in the `build/jpackage/Sparrow` folder against either the `.tar.gz` or `.zip` releases.
+Note that you will be verifying the files in the `build/jpackage/Shrike` folder against either the `.tar.gz` or `.zip` releases.
 Download either of these depending on your platform and extract the contents to a folder (in the following example, `/tmp`).
 Then compare all of the folders and files recursively:
 
 ```shell
-diff -r build/jpackage/Sparrow /tmp/Sparrow
+diff -r build/jpackage/Shrike /tmp/Shrike
 ```
 
 This command should have no output indicating that the two folders (and all their contents) are identical.

@@ -55,8 +55,8 @@ jobs:
           name: Sparrow Build - ${{ runner.os }} ${{ runner.arch }}
           path: |
             build/jpackage/*
-            !build/jpackage/Sparrow/
-            !build/jpackage/Sparrow.app/
+            !build/jpackage/Shrike/
+            !build/jpackage/Shrike.app/
       - name: Headless build with Gradle
         if: ${{ runner.os == 'Linux' }}
         run: ./gradlew -Djava.awt.headless=true clean jpackage
@@ -73,4 +73,4 @@ jobs:
           name: Sparrow Build - ${{ runner.os }} ${{ runner.arch }} Headless
           path: |
             build/jpackage/*
-            !build/jpackage/Sparrow/
+            !build/jpackage/Shrike/
