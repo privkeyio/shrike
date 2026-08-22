@@ -70,6 +70,7 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -137,7 +138,7 @@ public class AppServices {
     //Written from the Cormorant connection task and read on the FX thread when a PSBT is built,
     //so unlike latestBlockHeader this one is not confined to a single thread
     private static volatile Integer nodeHardforkHeight;
-    private static volatile String lastReportedActivationHeightMismatch;
+    private static final AtomicReference<String> lastReportedActivationHeightMismatch = new AtomicReference<>();
 
     private static final Map<Integer, BlockSummary> blockSummaries = new ConcurrentHashMap<>();
 
@@ -815,7 +816,7 @@ public class AppServices {
      */
     public static void clearNodeHardforkHeight() {
         nodeHardforkHeight = null;
-        lastReportedActivationHeightMismatch = null;
+        lastReportedActivationHeightMismatch.set(null);
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
@@ -844,7 +845,19 @@ public class AppServices {
      * protection it claims, so declining is the only safe answer to a disagreement.
      */
     static boolean isUnifiedSigHashActive(Integer walletActivationHeight, Integer nodeActivationHeight, Integer blockHeight) {
-        if(walletActivationHeight == null || blockHeight == null) {
+        if(blockHeight == null) {
+            return false;
+        }
+
+        //A node that has scheduled the fork while this build has not is the case that matters on a network
+        //where the flagday is set after this build ships. Declining is right, since a height a node offers
+        //is not one this wallet can adopt without letting a compromised node choose the schedule, but it
+        //has to be said out loud: signing the legacy way past the flagday forgoes replay protection, and
+        //without this the operator gets no signal at all that an update is due.
+        if(walletActivationHeight == null) {
+            if(nodeActivationHeight != null) {
+                warnActivationHeightUnknown(nodeActivationHeight);
+            }
             return false;
         }
 
@@ -860,14 +873,43 @@ public class AppServices {
      * Logs a schedule disagreement once per distinct pair of heights rather than once per transaction.
      * A stale build disagrees on every send, and the operator only needs telling once per connection.
      * clearNodeHardforkHeight resets this so a reconnect reports again.
+     *
+     * getAndSet rather than a read followed by a write: two sends racing here would otherwise both see
+     * the old value and both log.
      */
     private static void warnActivationHeightMismatch(int walletActivationHeight, int nodeActivationHeight) {
-        String mismatch = walletActivationHeight + "/" + nodeActivationHeight;
-        if(!mismatch.equals(lastReportedActivationHeightMismatch)) {
-            lastReportedActivationHeightMismatch = mismatch;
+        if(isNewActivationHeightReport(walletActivationHeight + "/" + nodeActivationHeight)) {
             log.warn("Not opting in to the unified signature hash: this build expects activation at height "
                     + walletActivationHeight + " but the connected node reports " + nodeActivationHeight);
         }
+    }
+
+    /**
+     * As above, for the case where the node has a schedule and this build has none for the network.
+     */
+    private static void warnActivationHeightUnknown(int nodeActivationHeight) {
+        if(isNewActivationHeightReport("unknown/" + nodeActivationHeight)) {
+            log.warn("Not opting in to the unified signature hash: the connected node schedules activation at height "
+                    + nodeActivationHeight + " but this build has no height for " + Network.get()
+                    + ". Transactions will be signed without replay protection until it is updated.");
+        }
+    }
+
+    /**
+     * Whether this disagreement has not already been reported, recording it either way.
+     *
+     * getAndSet rather than a read followed by a write: two sends racing here would otherwise both see
+     * the old value and both report.
+     */
+    static boolean isNewActivationHeightReport(String report) {
+        return !report.equals(lastReportedActivationHeightMismatch.getAndSet(report));
+    }
+
+    /**
+     * The disagreement last reported, or null if none has been since the connection was established.
+     */
+    static String getLastActivationHeightReport() {
+        return lastReportedActivationHeightMismatch.get();
     }
 
     /**
