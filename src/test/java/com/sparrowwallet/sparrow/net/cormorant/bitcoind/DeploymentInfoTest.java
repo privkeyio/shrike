@@ -28,6 +28,36 @@ public class DeploymentInfoTest {
      * A node with no schedule omits the object entirely, which must read as "did not say" rather than
      * failing to parse.
      */
+    /**
+     * The response as a node actually sends it, captured from Bitcoin Knots v29.4.1.knots20260508rc2 on
+     * testnet4 past the activation height. Trimmed to one deployment, since the map is long and the
+     * parser ignores it; everything else is verbatim. A synthetic fixture cannot catch a field being
+     * named differently in practice, which is the failure this guards.
+     */
+    @Test
+    public void testTheResponseANodeActuallySends() throws Exception {
+        String json = """
+                {
+                  "hash": "0000000000019a4eb4b620ba7fd56a220e09d30655a64444976ecb6c27cfefdc",
+                  "height": 161442,
+                  "deployments": {
+                    "bip34": {
+                      "type": "buried",
+                      "active": true,
+                      "height": 1
+                    }
+                  },
+                  "hardfork": {
+                    "height": 149537,
+                    "active": true
+                  }
+                }""";
+
+        DeploymentInfo deploymentInfo = new ObjectMapper().readValue(json, DeploymentInfo.class);
+        Assertions.assertEquals(149537, deploymentInfo.getHardforkHeight());
+        Assertions.assertTrue(deploymentInfo.hardfork().active());
+    }
+
     @Test
     public void testAnAbsentHardforkIsNotAnError() throws Exception {
         DeploymentInfo info = new ObjectMapper().readValue("{\"height\": 30}", DeploymentInfo.class);
