@@ -134,7 +134,9 @@ public class AppServices {
     private static Integer currentBlockHeight;
 
     private static BlockHeader latestBlockHeader;
-    private static Integer nodeHardforkHeight;
+    //Written from the Cormorant connection task and read on the FX thread when a PSBT is built,
+    //so unlike latestBlockHeader this one is not confined to a single thread
+    private static volatile Integer nodeHardforkHeight;
 
     private static final Map<Integer, BlockSummary> blockSummaries = new ConcurrentHashMap<>();
 
@@ -803,6 +805,15 @@ public class AppServices {
 
     static Integer getNodeHardforkHeight() {
         return nodeHardforkHeight;
+    }
+
+    /**
+     * Forgets what the last node said. The value describes the connection it came from, so leaving it in
+     * place after a disconnect would let a height from one node keep deciding for another, including for
+     * an Electrum server that reports nothing at all.
+     */
+    public static void clearNodeHardforkHeight() {
+        nodeHardforkHeight = null;
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {

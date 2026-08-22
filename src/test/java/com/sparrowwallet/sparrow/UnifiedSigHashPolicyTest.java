@@ -25,6 +25,13 @@ import java.util.List;
  * alone when it is not.
  */
 public class UnifiedSigHashPolicyTest {
+    @org.junit.jupiter.api.BeforeEach
+    @org.junit.jupiter.api.AfterEach
+    public void resetNodeHardforkHeight() {
+        //Static state, so without this the order tests happen to run in decides the result
+        AppServices.clearNodeHardforkHeight();
+    }
+
     /**
      * A v2 header, taken from drongo's BlockHeaderPoWHashTest. Only its version word matters here.
      */
@@ -255,6 +262,34 @@ public class UnifiedSigHashPolicyTest {
     public void testTheShippedTestnet4HeightIsTheOneKnotsUses() {
         Assertions.assertEquals(149537, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
                 "Update the provenance comment alongside this value");
+    }
+
+    /**
+     * The wiring, rather than the comparison.
+     *
+     * Every other test here calls the pure overload with literals, so the field could be dropped from the
+     * production path entirely and they would all still pass. This is the test that fails if the
+     * cross-check stops being consulted where it actually matters.
+     */
+    @Test
+    public void testTheNodeHeightReachesTheDecision() {
+        BlockHeader v2Tip = header(V2_HEADER_HEX);
+        int shipped = AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4);
+
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "With no node height recorded the shipped schedule should stand");
+
+        AppServices.setNodeHardforkHeight(shipped + 1);
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "A node height that disagrees must reach the decision and decline");
+
+        AppServices.setNodeHardforkHeight(shipped);
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "A node height that agrees must not block the opt-in");
+
+        AppServices.clearNodeHardforkHeight();
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "Clearing must restore the shipped schedule, not leave the last node deciding");
     }
 
     private Wallet walletWith(KeystoreSource... sources) {

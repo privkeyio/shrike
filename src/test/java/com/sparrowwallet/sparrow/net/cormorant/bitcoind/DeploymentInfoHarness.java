@@ -12,7 +12,7 @@ import com.sparrowwallet.sparrow.io.Server;
  */
 public class DeploymentInfoHarness {
     public static void main(String[] args) {
-        BitcoindTransport transport = new BitcoindTransport(new Server(args[0]), null, args[1]);
+        BitcoindTransport transport = new BitcoindTransport(new Server(args[0]), BitcoindClient.CORE_WALLET_NAME, args[1]);
         BitcoindClientService service = new JsonRpcClient(transport).onDemand(BitcoindClientService.class);
 
         DeploymentInfo info = service.getDeploymentInfo();

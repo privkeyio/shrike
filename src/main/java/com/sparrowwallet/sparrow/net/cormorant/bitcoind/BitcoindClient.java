@@ -138,7 +138,9 @@ public class BitcoindClient {
         BlockchainInfo blockchainInfo = getBitcoindService().getBlockchainInfo();
         pruned = blockchainInfo.pruned();
         pruneHeight = blockchainInfo.pruneheight();
-        AppServices.setNodeHardforkHeight(getHardforkHeight());
+        Integer hardforkHeight = getHardforkHeight();
+        log.info("Node reports hardfork activation height: " + (hardforkHeight == null ? "none" : hardforkHeight));
+        AppServices.setNodeHardforkHeight(hardforkHeight);
         tip = new ElectrumBlockHeader(blockchainInfo.blocks(), getBitcoindService().getBlockHeader(blockchainInfo.bestblockhash(), false));
         timer.schedule(new PollTask(), 5000, 5000);
 
@@ -457,6 +459,7 @@ public class BitcoindClient {
     }
 
     public void stop() {
+        AppServices.clearNodeHardforkHeight();
         timer.cancel();
         pruneWarnedDescriptors.clear();
         stopped = true;

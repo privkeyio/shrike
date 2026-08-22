@@ -38,7 +38,7 @@ SPARROW_NETWORK=regtest ./sparrow
 
 Choose the **Bitcoin Core** server type with URL `127.0.0.1:18443` and the RPC user and password above.
 
-Shrike decides whether to opt in from the chain rather than from a configured height: `AppServices.isUnifiedSigHashActive()` returns true once the tip carries a v2 header, which is the same block the signature hash rules take effect at. Nothing needs configuring for this test, and nothing needs changing when the fork gets a real height.
+Shrike opts in when the fork is scheduled for the network and the tip carries a v2 header. Regtest chooses its own activation height through `-testactivationheight`, so there the v2 tip is the only answer available and nothing needs configuring for this test. On a network with a scheduled flagday the height ships with the wallet, and the connected node is used to check that value has not gone stale; see the next section.
 
 ## Send a transaction and check the hash type
 
