@@ -137,6 +137,7 @@ public class AppServices {
     //Written from the Cormorant connection task and read on the FX thread when a PSBT is built,
     //so unlike latestBlockHeader this one is not confined to a single thread
     private static volatile Integer nodeHardforkHeight;
+    private static volatile String lastReportedActivationHeightMismatch;
 
     private static final Map<Integer, BlockSummary> blockSummaries = new ConcurrentHashMap<>();
 
@@ -814,6 +815,7 @@ public class AppServices {
      */
     public static void clearNodeHardforkHeight() {
         nodeHardforkHeight = null;
+        lastReportedActivationHeightMismatch = null;
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
@@ -827,6 +829,9 @@ public class AppServices {
         }
 
         Integer activationHeight = getUnifiedSigHashActivationHeight(network);
+        //nodeHardforkHeight is read once here and passed by value. The callee null checks it and then
+        //dereferences it, which is only safe because it cannot be cleared between those two steps.
+        //Inlining this call so the field is read twice would reintroduce that race.
         return isUnifiedSigHashActive(activationHeight, nodeHardforkHeight, blockHeight);
     }
 
@@ -838,18 +843,31 @@ public class AppServices {
      * always valid, while one made under the wrong schedule either fails to verify or forgoes the
      * protection it claims, so declining is the only safe answer to a disagreement.
      */
-    static boolean isUnifiedSigHashActive(Integer activationHeight, Integer nodeHeight, Integer blockHeight) {
-        if(activationHeight == null || blockHeight == null) {
+    static boolean isUnifiedSigHashActive(Integer walletActivationHeight, Integer nodeActivationHeight, Integer blockHeight) {
+        if(walletActivationHeight == null || blockHeight == null) {
             return false;
         }
 
-        if(nodeHeight != null && !nodeHeight.equals(activationHeight)) {
+        if(nodeActivationHeight != null && !nodeActivationHeight.equals(walletActivationHeight)) {
+            warnActivationHeightMismatch(walletActivationHeight, nodeActivationHeight);
+            return false;
+        }
+
+        return blockHeight >= walletActivationHeight;
+    }
+
+    /**
+     * Logs a schedule disagreement once per distinct pair of heights rather than once per transaction.
+     * A stale build disagrees on every send, and the operator only needs telling once per connection.
+     * clearNodeHardforkHeight resets this so a reconnect reports again.
+     */
+    private static void warnActivationHeightMismatch(int walletActivationHeight, int nodeActivationHeight) {
+        String mismatch = walletActivationHeight + "/" + nodeActivationHeight;
+        if(!mismatch.equals(lastReportedActivationHeightMismatch)) {
+            lastReportedActivationHeightMismatch = mismatch;
             log.warn("Not opting in to the unified signature hash: this build expects activation at height "
-                    + activationHeight + " but the connected node reports " + nodeHeight);
-            return false;
+                    + walletActivationHeight + " but the connected node reports " + nodeActivationHeight);
         }
-
-        return blockHeight >= activationHeight;
     }
 
     /**
