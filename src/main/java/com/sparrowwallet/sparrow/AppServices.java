@@ -779,7 +779,10 @@ public class AppServices {
      */
     static Integer getUnifiedSigHashActivationHeight(Network network) {
         return switch(network) {
-            case TESTNET4 -> 149460;
+            //Bitcoin Knots v29.4.1.knots20260508rc2, consensus.Blake2bHeight in CTestNet4Params.
+            //rc1 scheduled this at 149460 and rc2 moved it to 149537, replacing that chain, so treat
+            //the value as provisional until there is a final release.
+            case TESTNET4 -> 149537;
             default -> null;
         };
     }
