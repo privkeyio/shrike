@@ -21,9 +21,9 @@ public class ElectrumServerTest {
      * A v2 (BLAKE2b) header, 164 bytes rather than 80, taken from drongo's BlockHeaderPoWHashTest. It meets its
      * claimed target under the BLAKE2b hash, with a target inside the regtest proof of work limit.
      */
-    private static final String V2_HEADER_HEX = "000000a01f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010000112233445566778899aabbccddeeff00102030405060708090a0b0c0d0e0f0a8913577ffff00200df0ad0b3a000000efcdab89ffeeddccbbaa998877665544332211005802000003005c000000000000000000000000000000000040d10c008967452301efcdab8967452301efcdab8967452301efcdab8967452301efcdab";
-    private static final long V2_HEADER_TIME_SECS = 2000000000L;
-    private static final int V2_HEADER_HEIGHT = 840000;
+    private static final String V2_HEADER_HEX = "000000a00b6ae048ff6a63b448cc325a81e22cd304766954f0833e3182dfe8c8cfeca202e44340a302bb650d3050411924e9e83230d3755ee9b2f51509cee40130e8a94f05dd886affff7f2000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000";
+    private static final long V2_HEADER_TIME_SECS = 1787354373L;
+    private static final int V2_HEADER_HEIGHT = 20;
 
     @BeforeEach
     public void setUp() {
@@ -50,6 +50,9 @@ public class ElectrumServerTest {
      * hash rather than SHA256d. Tip validation reads the length from the header and defers the proof of work
      * check to drongo, so it needs no version handling of its own. This pins that, so a length assumption
      * reintroduced here could not silently start rejecting every server on the BLAKE2b chain.
+     *
+     * The header is one Bitcoin Knots actually mined on a regtest chain activating at height 20, rather
+     * than a constructed one, so it also fails if drongo stops agreeing with a real node about the hash.
      */
     @Test
     public void acceptsVersion2Header() {
