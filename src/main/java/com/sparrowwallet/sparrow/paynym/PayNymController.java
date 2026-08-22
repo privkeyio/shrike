@@ -545,7 +545,7 @@ public class PayNymController {
             byte[] blindedPaymentCode = PaymentCode.blind(paymentCode.getPayload(), blindingMask);
 
             WalletTransaction finalWalletTx = getWalletTransaction(decryptedWallet, payNym, blindedPaymentCode, walletTransaction.getSelectedUtxos().keySet());
-            PSBT psbt = finalWalletTx.createPSBT();
+            PSBT psbt = AppServices.createPSBT(finalWalletTx);
             decryptedWallet.sign(psbt);
             decryptedWallet.finalise(psbt);
             Transaction transaction = psbt.extractTransaction();

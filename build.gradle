@@ -566,3 +566,7 @@ extraJavaModuleInfo {
 kmpTorResourceFilterJar {
     keepTorCompilation("current","current")
 }
+// Prints the test runtime classpath so an external harness can be launched against the built classes
+tasks.register('printTestClasspath') {
+    doLast { println sourceSets.test.runtimeClasspath.asPath }
+}
