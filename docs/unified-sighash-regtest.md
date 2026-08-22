@@ -79,6 +79,22 @@ prints the hash type the wallet declared, the byte on the signature, and the fin
 `cli testmempoolaccept`. Passing `false` for the last argument runs the same path with the fork
 reported inactive, which must produce a `01` signature that the node still accepts.
 
+## The activation cross-check
+
+The wallet ships an activation height per network and uses the node to notice that value has gone stale
+rather than to replace it. `DeploymentInfoHarness` calls `getdeploymentinfo` through Sparrow's own
+transport and proxy, which is the part unit tests cannot reach:
+
+```
+DEPS=$(./gradlew -q :printTestClasspath | tail -1)
+java -cp "$DEPS" com.sparrowwallet.sparrow.net.cormorant.bitcoind.DeploymentInfoHarness \
+    http://127.0.0.1:18443 regtest:regtest
+```
+
+Against the node above it prints `HARDFORK_HEIGHT=20`. Started without `-testactivationheight`, the node
+omits the object entirely and it prints `HARDFORK_HEIGHT=null`, which the wallet reads as "the node did
+not say" and leaves the shipped schedule standing.
+
 ## The library level check
 
 `UnifiedSigHashTest` in drongo checks the digest against the 166 cross-implementation vectors from the reference branch, covering bare and P2SH, segwit v0, taproot key path and tapscript. Those run with the ordinary suite and need no node.
