@@ -134,6 +134,7 @@ public class AppServices {
     private static Integer currentBlockHeight;
 
     private static BlockHeader latestBlockHeader;
+    private static Integer nodeHardforkHeight;
 
     private static final Map<Integer, BlockSummary> blockSummaries = new ConcurrentHashMap<>();
 
@@ -779,12 +780,29 @@ public class AppServices {
      */
     static Integer getUnifiedSigHashActivationHeight(Network network) {
         return switch(network) {
-            //Bitcoin Knots v29.4.1.knots20260508rc2, consensus.Blake2bHeight in CTestNet4Params.
-            //rc1 scheduled this at 149460 and rc2 moved it to 149537, replacing that chain, so treat
-            //the value as provisional until there is a final release.
+            //Bitcoin Knots v29.4.1.knots20260508rc2, consensus.Blake2bHeight in CTestNet4Params. rc1
+            //scheduled this at 149460 and rc2 moved it to 149537, replacing that chain, so the value can
+            //still move before a final release. isUnifiedSigHashActive cross-checks it against the
+            //connected node for that reason.
             case TESTNET4 -> 149537;
             default -> null;
         };
+    }
+
+    /**
+     * Records the hardfork height the connected node reports, or null where it reports none.
+     *
+     * Kept separate from the compiled-in schedule rather than replacing it. A height that ships with the
+     * wallet is the one thing in this decision a server cannot move, which is what stops a hostile server
+     * driving a mainnet wallet into producing signatures the network rejects. What the node says is used
+     * to notice that the shipped value has gone stale, not to override it.
+     */
+    public static void setNodeHardforkHeight(Integer height) {
+        nodeHardforkHeight = height;
+    }
+
+    static Integer getNodeHardforkHeight() {
+        return nodeHardforkHeight;
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
@@ -798,7 +816,29 @@ public class AppServices {
         }
 
         Integer activationHeight = getUnifiedSigHashActivationHeight(network);
-        return activationHeight != null && blockHeight != null && blockHeight >= activationHeight;
+        return isUnifiedSigHashActive(activationHeight, nodeHardforkHeight, blockHeight);
+    }
+
+    /**
+     * The height comparison, with the shipped schedule and the node's schedule reconciled.
+     *
+     * Where the node reports a height and it differs from the one compiled in, one of the two is wrong
+     * and there is no way to tell which, so this refuses to opt in. A signature that does not opt in is
+     * always valid, while one made under the wrong schedule either fails to verify or forgoes the
+     * protection it claims, so declining is the only safe answer to a disagreement.
+     */
+    static boolean isUnifiedSigHashActive(Integer activationHeight, Integer nodeHeight, Integer blockHeight) {
+        if(activationHeight == null || blockHeight == null) {
+            return false;
+        }
+
+        if(nodeHeight != null && !nodeHeight.equals(activationHeight)) {
+            log.warn("Not opting in to the unified signature hash: this build expects activation at height "
+                    + activationHeight + " but the connected node reports " + nodeHeight);
+            return false;
+        }
+
+        return blockHeight >= activationHeight;
     }
 
     /**

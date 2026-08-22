@@ -213,6 +213,50 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertFalse(AppServices.canSignUnified(null));
     }
 
+    /**
+     * The shipped schedule stands when the node reports nothing, which is every Electrum connection and
+     * every node without the deployment.
+     */
+    @Test
+    public void testTheShippedHeightStandsWhenTheNodeIsSilent() {
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(1000, null, 1000));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, null, 999));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(null, null, 1000),
+                "With no shipped height there is nothing to activate against");
+    }
+
+    /**
+     * Agreement between the two changes nothing.
+     */
+    @Test
+    public void testAgreementWithTheNodeChangesNothing() {
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(1000, 1000, 1000));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 1000, 999));
+    }
+
+    /**
+     * The point of the cross-check: if the flagday moves after this build ships, the wallet notices and
+     * declines rather than signing under a schedule the network does not share. Declining is safe in
+     * both directions, since a signature that does not opt in is always valid.
+     */
+    @Test
+    public void testDisagreementWithTheNodeDeclinesToOptIn() {
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 2000, 5000),
+                "The node moved the flagday later; this build must not opt in on its own schedule");
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 500, 5000),
+                "The node moved the flagday earlier; this build must not opt in on its own schedule");
+    }
+
+    /**
+     * The shipped testnet4 height must match the node the wallet is built against, or the cross-check
+     * above would fire on every correctly configured connection.
+     */
+    @Test
+    public void testTheShippedTestnet4HeightIsTheOneKnotsUses() {
+        Assertions.assertEquals(149537, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
+                "Update the provenance comment alongside this value");
+    }
+
     private Wallet walletWith(KeystoreSource... sources) {
         Wallet wallet = new Wallet();
         wallet.setPolicyType(PolicyType.SINGLE_HD);
