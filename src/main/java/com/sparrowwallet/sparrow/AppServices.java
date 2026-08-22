@@ -19,8 +19,10 @@ import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
+import com.sparrowwallet.drongo.protocol.SigHash;
 import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.psbt.PSBT;
+import com.sparrowwallet.drongo.psbt.PSBTInput;
 import com.sparrowwallet.drongo.uri.BitcoinURI;
 import com.sparrowwallet.sparrow.control.TrayManager;
 import com.sparrowwallet.sparrow.event.*;
@@ -743,6 +745,98 @@ public class AppServices {
 
     public static BlockHeader getLatestBlockHeader() {
         return latestBlockHeader;
+    }
+
+    /**
+     * Whether transactions this wallet creates should opt in to the unified signature hash.
+     *
+     * The fork carries both the BLAKE2b proof of work and the opt-in signature hash, and both take
+     * effect at the same block, so a chain tip carrying a v2 header is one where opting in is valid.
+     * Reading it from the chain rather than a configured height keeps this working on any network,
+     * including a regtest chain that activates at an arbitrary height, and leaves nothing to hold in
+     * sync with the node.
+     *
+     * This is one block later than the node's own answer, which asks whether the deployment is active
+     * for the block being built rather than for the tip. A transaction created in that one block is
+     * signed the legacy way: still valid and still relayed, it simply carries no replay protection.
+     * Erring in that direction is the safe one, since a signature that opts in before the rules apply
+     * would not verify at all.
+     */
+    public static boolean isUnifiedSigHashActive() {
+        return isUnifiedSigHashActive(Network.get(), currentBlockHeight, latestBlockHeader);
+    }
+
+    /**
+     * The activation height per network, or null where the fork is not scheduled.
+     *
+     * A height is the part of this decision a server cannot influence, which is why it comes first. On
+     * mainnet the fork has no schedule, so nothing a server says can make a wallet opt in; without that
+     * floor a hostile or intercepted server could serve a forged v2 header today and every transaction
+     * the wallet produced would be rejected by the network as an undefined hash type.
+     *
+     * Regtest chooses its own height through -testactivationheight, so there is nothing to hardcode and
+     * the chain is the only available answer there.
+     */
+    static Integer getUnifiedSigHashActivationHeight(Network network) {
+        return switch(network) {
+            case TESTNET4 -> 149460;
+            default -> null;
+        };
+    }
+
+    static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
+        //A v2 header means the proof of work change is live, and both rule sets activate at the one block
+        if(blockHeader == null || !blockHeader.isHeaderV2()) {
+            return false;
+        }
+
+        if(network == Network.REGTEST) {
+            return true;
+        }
+
+        Integer activationHeight = getUnifiedSigHashActivationHeight(network);
+        return activationHeight != null && blockHeight != null && blockHeight >= activationHeight;
+    }
+
+    /**
+     * Whether every key that will sign is one this wallet holds.
+     *
+     * An external signer that has not implemented the opt-in either refuses the hash type outright or
+     * signs the legacy message while the PSBT declares the new one, and the resulting signature does not
+     * verify. Opting in is optional by design, so a wallet backed by a device simply keeps signing the
+     * way it does today until the device catches up.
+     */
+    static boolean canSignUnified(Wallet wallet) {
+        if(wallet == null || wallet.getKeystores().isEmpty()) {
+            return false;
+        }
+
+        return wallet.getKeystores().stream().allMatch(keystore -> keystore.getSource() == KeystoreSource.SW_SEED);
+    }
+
+    /**
+     * Creates the PSBT for a transaction being sent, opting in to the unified signature hash where the
+     * chain has it and this wallet holds the keys. Every wallet send path goes through here so the
+     * decision is made in one place; the private key sweep builds its own PSBT from a key that is not in
+     * a wallet, and keeps signing the way it does today.
+     */
+    public static PSBT createPSBT(WalletTransaction walletTransaction) {
+        return createPSBT(walletTransaction, isUnifiedSigHashActive() && canSignUnified(walletTransaction.getWallet()));
+    }
+
+    static PSBT createPSBT(WalletTransaction walletTransaction, boolean active) {
+        return applyUnifiedSigHash(walletTransaction.createPSBT(), active);
+    }
+
+    static PSBT applyUnifiedSigHash(PSBT psbt, boolean active) {
+        if(active) {
+            for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+                SigHash sigHash = psbtInput.getSigHash();
+                psbtInput.setSigHash(sigHash == null ? SigHash.UNIFIED_ALL : sigHash.withUnified());
+            }
+        }
+
+        return psbt;
     }
 
     public static Map<Integer, BlockSummary> getBlockSummaries() {

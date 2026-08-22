@@ -1167,7 +1167,7 @@ public class SendController extends WalletFormController implements Initializabl
 
         addWalletTransactionNodes();
         walletForm.setCreatedWalletTransaction(walletTransaction);
-        PSBT psbt = walletTransaction.createPSBT();
+        PSBT psbt = AppServices.createPSBT(walletTransaction);
         EventManager.get().post(new ViewPSBTEvent(createButton.getScene().getWindow(), walletTransaction.getPayments().get(0).getLabel(), null, psbt));
     }
 
@@ -1240,7 +1240,7 @@ public class SendController extends WalletFormController implements Initializabl
             TransactionParameters params = new TransactionParameters(utxoSelectors, getTxoFilters(), walletTransaction.getPayments(), List.of(blindedPaymentCode),
                     excludedChangeNodes, feeRate, getMinimumFeeRate(), minRelayFeeRate, userFee, currentBlockHeight, groupByAddress, includeMempoolOutputs, true);
             WalletTransaction finalWalletTx = decryptedWallet.createWalletTransaction(params);
-            PSBT psbt = finalWalletTx.createPSBT();
+            PSBT psbt = AppServices.createPSBT(finalWalletTx);
             decryptedWallet.sign(psbt);
             decryptedWallet.finalise(psbt);
             Transaction transaction = psbt.extractTransaction();
