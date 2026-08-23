@@ -38,7 +38,7 @@ SPARROW_NETWORK=regtest ./sparrow
 
 Choose the **Bitcoin Core** server type with URL `127.0.0.1:18443` and the RPC user and password above.
 
-Shrike decides whether to opt in from the chain rather than from a configured height: `AppServices.isUnifiedSigHashActive()` returns true once the tip carries a v2 header, which is the same block the signature hash rules take effect at. Nothing needs configuring for this test, and nothing needs changing when the fork gets a real height.
+Shrike opts in when the fork is scheduled for the network and the tip carries a v2 header. Regtest chooses its own activation height through `-testactivationheight`, so there the v2 tip is the only answer available and nothing needs configuring for this test. On a network with a scheduled flagday the height ships with the wallet, and the connected node is used to check that value has not gone stale; see the next section.
 
 ## Send a transaction and check the hash type
 
@@ -78,6 +78,22 @@ Fund the printed scriptPubKey on the regtest chain and sign its output with the 
 prints the hash type the wallet declared, the byte on the signature, and the finalised transaction for
 `cli testmempoolaccept`. Passing `false` for the last argument runs the same path with the fork
 reported inactive, which must produce a `01` signature that the node still accepts.
+
+## The activation cross-check
+
+The wallet ships an activation height per network and uses the node to notice that value has gone stale
+rather than to replace it. `DeploymentInfoHarness` calls `getdeploymentinfo` through Sparrow's own
+transport and proxy, which is the part unit tests cannot reach:
+
+```
+DEPS=$(./gradlew -q :printTestClasspath | tail -1)
+java -cp "$DEPS" com.sparrowwallet.sparrow.net.cormorant.bitcoind.DeploymentInfoHarness \
+    http://127.0.0.1:18443 regtest:regtest
+```
+
+Against the node above it prints `HARDFORK_HEIGHT=20`. Started without `-testactivationheight`, the node
+omits the object entirely and it prints `HARDFORK_HEIGHT=null`, which the wallet reads as "the node did
+not say" and leaves the shipped schedule standing.
 
 ## The library level check
 

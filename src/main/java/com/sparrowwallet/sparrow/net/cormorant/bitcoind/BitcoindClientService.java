@@ -37,6 +37,9 @@ public interface BitcoindClientService {
     @JsonRpcMethod("getblockchaininfo")
     BlockchainInfo getBlockchainInfo();
 
+    @JsonRpcMethod("getdeploymentinfo")
+    DeploymentInfo getDeploymentInfo();
+
     @JsonRpcMethod("getwalletinfo")
     WalletInfo getWalletInfo();
 

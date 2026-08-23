@@ -70,6 +70,7 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -134,6 +135,10 @@ public class AppServices {
     private static Integer currentBlockHeight;
 
     private static BlockHeader latestBlockHeader;
+    //Written from the Cormorant connection task and read on the FX thread when a PSBT is built,
+    //so unlike latestBlockHeader this one is not confined to a single thread
+    private static volatile Integer nodeHardforkHeight;
+    private static final AtomicReference<String> lastReportedActivationHeightMismatch = new AtomicReference<>();
 
     private static final Map<Integer, BlockSummary> blockSummaries = new ConcurrentHashMap<>();
 
@@ -779,12 +784,39 @@ public class AppServices {
      */
     static Integer getUnifiedSigHashActivationHeight(Network network) {
         return switch(network) {
-            //Bitcoin Knots v29.4.1.knots20260508rc2, consensus.Blake2bHeight in CTestNet4Params.
-            //rc1 scheduled this at 149460 and rc2 moved it to 149537, replacing that chain, so treat
-            //the value as provisional until there is a final release.
+            //Bitcoin Knots v29.4.1.knots20260508rc2, consensus.Blake2bHeight in CTestNet4Params. rc1
+            //scheduled this at 149460 and rc2 moved it to 149537, replacing that chain, so the value can
+            //still move before a final release. isUnifiedSigHashActive cross-checks it against the
+            //connected node for that reason.
             case TESTNET4 -> 149537;
             default -> null;
         };
+    }
+
+    /**
+     * Records the hardfork height the connected node reports, or null where it reports none.
+     *
+     * Kept separate from the compiled-in schedule rather than replacing it. A height that ships with the
+     * wallet is the one thing in this decision a server cannot move, which is what stops a hostile server
+     * driving a mainnet wallet into producing signatures the network rejects. What the node says is used
+     * to notice that the shipped value has gone stale, not to override it.
+     */
+    public static void setNodeHardforkHeight(Integer height) {
+        nodeHardforkHeight = height;
+    }
+
+    static Integer getNodeHardforkHeight() {
+        return nodeHardforkHeight;
+    }
+
+    /**
+     * Forgets what the last node said. The value describes the connection it came from, so leaving it in
+     * place after a disconnect would let a height from one node keep deciding for another, including for
+     * an Electrum server that reports nothing at all.
+     */
+    public static void clearNodeHardforkHeight() {
+        nodeHardforkHeight = null;
+        lastReportedActivationHeightMismatch.set(null);
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
@@ -798,7 +830,86 @@ public class AppServices {
         }
 
         Integer activationHeight = getUnifiedSigHashActivationHeight(network);
-        return activationHeight != null && blockHeight != null && blockHeight >= activationHeight;
+        //nodeHardforkHeight is read once here and passed by value. The callee null checks it and then
+        //dereferences it, which is only safe because it cannot be cleared between those two steps.
+        //Inlining this call so the field is read twice would reintroduce that race.
+        return isUnifiedSigHashActive(activationHeight, nodeHardforkHeight, blockHeight);
+    }
+
+    /**
+     * The height comparison, with the shipped schedule and the node's schedule reconciled.
+     *
+     * Where the node reports a height and it differs from the one compiled in, one of the two is wrong
+     * and there is no way to tell which, so this refuses to opt in. A signature that does not opt in is
+     * always valid, while one made under the wrong schedule either fails to verify or forgoes the
+     * protection it claims, so declining is the only safe answer to a disagreement.
+     */
+    static boolean isUnifiedSigHashActive(Integer walletActivationHeight, Integer nodeActivationHeight, Integer blockHeight) {
+        if(blockHeight == null) {
+            return false;
+        }
+
+        //A node that has scheduled the fork while this build has not is the case that matters on a network
+        //where the flagday is set after this build ships. Declining is right, since a height a node offers
+        //is not one this wallet can adopt without letting a compromised node choose the schedule, but it
+        //has to be said out loud: signing the legacy way past the flagday forgoes replay protection, and
+        //without this the operator gets no signal at all that an update is due.
+        if(walletActivationHeight == null) {
+            if(nodeActivationHeight != null) {
+                warnActivationHeightUnknown(nodeActivationHeight);
+            }
+            return false;
+        }
+
+        if(nodeActivationHeight != null && !nodeActivationHeight.equals(walletActivationHeight)) {
+            warnActivationHeightMismatch(walletActivationHeight, nodeActivationHeight);
+            return false;
+        }
+
+        return blockHeight >= walletActivationHeight;
+    }
+
+    /**
+     * Logs a schedule disagreement once per distinct pair of heights rather than once per transaction.
+     * A stale build disagrees on every send, and the operator only needs telling once per connection.
+     * clearNodeHardforkHeight resets this so a reconnect reports again.
+     *
+     * getAndSet rather than a read followed by a write: two sends racing here would otherwise both see
+     * the old value and both log.
+     */
+    private static void warnActivationHeightMismatch(int walletActivationHeight, int nodeActivationHeight) {
+        if(isNewActivationHeightReport(walletActivationHeight + "/" + nodeActivationHeight)) {
+            log.warn("Not opting in to the unified signature hash: this build expects activation at height "
+                    + walletActivationHeight + " but the connected node reports " + nodeActivationHeight);
+        }
+    }
+
+    /**
+     * As above, for the case where the node has a schedule and this build has none for the network.
+     */
+    private static void warnActivationHeightUnknown(int nodeActivationHeight) {
+        if(isNewActivationHeightReport("unknown/" + nodeActivationHeight)) {
+            log.warn("Not opting in to the unified signature hash: the connected node schedules activation at height "
+                    + nodeActivationHeight + " but this build has no height for " + Network.get()
+                    + ". Transactions will be signed without replay protection until it is updated.");
+        }
+    }
+
+    /**
+     * Whether this disagreement has not already been reported, recording it either way.
+     *
+     * getAndSet rather than a read followed by a write: two sends racing here would otherwise both see
+     * the old value and both report.
+     */
+    static boolean isNewActivationHeightReport(String report) {
+        return !report.equals(lastReportedActivationHeightMismatch.getAndSet(report));
+    }
+
+    /**
+     * The disagreement last reported, or null if none has been since the connection was established.
+     */
+    static String getLastActivationHeightReport() {
+        return lastReportedActivationHeightMismatch.get();
     }
 
     /**

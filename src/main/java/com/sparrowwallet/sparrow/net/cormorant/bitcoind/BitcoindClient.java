@@ -113,6 +113,22 @@ public class BitcoindClient {
         this.useWallets = useWallets;
     }
 
+    /**
+     * The hardfork height this node is running, or null where it does not report one.
+     *
+     * Older nodes have no getdeploymentinfo hardfork object and nodes predating the RPC reject the call
+     * outright, so any failure here means "the node did not say" rather than "there is no fork", and the
+     * compiled-in schedule stands on its own.
+     */
+    private Integer getHardforkHeight() {
+        try {
+            return getBitcoindService().getDeploymentInfo().getHardforkHeight();
+        } catch(Exception e) {
+            log.debug("Node did not report a hardfork deployment", e);
+            return null;
+        }
+    }
+
     public void initialize() throws CormorantBitcoindException {
         networkInfo = getBitcoindService().getNetworkInfo();
         if(networkInfo.version() < 240000) {
@@ -122,6 +138,9 @@ public class BitcoindClient {
         BlockchainInfo blockchainInfo = getBitcoindService().getBlockchainInfo();
         pruned = blockchainInfo.pruned();
         pruneHeight = blockchainInfo.pruneheight();
+        Integer hardforkHeight = getHardforkHeight();
+        log.info("Node reports hardfork activation height: " + (hardforkHeight == null ? "none" : hardforkHeight));
+        AppServices.setNodeHardforkHeight(hardforkHeight);
         tip = new ElectrumBlockHeader(blockchainInfo.blocks(), getBitcoindService().getBlockHeader(blockchainInfo.bestblockhash(), false));
         timer.schedule(new PollTask(), 5000, 5000);
 
@@ -440,6 +459,7 @@ public class BitcoindClient {
     }
 
     public void stop() {
+        AppServices.clearNodeHardforkHeight();
         timer.cancel();
         pruneWarnedDescriptors.clear();
         stopped = true;

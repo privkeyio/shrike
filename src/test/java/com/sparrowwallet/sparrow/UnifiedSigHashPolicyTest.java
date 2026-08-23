@@ -25,6 +25,13 @@ import java.util.List;
  * alone when it is not.
  */
 public class UnifiedSigHashPolicyTest {
+    @org.junit.jupiter.api.BeforeEach
+    @org.junit.jupiter.api.AfterEach
+    public void resetNodeHardforkHeight() {
+        //Static state, so without this the order tests happen to run in decides the result
+        AppServices.clearNodeHardforkHeight();
+    }
+
     /**
      * A v2 header, taken from drongo's BlockHeaderPoWHashTest. Only its version word matters here.
      */
@@ -211,6 +218,142 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertTrue(AppServices.canSignUnified(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_SEED)));
         Assertions.assertFalse(AppServices.canSignUnified(walletWith()), "A wallet with no keystores cannot sign");
         Assertions.assertFalse(AppServices.canSignUnified(null));
+    }
+
+    /**
+     * The shipped schedule stands when the node reports nothing, which is every Electrum connection and
+     * every node without the deployment.
+     */
+    @Test
+    public void testTheShippedHeightStandsWhenTheNodeIsSilent() {
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(1000, null, 1000));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, null, 999));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(null, null, 1000),
+                "With no shipped height there is nothing to activate against");
+    }
+
+    /**
+     * Agreement between the two changes nothing.
+     */
+    @Test
+    public void testAgreementWithTheNodeChangesNothing() {
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(1000, 1000, 1000));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 1000, 999));
+    }
+
+    /**
+     * The point of the cross-check: if the flagday moves after this build ships, the wallet notices and
+     * declines rather than signing under a schedule the network does not share. Declining is safe in
+     * both directions, since a signature that does not opt in is always valid.
+     */
+    @Test
+    public void testDisagreementWithTheNodeDeclinesToOptIn() {
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 2000, 5000),
+                "The node moved the flagday later; this build must not opt in on its own schedule");
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 500, 5000),
+                "The node moved the flagday earlier; this build must not opt in on its own schedule");
+    }
+
+    /**
+     * A node that has scheduled the fork while this build has not. This is the mainnet case once a
+     * flagday is set: the wallet must decline rather than adopt a height a node offers, but it has to
+     * report it, because signing the legacy way past the flagday forgoes replay protection.
+     */
+    @Test
+    public void testANodeSchedulingWhatThisBuildDoesNotDeclinesAndReports() {
+        AppServices.clearNodeHardforkHeight();
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(null, 900000, 900001),
+                "A height the node offers is not one this wallet can adopt");
+        Assertions.assertEquals("unknown/900000", AppServices.getLastActivationHeightReport(),
+                "The operator has to be told an update is due");
+    }
+
+    /**
+     * A node that says nothing about a network this build has no height for stays silent, since there is
+     * no disagreement to report. This is every Electrum connection on such a network.
+     */
+    @Test
+    public void testNoHeightAnywhereReportsNothing() {
+        AppServices.clearNodeHardforkHeight();
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(null, null, 900001));
+        Assertions.assertNull(AppServices.getLastActivationHeightReport());
+    }
+
+    /**
+     * The report is per connection, not per transaction: a stale build disagrees on every send, and the
+     * operator only needs telling once.
+     */
+    @Test
+    public void testTheMismatchIsReportedOncePerConnection() {
+        AppServices.clearNodeHardforkHeight();
+        for(int i = 0; i < 5; i++) {
+            Assertions.assertFalse(AppServices.isUnifiedSigHashActive(1000, 2000, 5000));
+        }
+        Assertions.assertEquals("1000/2000", AppServices.getLastActivationHeightReport());
+        Assertions.assertFalse(AppServices.isNewActivationHeightReport("1000/2000"),
+                "A sixth send against the same node must not report again");
+    }
+
+    /**
+     * Reconnecting reports again, so a height from one node cannot silence the report for another.
+     */
+    @Test
+    public void testReconnectingReportsAgain() {
+        AppServices.clearNodeHardforkHeight();
+        AppServices.isUnifiedSigHashActive(1000, 2000, 5000);
+        AppServices.clearNodeHardforkHeight();
+        Assertions.assertNull(AppServices.getLastActivationHeightReport(),
+                "clearNodeHardforkHeight has to reset the report alongside the height");
+        Assertions.assertTrue(AppServices.isNewActivationHeightReport("1000/2000"));
+    }
+
+    /**
+     * A different disagreement is a different report, so moving between two stale nodes is not silent.
+     */
+    @Test
+    public void testADifferentDisagreementIsReportedSeparately() {
+        AppServices.clearNodeHardforkHeight();
+        AppServices.isUnifiedSigHashActive(1000, 2000, 5000);
+        AppServices.isUnifiedSigHashActive(1000, 3000, 5000);
+        Assertions.assertEquals("1000/3000", AppServices.getLastActivationHeightReport());
+    }
+
+    /**
+     * The shipped testnet4 height must match the node the wallet is built against, or the cross-check
+     * above would fire on every correctly configured connection.
+     */
+    @Test
+    public void testTheShippedTestnet4HeightIsTheOneKnotsUses() {
+        Assertions.assertEquals(149537, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
+                "Update the provenance comment alongside this value");
+    }
+
+    /**
+     * The wiring, rather than the comparison.
+     *
+     * Every other test here calls the pure overload with literals, so the field could be dropped from the
+     * production path entirely and they would all still pass. This is the test that fails if the
+     * cross-check stops being consulted where it actually matters.
+     */
+    @Test
+    public void testTheNodeHeightReachesTheDecision() {
+        BlockHeader v2Tip = header(V2_HEADER_HEX);
+        int shipped = AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4);
+
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "With no node height recorded the shipped schedule should stand");
+
+        AppServices.setNodeHardforkHeight(shipped + 1);
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "A node height that disagrees must reach the decision and decline");
+
+        AppServices.setNodeHardforkHeight(shipped);
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "A node height that agrees must not block the opt-in");
+
+        AppServices.clearNodeHardforkHeight();
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
+                "Clearing must restore the shipped schedule, not leave the last node deciding");
     }
 
     private Wallet walletWith(KeystoreSource... sources) {
