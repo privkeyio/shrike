@@ -3,14 +3,12 @@ package com.sparrowwallet.sparrow.net;
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
-import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class ElectrumServerTest {
@@ -69,20 +67,19 @@ public class ElectrumServerTest {
     }
 
     /**
-     * A block id comes from the header, not from re-deriving SHA256d by hand.
+     * The id that reaches an explorer, which is the byte order that actually matters.
      *
-     * Two things go wrong when it is derived by hand. Sha256Hash.twiceOf does not reverse and
-     * BlockHeader.getHash does, so the hand-rolled version is byte reversed even for a v1 header, which
-     * is why the id below reads back to front. And past the activation height the block id is not SHA256d
-     * at all: getPoWHash runs the BLAKE2b pipeline for a v2 header and delegates to getHash for a v1 one,
-     * so it is the accessor that is correct on both sides of the fork.
+     * getBlockSummaryMap used to hand FeeRatesSource a wire-order hash and FeeRatesSource reversed it
+     * into display order, so the two halves were only correct together. Past the activation height the
+     * first half is wrong anyway, since the block id is no longer SHA256d, so the caller now asks the
+     * header via getPoWHash() and the URL builder no longer reverses. This asserts the end of that path
+     * rather than either half, because either half alone looks right while the pair is broken.
      */
     @Test
-    public void testTheBlockIdComesFromTheHeader() {
+    public void testTheBlockSummaryUrlCarriesTheBlockId() {
         BlockHeader blockHeader = new BlockHeader(Utils.hexToBytes(BLOCK_800000_HEADER_HEX), 0);
-        assertEquals(BLOCK_800000_ID, blockHeader.getPoWHash().toString());
-        assertNotEquals(BLOCK_800000_ID, Sha256Hash.twiceOf(blockHeader.bitcoinSerialize()).toString(),
-                "Deriving the id by hand must not silently agree, or this guards nothing");
+        assertEquals("https://explorer.invalid/api/v1/block/" + BLOCK_800000_ID,
+                FeeRatesSource.blockSummaryUrl("https://explorer.invalid/api/", blockHeader.getPoWHash()));
     }
 
     @Test
