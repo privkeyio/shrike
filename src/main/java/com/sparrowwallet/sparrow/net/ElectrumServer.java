@@ -1185,7 +1185,7 @@ public class ElectrumServer {
                     return feeRatesSource.getRecentBlockSummaries();
                 } else {
                     Map<Integer, BlockSummary> blockSummaryMap = new HashMap<>();
-                    BlockSummary blockSummary = feeRatesSource.getBlockSummary(Sha256Hash.twiceOf(blockHeader.bitcoinSerialize()));
+                    BlockSummary blockSummary = feeRatesSource.getBlockSummary(blockHeader.getPoWHash());
                     if(blockSummary != null && blockSummary.getHeight() != null) {
                         blockSummaryMap.put(blockSummary.getHeight(), blockSummary);
                     }

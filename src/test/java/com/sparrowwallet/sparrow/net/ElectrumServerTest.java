@@ -2,12 +2,15 @@ package com.sparrowwallet.sparrow.net;
 
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.protocol.BlockHeader;
+import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class ElectrumServerTest {
@@ -21,6 +24,7 @@ public class ElectrumServerTest {
      * A v2 (BLAKE2b) header, 164 bytes rather than 80, taken from drongo's BlockHeaderPoWHashTest. It meets its
      * claimed target under the BLAKE2b hash, with a target inside the regtest proof of work limit.
      */
+    private static final String BLOCK_800000_ID = "00000000000000000002a7c4c1e48d76c5a37902165a270156b7a8d72728a054";
     private static final String V2_HEADER_HEX = "000000a00b6ae048ff6a63b448cc325a81e22cd304766954f0833e3182dfe8c8cfeca202e44340a302bb650d3050411924e9e83230d3755ee9b2f51509cee40130e8a94f05dd886affff7f2000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000";
     private static final long V2_HEADER_TIME_SECS = 1787354373L;
     private static final int V2_HEADER_HEIGHT = 20;
@@ -62,6 +66,23 @@ public class ElectrumServerTest {
 
         assertEquals(164, Utils.hexToBytes(V2_HEADER_HEX).length);
         assertNull(ElectrumServer.getTipValidationError(tip(V2_HEADER_HEIGHT, V2_HEADER_HEX), (V2_HEADER_TIME_SECS + 3600) * 1000));
+    }
+
+    /**
+     * A block id comes from the header, not from re-deriving SHA256d by hand.
+     *
+     * Two things go wrong when it is derived by hand. Sha256Hash.twiceOf does not reverse and
+     * BlockHeader.getHash does, so the hand-rolled version is byte reversed even for a v1 header, which
+     * is why the id below reads back to front. And past the activation height the block id is not SHA256d
+     * at all: getPoWHash runs the BLAKE2b pipeline for a v2 header and delegates to getHash for a v1 one,
+     * so it is the accessor that is correct on both sides of the fork.
+     */
+    @Test
+    public void testTheBlockIdComesFromTheHeader() {
+        BlockHeader blockHeader = new BlockHeader(Utils.hexToBytes(BLOCK_800000_HEADER_HEX), 0);
+        assertEquals(BLOCK_800000_ID, blockHeader.getPoWHash().toString());
+        assertNotEquals(BLOCK_800000_ID, Sha256Hash.twiceOf(blockHeader.bitcoinSerialize()).toString(),
+                "Deriving the id by hand must not silently agree, or this guards nothing");
     }
 
     @Test
