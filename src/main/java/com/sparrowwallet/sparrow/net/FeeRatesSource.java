@@ -72,6 +72,60 @@ public enum FeeRatesSource {
             return network == Network.MAINNET || network == Network.TESTNET || network == Network.TESTNET4 || network == Network.SIGNET;
         }
     },
+    /*
+        A mempool.space instance that follows the BLAKE2b fork, which is the reason for its presence here and
+        is not apparent from the name. It runs the same API, so the methods below differ from MEMPOOL_SPACE
+        only in the two host strings.
+     */
+    MEMPOOL_GUIDE("mempool.guide", true) {
+        @Override
+        public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
+            String url = getApiUrl() + "v1/fees/precise";
+            return getThreeTierFeeRates(this, defaultblockTargetFeeRates, url);
+        }
+
+        @Override
+        public Double getNextBlockMedianFeeRate() throws Exception {
+            String url = getApiUrl() + "v1/fees/mempool-blocks";
+            return requestNextBlockMedianFeeRate(this, url);
+        }
+
+        @Override
+        public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
+            String url = getApiUrl() + "v1/block/" + Utils.bytesToHex(blockId.getReversedBytes());
+            return requestBlockSummary(this, url);
+        }
+
+        @Override
+        public Map<Integer, BlockSummary> getRecentBlockSummaries() throws Exception {
+            String url = getApiUrl() + "v1/blocks";
+            return requestBlockSummaries(this, url);
+        }
+
+        @Override
+        public List<BlockTransactionHash> getRecentMempoolTransactions() throws Exception {
+            String url = getApiUrl() + "mempool/recent";
+            return requestRecentMempoolTransactions(this, url);
+        }
+
+        private String getApiUrl() {
+            String url = AppServices.isUsingProxy() ? "http://mempool5nxspkxjk3n5afqh7zswbv4i324z76ltmw3cvfmniw45mnhad.onion/api/" : "https://mempool.guide/api/";
+            if(Network.get() != Network.MAINNET && supportsNetwork(Network.get())) {
+                url = url.replace("/api/", "/" + Network.get().getName() + "/api/");
+            }
+            return url;
+        }
+
+        /*
+            Testnet3 is absent because this instance does not serve it: every /testnet/api/ path returns the
+            frontend with a 200 and text/html rather than a 404, so it would fail as a parse error at runtime
+            instead of being declined here.
+         */
+        @Override
+        public boolean supportsNetwork(Network network) {
+            return network == Network.MAINNET || network == Network.TESTNET4 || network == Network.SIGNET;
+        }
+    },
     BITVIEW_SPACE("bitview.space", true) {
         @Override
         public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
