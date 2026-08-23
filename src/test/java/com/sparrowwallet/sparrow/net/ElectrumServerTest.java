@@ -2,6 +2,7 @@ package com.sparrowwallet.sparrow.net;
 
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.protocol.BlockHeader;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ public class ElectrumServerTest {
      * A v2 (BLAKE2b) header, 164 bytes rather than 80, taken from drongo's BlockHeaderPoWHashTest. It meets its
      * claimed target under the BLAKE2b hash, with a target inside the regtest proof of work limit.
      */
+    private static final String BLOCK_800000_ID = "00000000000000000002a7c4c1e48d76c5a37902165a270156b7a8d72728a054";
     private static final String V2_HEADER_HEX = "000000a00b6ae048ff6a63b448cc325a81e22cd304766954f0833e3182dfe8c8cfeca202e44340a302bb650d3050411924e9e83230d3755ee9b2f51509cee40130e8a94f05dd886affff7f2000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000";
     private static final long V2_HEADER_TIME_SECS = 1787354373L;
     private static final int V2_HEADER_HEIGHT = 20;
@@ -62,6 +64,22 @@ public class ElectrumServerTest {
 
         assertEquals(164, Utils.hexToBytes(V2_HEADER_HEX).length);
         assertNull(ElectrumServer.getTipValidationError(tip(V2_HEADER_HEIGHT, V2_HEADER_HEX), (V2_HEADER_TIME_SECS + 3600) * 1000));
+    }
+
+    /**
+     * The id that reaches an explorer, which is the byte order that actually matters.
+     *
+     * getBlockSummaryMap used to hand FeeRatesSource a wire-order hash and FeeRatesSource reversed it
+     * into display order, so the two halves were only correct together. Past the activation height the
+     * first half is wrong anyway, since the block id is no longer SHA256d, so the caller now asks the
+     * header via getPoWHash() and the URL builder no longer reverses. This asserts the end of that path
+     * rather than either half, because either half alone looks right while the pair is broken.
+     */
+    @Test
+    public void testTheBlockSummaryUrlCarriesTheBlockId() {
+        BlockHeader blockHeader = new BlockHeader(Utils.hexToBytes(BLOCK_800000_HEADER_HEX), 0);
+        assertEquals("https://explorer.invalid/api/v1/block/" + BLOCK_800000_ID,
+                FeeRatesSource.blockSummaryUrl("https://explorer.invalid/api/", blockHeader.getPoWHash()));
     }
 
     @Test

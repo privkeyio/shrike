@@ -42,7 +42,7 @@ public enum FeeRatesSource {
 
         @Override
         public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = getApiUrl() + "v1/block/" + blockId;
+            String url = blockSummaryUrl(getApiUrl(), blockId);
             return requestBlockSummary(this, url);
         }
 
@@ -91,7 +91,7 @@ public enum FeeRatesSource {
 
         @Override
         public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = getApiUrl() + "v1/block/" + blockId;
+            String url = blockSummaryUrl(getApiUrl(), blockId);
             return requestBlockSummary(this, url);
         }
 
@@ -140,7 +140,7 @@ public enum FeeRatesSource {
 
         @Override
         public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = getApiUrl() + "v1/block/" + blockId;
+            String url = blockSummaryUrl(getApiUrl(), blockId);
             return requestBlockSummary(this, url);
         }
 
@@ -258,6 +258,11 @@ public enum FeeRatesSource {
         throw new UnsupportedOperationException(name + " does not support retrieving the next block median fee rate");
     }
 
+    /**
+     * @param blockId the block id in display order, as BlockHeader.getPoWHash() returns it, which is the
+     *                order explorers use in a URL. Sha256Hash.toString() renders that order directly, so
+     *                nothing here should reverse it again.
+     */
     public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
         throw new UnsupportedOperationException(name + " does not support block summaries");
     }
@@ -349,6 +354,18 @@ public enum FeeRatesSource {
 
     protected MempoolBlock[] requestMempoolBlocks(String url, HttpClientService httpClientService) throws Exception {
         return httpClientService.requestJson(url, MempoolBlock[].class, null);
+    }
+
+    /**
+     * The block summary URL for an explorer.
+     *
+     * blockId is in display order, which is what BlockHeader.getPoWHash() returns and what an explorer
+     * expects in a path, and Sha256Hash.toString() renders that order directly. This existed inline at
+     * two call sites reversing the bytes, which was correct only while the caller passed a wire-order
+     * hash; keeping it in one place means the convention is stated once rather than assumed twice.
+     */
+    protected static String blockSummaryUrl(String apiUrl, Sha256Hash blockId) {
+        return apiUrl + "v1/block/" + blockId;
     }
 
     protected static BlockSummary requestBlockSummary(FeeRatesSource feeRatesSource, String url) throws Exception {
