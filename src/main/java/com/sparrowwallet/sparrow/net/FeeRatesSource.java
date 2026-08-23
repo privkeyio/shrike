@@ -1,7 +1,6 @@
 package com.sparrowwallet.sparrow.net;
 
 import com.sparrowwallet.drongo.Network;
-import com.sparrowwallet.drongo.Utils;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.wallet.BlockTransaction;
@@ -43,7 +42,7 @@ public enum FeeRatesSource {
 
         @Override
         public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = getApiUrl() + "v1/block/" + Utils.bytesToHex(blockId.getReversedBytes());
+            String url = getApiUrl() + "v1/block/" + blockId;
             return requestBlockSummary(this, url);
         }
 
@@ -92,7 +91,7 @@ public enum FeeRatesSource {
 
         @Override
         public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = getApiUrl() + "v1/block/" + Utils.bytesToHex(blockId.getReversedBytes());
+            String url = getApiUrl() + "v1/block/" + blockId;
             return requestBlockSummary(this, url);
         }
 
@@ -141,7 +140,7 @@ public enum FeeRatesSource {
 
         @Override
         public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = getApiUrl() + "v1/block/" + Utils.bytesToHex(blockId.getReversedBytes());
+            String url = getApiUrl() + "v1/block/" + blockId;
             return requestBlockSummary(this, url);
         }
 
