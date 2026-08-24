@@ -822,20 +822,30 @@ public class AppServices {
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
+        return chainDecision(network, blockHeight, blockHeader).isOptedIn();
+    }
+
+    /**
+     * As isUnifiedSigHashActive, keeping hold of the reason instead of reducing it to a boolean.
+     *
+     * The boolean form delegates here rather than the two carrying a copy of the same checks each, since
+     * a reason that drifts from the decision it explains is worse than no reason at all.
+     */
+    static UnifiedSigHashDecision chainDecision(Network network, Integer blockHeight, BlockHeader blockHeader) {
         //A v2 header means the proof of work change is live, and both rule sets activate at the one block
         if(blockHeader == null || !blockHeader.isHeaderV2()) {
-            return false;
+            return UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED;
         }
 
         if(network == Network.REGTEST) {
-            return true;
+            return UnifiedSigHashDecision.OPTED_IN;
         }
 
         Integer activationHeight = getUnifiedSigHashActivationHeight(network);
         //nodeHardforkHeight is read once here and passed by value. The callee null checks it and then
         //dereferences it, which is only safe because it cannot be cleared between those two steps.
         //Inlining this call so the field is read twice would reintroduce that race.
-        return isUnifiedSigHashActive(activationHeight, nodeHardforkHeight, blockHeight);
+        return heightDecision(activationHeight, nodeHardforkHeight, blockHeight);
     }
 
     /**
@@ -847,8 +857,17 @@ public class AppServices {
      * protection it claims, so declining is the only safe answer to a disagreement.
      */
     static boolean isUnifiedSigHashActive(Integer walletActivationHeight, Integer nodeActivationHeight, Integer blockHeight) {
+        return heightDecision(walletActivationHeight, nodeActivationHeight, blockHeight).isOptedIn();
+    }
+
+    /**
+     * As above, keeping the reason. The warnings stay here rather than moving to the caller, because they
+     * are reported once per distinct disagreement and a caller asking only to display a reason must not
+     * re-announce one that has already been reported.
+     */
+    static UnifiedSigHashDecision heightDecision(Integer walletActivationHeight, Integer nodeActivationHeight, Integer blockHeight) {
         if(blockHeight == null) {
-            return false;
+            return UnifiedSigHashDecision.CHAIN_HEIGHT_UNKNOWN;
         }
 
         //A node that has scheduled the fork while this build has not is the case that matters on a network
@@ -860,15 +879,16 @@ public class AppServices {
             if(nodeActivationHeight != null) {
                 warnActivationHeightUnknown(nodeActivationHeight);
             }
-            return false;
+            return UnifiedSigHashDecision.BUILD_HAS_NO_SCHEDULE;
         }
 
         if(nodeActivationHeight != null && !nodeActivationHeight.equals(walletActivationHeight)) {
             warnActivationHeightMismatch(walletActivationHeight, nodeActivationHeight);
-            return false;
+            return UnifiedSigHashDecision.SCHEDULE_MISMATCH;
         }
 
-        return blockHeight >= walletActivationHeight;
+        return blockHeight >= walletActivationHeight
+                ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.BEFORE_ACTIVATION_HEIGHT;
     }
 
     /**
@@ -925,11 +945,42 @@ public class AppServices {
      * way it does today until the device catches up.
      */
     static boolean canSignUnified(Wallet wallet) {
+        return keystoreDecision(wallet).isOptedIn();
+    }
+
+    /**
+     * As canSignUnified, keeping the reason. SW_WATCH falls here alongside the hardware sources: a
+     * watch only keystore produces no signature either, so the wallet is in no position to opt in.
+     */
+    static UnifiedSigHashDecision keystoreDecision(Wallet wallet) {
         if(wallet == null || wallet.getKeystores().isEmpty()) {
-            return false;
+            return UnifiedSigHashDecision.NO_SIGNING_KEYS;
         }
 
-        return wallet.getKeystores().stream().allMatch(keystore -> keystore.getSource() == KeystoreSource.SW_SEED);
+        return wallet.getKeystores().stream().allMatch(keystore -> keystore.getSource() == KeystoreSource.SW_SEED)
+                ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.EXTERNAL_SIGNER;
+    }
+
+    /**
+     * The decision for a wallet about to send, with the reason where it declined.
+     *
+     * The chain is asked before the keystores, matching the order createPSBT applied when this was a pair
+     * of booleans joined by &&: a chain that has not activated is the reason to report even where the
+     * wallet also holds a device, since the device is no obstacle until the rules are live.
+     */
+    public static UnifiedSigHashDecision getUnifiedSigHashDecision(Wallet wallet) {
+        return combinedDecision(chainDecision(Network.get(), currentBlockHeight, latestBlockHeader), wallet);
+    }
+
+    /**
+     * Takes the chain's answer first and only asks the keystores if it opted in.
+     *
+     * Separate from the call above so it can be reached without the chain state, which lives in static
+     * fields that only the block events write. Left untested, this ordering is where a chain reason and a
+     * keystore reason could quietly swap places without any test noticing.
+     */
+    static UnifiedSigHashDecision combinedDecision(UnifiedSigHashDecision chainDecision, Wallet wallet) {
+        return chainDecision.isOptedIn() ? keystoreDecision(wallet) : chainDecision;
     }
 
     /**
@@ -955,7 +1006,7 @@ public class AppServices {
      * judgement, and warnActivationHeightUnknown says so to the user.
      */
     public static PSBT createPSBT(WalletTransaction walletTransaction) {
-        return createPSBT(walletTransaction, isUnifiedSigHashActive() && canSignUnified(walletTransaction.getWallet()));
+        return createPSBT(walletTransaction, getUnifiedSigHashDecision(walletTransaction.getWallet()).isOptedIn());
     }
 
     static PSBT createPSBT(WalletTransaction walletTransaction, boolean active) {

@@ -230,6 +230,9 @@
                 </Label>
                 <Hyperlink fx:id="noWalletsWarningLink" text="Open wallet?" onAction="#openWallet" />
             </Field>
+            <Field text="Protection:">
+                <Label fx:id="signingWalletOptIn" graphicTextGap="5" />
+            </Field>
         </Fieldset>
     </Form>
 
@@ -263,6 +266,9 @@
 
     <Form fx:id="signaturesForm" GridPane.columnIndex="0" GridPane.columnSpan="2" GridPane.rowIndex="6">
         <Fieldset text="Signatures" inputGrow="SOMETIMES">
+            <Field text="Protection:">
+                <Label fx:id="signaturesOptIn" graphicTextGap="5" />
+            </Field>
             <VBox>
                 <SignaturesProgressBar fx:id="signaturesProgressBar" />
                 <ProgressBar fx:id="broadcastProgressBar" maxWidth="Infinity" minHeight="50" prefHeight="50" />

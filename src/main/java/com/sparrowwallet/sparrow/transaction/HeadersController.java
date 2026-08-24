@@ -15,11 +15,13 @@ import com.sparrowwallet.hummingbird.UR;
 import com.sparrowwallet.hummingbird.registry.CryptoPSBT;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
+import com.sparrowwallet.sparrow.UnifiedSigHashDecision;
 import com.sparrowwallet.sparrow.UnitFormat;
 import com.sparrowwallet.sparrow.control.*;
 import com.sparrowwallet.sparrow.event.*;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5Brands;
+import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.io.Device;
 import com.sparrowwallet.sparrow.io.bbqr.BBQR;
@@ -203,6 +205,12 @@ public class HeadersController extends TransactionFormController implements Init
 
     @FXML
     private Hyperlink noWalletsWarningLink;
+
+    @FXML
+    private Label signingWalletOptIn;
+
+    @FXML
+    private Label signaturesOptIn;
 
     @FXML
     private Form sigHashForm;
@@ -557,6 +565,12 @@ public class HeadersController extends TransactionFormController implements Init
                     return null;
                 }
             });
+            //Read off the PSBT's own inputs, so a PSBT this wallet never built reports what it actually
+            //carries. The listener keeps it true when the type is changed here, since that change is
+            //written back to every input below.
+            updateOptInStatus(psbtSigHash);
+            sigHash.valueProperty().addListener((observable, oldValue, newValue) -> updateOptInStatus(newValue));
+
             sigHash.valueProperty().addListener((observable, oldValue, newValue) -> {
                 SigHash newBase = (newValue == null ? null : newValue.withoutUnified());
                 if(newBase == SigHash.NONE || newBase == SigHash.ANYONECANPAY_NONE) {
@@ -946,6 +960,25 @@ public class HeadersController extends TransactionFormController implements Init
      */
     static SigHash recommendedSigHashFor(SigHash requiredSigHash, SigHash psbtSigHash) {
         return psbtSigHash.isUnified() ? requiredSigHash.withUnified() : requiredSigHash;
+    }
+
+    /**
+     * Shows what the transaction's signatures do, and nothing about why.
+     *
+     * Deliberately without a reason. A PSBT records only the hash type its inputs carry, so the reason a
+     * particular one was not opted in is not in it to read, and a PSBT from a co-signer never had one to
+     * begin with. Recomputing this wallet's own decision here would answer a different question than the
+     * one the transaction is being asked, and would put a second copy of that decision in the view.
+     */
+    private void updateOptInStatus(SigHash psbtSigHash) {
+        boolean optedIn = psbtSigHash != null && psbtSigHash.isUnified();
+        for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
+            label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
+            label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+            label.setTooltip(new Tooltip(optedIn
+                    ? "These signatures cannot be replayed on a chain without the fork, and commit to the amounts they spend."
+                    : "These signatures are made the way they always have been. They carry no replay protection."));
+        }
     }
 
     private static class BlockHeightContextMenu extends ContextMenu {

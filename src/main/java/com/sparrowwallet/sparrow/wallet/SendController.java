@@ -17,6 +17,7 @@ import com.sparrowwallet.sparrow.*;
 import com.sparrowwallet.sparrow.control.*;
 import com.sparrowwallet.sparrow.event.*;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
+import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.io.Storage;
 import com.sparrowwallet.sparrow.net.*;
@@ -138,6 +139,9 @@ public class SendController extends WalletFormController implements Initializabl
 
     @FXML
     private Label privacyAnalysis;
+
+    @FXML
+    private Label optInStatus;
 
     @FXML
     private Button clearButton;
@@ -414,6 +418,7 @@ public class SendController extends WalletFormController implements Initializabl
 
             transactionDiagram.update(walletTransaction);
             updatePrivacyAnalysis(walletTransaction);
+            updateOptInStatus(walletTransaction);
             createButton.setDisable(walletTransaction == null || isInsufficientFeeRate());
             notificationButton.setDisable(walletTransaction == null || isInsufficientFeeRate() || !AppServices.isConnected());
         });
@@ -441,6 +446,8 @@ public class SendController extends WalletFormController implements Initializabl
         });
         setPreferredOptimizationStrategy();
         updatePrivacyAnalysis(null);
+        updateOptInStatus(null);
+        optInStatus.managedProperty().bind(optInStatus.visibleProperty());
         optimizationHelp.managedProperty().bind(optimizationHelp.visibleProperty());
         privacyAnalysis.managedProperty().bind(privacyAnalysis.visibleProperty());
         optimizationHelp.visibleProperty().bind(privacyAnalysis.visibleProperty().not());
@@ -1052,6 +1059,32 @@ public class SendController extends WalletFormController implements Initializabl
             tooltip.setGraphic(new PrivacyAnalysisTooltip(walletTransaction));
             privacyAnalysis.setTooltip(tooltip);
         }
+    }
+
+    /**
+     * Shows what this transaction's signatures will do and, where the wallet declined, why.
+     *
+     * The reason is shown here and not in the transaction view because this is where the decision is
+     * taken. Asking AppServices for it rather than working it out again means the two cannot disagree:
+     * the same call decides what createPSBT will do when this transaction is created.
+     */
+    private void updateOptInStatus(WalletTransaction walletTransaction) {
+        if(walletTransaction == null) {
+            optInStatus.setVisible(false);
+            optInStatus.setTooltip(null);
+            return;
+        }
+
+        UnifiedSigHashDecision decision = AppServices.getUnifiedSigHashDecision(walletTransaction.getWallet());
+        optInStatus.setVisible(true);
+        optInStatus.setText(decision.getSummary());
+        optInStatus.setGraphic(decision.isOptedIn() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+
+        Tooltip tooltip = new Tooltip(decision.isOptedIn()
+                ? "These signatures cannot be replayed on a chain without the fork, and commit to the amounts they spend."
+                : "Signing the way it always has been, because " + decision.getReason() + ".");
+        tooltip.setShowDuration(Duration.INDEFINITE);
+        optInStatus.setTooltip(tooltip);
     }
 
     public void clear(ActionEvent event) {

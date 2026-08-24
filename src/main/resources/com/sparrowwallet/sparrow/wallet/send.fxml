@@ -193,6 +193,7 @@
                         <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="11" icon="INFO_CIRCLE" />
                     </graphic>
                 </Label>
+                <Label fx:id="optInStatus" graphicTextGap="5" styleClass="help-label" />
             </HBox>
             <HBox AnchorPane.rightAnchor="10">
                 <Button fx:id="clearButton" text="Clear" cancelButton="true" onAction="#clear" />
