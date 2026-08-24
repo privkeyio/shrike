@@ -817,6 +817,8 @@ public class AppServices {
     public static void clearNodeHardforkHeight() {
         nodeHardforkHeight = null;
         lastReportedActivationHeightMismatch.set(null);
+        //The indicator describes a disagreement with a particular node, so it goes when that node does
+        EventManager.get().post(UnifiedSigHashScheduleEvent.resolved());
     }
 
     static boolean isUnifiedSigHashActive(Network network, Integer blockHeight, BlockHeader blockHeader) {
@@ -881,6 +883,7 @@ public class AppServices {
         if(isNewActivationHeightReport(walletActivationHeight + "/" + nodeActivationHeight)) {
             log.warn("Not opting in to the unified signature hash: this build expects activation at height "
                     + walletActivationHeight + " but the connected node reports " + nodeActivationHeight);
+            EventManager.get().post(UnifiedSigHashScheduleEvent.scheduleMismatch(walletActivationHeight, nodeActivationHeight));
         }
     }
 
@@ -892,6 +895,7 @@ public class AppServices {
             log.warn("Not opting in to the unified signature hash: the connected node schedules activation at height "
                     + nodeActivationHeight + " but this build has no height for " + Network.get()
                     + ". Transactions will be signed without replay protection until it is updated.");
+            EventManager.get().post(UnifiedSigHashScheduleEvent.scheduleUnknown(nodeActivationHeight, Network.get().toDisplayString()));
         }
     }
 

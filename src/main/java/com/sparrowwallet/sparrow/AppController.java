@@ -2947,6 +2947,43 @@ public class AppController implements Initializable {
         statusBar.getRightItems().add(0, versionUpdateLabel);
     }
 
+    /**
+     * Shows a schedule disagreement for as long as it stands, and takes the indicator down when it does not.
+     *
+     * A persistent indicator rather than a StatusEvent because this is a state, not an occurrence: every
+     * transaction is signed the legacy way while it holds, and status bar text clears itself after twenty
+     * seconds and is replaced by whatever event arrives next.
+     */
+    @Subscribe
+    public void unifiedSigHashSchedule(UnifiedSigHashScheduleEvent event) {
+        //EventBus dispatches on the thread that posted, which here is whichever thread created a
+        //transaction or dropped a connection, so the scene graph work is marshalled rather than assumed
+        if(!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> unifiedSigHashSchedule(event));
+            return;
+        }
+
+        UnifiedSigHashStatusLabel existingLabel = null;
+        for(Node node : statusBar.getRightItems()) {
+            if(node instanceof UnifiedSigHashStatusLabel) {
+                existingLabel = (UnifiedSigHashStatusLabel)node;
+            }
+        }
+
+        if(!event.isDisagreement()) {
+            if(existingLabel != null) {
+                statusBar.getRightItems().remove(existingLabel);
+            }
+        } else if(existingLabel == null) {
+            //Added at the front, alongside the version update indicator. The Tor and USB indicators
+            //position themselves relative to the end of the list, so an insertion here shifts their
+            //target index and the items they sit against by the same amount and cannot displace them.
+            statusBar.getRightItems().add(0, new UnifiedSigHashStatusLabel(event));
+        } else {
+            existingLabel.update(event);
+        }
+    }
+
     @Subscribe
     public void timedWorker(TimedEvent event) {
         statusBar.setGraphic(null);
