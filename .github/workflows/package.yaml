@@ -75,3 +75,55 @@ jobs:
           path: |
             build/jpackage/*
             !build/jpackage/Shrike/
+
+  checksums:
+    needs: build
+    # The macOS arms fail without codesigning secrets and fail-fast is false, so this must not be
+    # skipped by the matrix job's overall result. It still stands down for a cancelled run.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: artifacts
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Each artifact lands in its own subdirectory, deliberately unmerged: merging would let two
+          # artifacts carrying the same filename overwrite one another without saying so.
+          mapfile -t files < <(find artifacts -type f \
+            \( -name '*.msi' -o -name '*.zip' -o -name '*.tar.gz' -o -name '*.deb' \
+               -o -name '*.rpm' -o -name '*.dmg' -o -name '*.pkg' \) | LC_ALL=C sort)
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No release binaries found in any artifact" >&2
+            exit 1
+          fi
+
+          # A checksum line carries a bare filename, so two files sharing one would be indistinguishable
+          # to sha256sum -c. Report it rather than letting one silently stand for the other.
+          # Stripping the directory in the shell rather than via xargs, whose word splitting would
+          # break on the spaces in the artifact names these are downloaded into.
+          duplicates=$(printf '%s\n' "${files[@]##*/}" | LC_ALL=C sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "The same filename appears in more than one artifact:" >&2
+            echo "$duplicates" >&2
+            exit 1
+          fi
+
+          # Hashed from each file's own directory so the name is bare, then sorted on the filename
+          # field. LC_ALL=C keeps the order the same wherever this runs.
+          for file in "${files[@]}"; do
+            ( cd "$(dirname "$file")" && sha256sum "$(basename "$file")" )
+          done | LC_ALL=C sort -k 2 > SHA256SUMS
+
+          echo "$(wc -l < SHA256SUMS) entries"
+          cat SHA256SUMS
+      - name: Upload SHA256SUMS
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SHA256SUMS
+          path: SHA256SUMS
