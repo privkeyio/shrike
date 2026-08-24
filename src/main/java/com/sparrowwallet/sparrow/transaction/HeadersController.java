@@ -535,7 +535,15 @@ public class HeadersController extends TransactionFormController implements Init
             boolean silentPaymentOutput = psbt.getPsbtOutputs().stream().anyMatch(o -> o.getSilentPaymentAddress() != null);
             SigHash requiredSigHash = taprootInput ? SigHash.DEFAULT : SigHash.ALL;
             SigHash psbtSigHash = silentPaymentOutput ? requiredSigHash : psbt.getPsbtInputs().stream().map(PSBTInput::getSigHash).filter(Objects::nonNull).findFirst().orElse(requiredSigHash);
-            sigHash.setItems(FXCollections.observableList(silentPaymentOutput ? List.of(requiredSigHash) : (taprootInput ? SigHash.TAPROOT_SIGNING_TYPES : SigHash.LEGACY_SIGNING_TYPES)));
+            //An opted-in PSBT must offer the opted-in types, or the value shown is not one of the items and
+            //the first interaction silently drops the opt-in with no way to select it again. Offering them
+            //only when the PSBT already opted in keeps this a way to change what the signature covers, and
+            //not a way to opt in on a chain where the rules do not apply yet, which would be unspendable.
+            List<SigHash> signingTypes = taprootInput ? SigHash.TAPROOT_SIGNING_TYPES : SigHash.LEGACY_SIGNING_TYPES;
+            if(psbtSigHash.isUnified()) {
+                signingTypes = signingTypes.stream().map(SigHash::withUnified).distinct().toList();
+            }
+            sigHash.setItems(FXCollections.observableList(silentPaymentOutput ? List.of(requiredSigHash) : signingTypes));
             sigHash.setValue(psbtSigHash);
             sigHash.setConverter(new StringConverter<>() {
                 @Override
@@ -544,7 +552,8 @@ public class HeadersController extends TransactionFormController implements Init
                         return "";
                     }
 
-                    boolean recommended = (taprootInput && sigHash == SigHash.DEFAULT) || (!taprootInput && sigHash == SigHash.ALL);
+                    SigHash base = sigHash.withoutUnified();
+                    boolean recommended = (taprootInput && base == SigHash.DEFAULT) || (!taprootInput && base == SigHash.ALL);
                     return sigHash.getName() + (recommended ? (silentPaymentOutput ? " (Required)" : " (Recommended)") : "");
                 }
 
@@ -554,7 +563,8 @@ public class HeadersController extends TransactionFormController implements Init
                 }
             });
             sigHash.valueProperty().addListener((observable, oldValue, newValue) -> {
-                if(newValue == SigHash.NONE || newValue == SigHash.ANYONECANPAY_NONE) {
+                SigHash newBase = (newValue == null ? null : newValue.withoutUnified());
+                if(newBase == SigHash.NONE || newBase == SigHash.ANYONECANPAY_NONE) {
                     Optional<ButtonType> optType = AppServices.showWarningDialog("Confirm Sighash None",
                             "A sighash value of none means the signature does not commit to any of the outputs, and can be reused on a transaction with different outputs.\n\nAre you sure?",
                             ButtonType.NO, ButtonType.YES);

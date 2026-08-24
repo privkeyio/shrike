@@ -934,26 +934,21 @@ public class AppServices {
      * decision is made in one place; the private key sweep builds its own PSBT from a key that is not in
      * a wallet, and keeps signing the way it does today.
      *
-     * There is deliberately no way for a user to force this either way, and it is worth saying why so the
-     * question does not get reopened on every read.
+     * The wallet does not offer a control for forcing this on. Every input to the decision that it can
+     * establish, it establishes more reliably than a person: whether the chain has reached the height,
+     * whether the connected node agrees with the schedule this build ships, and whether every key that
+     * will sign belongs to a signer that implements the opt-in. Opting in before the rules apply is
+     * refused by the network outright, checked against a node, with the reason "Signature hash type
+     * missing or not understood", while the same spend without the opt-in is accepted and mined.
      *
-     * Forcing it on cannot work. Every input to the decision is something the wallet establishes more
-     * reliably than a person can: whether the fork is scheduled for this network, whether the node agrees
-     * with the schedule this build ships, whether the chain has actually reached it, and whether every
-     * key that will sign belongs to a signer that implements the opt-in. Overriding any of those produces
-     * a transaction the network refuses, or one a device signs under the wrong message so that it never
-     * verifies, and in both cases the failure surfaces far from the switch that caused it. Checked
-     * against a node: opting in before the activation height is rejected outright, with the reason
-     * "Signature hash type missing or not understood", while the same spend without the opt-in is
-     * accepted and mined.
+     * That argument does not extend to forcing it off, and the sighash control in the transaction view
+     * already amounts to such a switch. Turning it off is a real want: the hash type travels in the PSBT,
+     * so a co-signer, a payjoin receiver or any other tool that does not know the byte will refuse a
+     * transaction this wallet considered safe, and a legacy signature is always valid.
      *
-     * Forcing it off is coherent but buys nothing. The decision already declines wherever opting in would
-     * be unsafe, so the only transactions an override could reach are the ones where it is safe, and the
-     * effect is a weaker signature for no gain.
-     *
-     * What is missing is not a lever but a readout: the decision is invisible, so a user cannot tell
-     * whether a given transaction carries the protection. That gap is worth closing, and it is a
-     * different thing from an override.
+     * Nor is the wallet always better informed. Where this build ships no height for the network the
+     * decision declines however far past activation the chain is, which is a stale table rather than a
+     * judgement, and warnActivationHeightUnknown says so to the user.
      */
     public static PSBT createPSBT(WalletTransaction walletTransaction) {
         return createPSBT(walletTransaction, isUnifiedSigHashActive() && canSignUnified(walletTransaction.getWallet()));
