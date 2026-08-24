@@ -933,6 +933,27 @@ public class AppServices {
      * chain has it and this wallet holds the keys. Every wallet send path goes through here so the
      * decision is made in one place; the private key sweep builds its own PSBT from a key that is not in
      * a wallet, and keeps signing the way it does today.
+     *
+     * There is deliberately no way for a user to force this either way, and it is worth saying why so the
+     * question does not get reopened on every read.
+     *
+     * Forcing it on cannot work. Every input to the decision is something the wallet establishes more
+     * reliably than a person can: whether the fork is scheduled for this network, whether the node agrees
+     * with the schedule this build ships, whether the chain has actually reached it, and whether every
+     * key that will sign belongs to a signer that implements the opt-in. Overriding any of those produces
+     * a transaction the network refuses, or one a device signs under the wrong message so that it never
+     * verifies, and in both cases the failure surfaces far from the switch that caused it. Checked
+     * against a node: opting in before the activation height is rejected outright, with the reason
+     * "Signature hash type missing or not understood", while the same spend without the opt-in is
+     * accepted and mined.
+     *
+     * Forcing it off is coherent but buys nothing. The decision already declines wherever opting in would
+     * be unsafe, so the only transactions an override could reach are the ones where it is safe, and the
+     * effect is a weaker signature for no gain.
+     *
+     * What is missing is not a lever but a readout: the decision is invisible, so a user cannot tell
+     * whether a given transaction carries the protection. That gap is worth closing, and it is a
+     * different thing from an override.
      */
     public static PSBT createPSBT(WalletTransaction walletTransaction) {
         return createPSBT(walletTransaction, isUnifiedSigHashActive() && canSignUnified(walletTransaction.getWallet()));
