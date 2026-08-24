@@ -535,15 +535,11 @@ public class HeadersController extends TransactionFormController implements Init
             boolean silentPaymentOutput = psbt.getPsbtOutputs().stream().anyMatch(o -> o.getSilentPaymentAddress() != null);
             SigHash requiredSigHash = taprootInput ? SigHash.DEFAULT : SigHash.ALL;
             SigHash psbtSigHash = silentPaymentOutput ? requiredSigHash : psbt.getPsbtInputs().stream().map(PSBTInput::getSigHash).filter(Objects::nonNull).findFirst().orElse(requiredSigHash);
-            //An opted-in PSBT must offer the opted-in types, or the value shown is not one of the items and
-            //the first interaction silently drops the opt-in with no way to select it again. Offering them
-            //only when the PSBT already opted in keeps this a way to change what the signature covers, and
-            //not a way to opt in on a chain where the rules do not apply yet, which would be unspendable.
-            List<SigHash> signingTypes = taprootInput ? SigHash.TAPROOT_SIGNING_TYPES : SigHash.LEGACY_SIGNING_TYPES;
-            if(psbtSigHash.isUnified()) {
-                signingTypes = signingTypes.stream().map(SigHash::withUnified).distinct().toList();
-            }
+            List<SigHash> signingTypes = unifiedItemsFor(taprootInput ? SigHash.TAPROOT_SIGNING_TYPES : SigHash.LEGACY_SIGNING_TYPES, psbtSigHash);
+            SigHash recommendedSigHash = recommendedSigHashFor(requiredSigHash, psbtSigHash);
             sigHash.setItems(FXCollections.observableList(silentPaymentOutput ? List.of(requiredSigHash) : signingTypes));
+            //Set before the listener below is attached, so a PSBT that already asks for NONE does not
+            //raise the confirmation dialog while the view is still initialising. Keep that order.
             sigHash.setValue(psbtSigHash);
             sigHash.setConverter(new StringConverter<>() {
                 @Override
@@ -552,8 +548,7 @@ public class HeadersController extends TransactionFormController implements Init
                         return "";
                     }
 
-                    SigHash base = sigHash.withoutUnified();
-                    boolean recommended = (taprootInput && base == SigHash.DEFAULT) || (!taprootInput && base == SigHash.ALL);
+                    boolean recommended = (sigHash == recommendedSigHash);
                     return sigHash.getName() + (recommended ? (silentPaymentOutput ? " (Required)" : " (Recommended)") : "");
                 }
 
@@ -925,6 +920,32 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         return null;
+    }
+
+    /**
+     * The hash types the sighash control offers for a PSBT that already asks for the opted-in signature
+     * hash. Its value must be among its items: a ComboBox showing a value it does not list replaces it on
+     * the first interaction, so an unmapped list drops the opt-in with nothing to select to get it back.
+     *
+     * Mapped only when the PSBT opted in already, which keeps this a way to change what the signature
+     * covers rather than a way to opt in. Opting in where the rules do not yet apply is refused by the
+     * network outright, so offering it there would produce an unspendable transaction.
+     *
+     * DEFAULT collapses into UNIFIED_ALL rather than gaining a form of its own, since it means "append no
+     * hash type byte" and there is nothing for the opt-in bit to live in.
+     */
+    static List<SigHash> unifiedItemsFor(List<SigHash> signingTypes, SigHash psbtSigHash) {
+        return psbtSigHash.isUnified() ? signingTypes.stream().map(SigHash::withUnified).distinct().toList() : signingTypes;
+    }
+
+    /**
+     * The type marked as recommended, which has to follow the PSBT into its opted-in form. Marking the
+     * base type there would leave the mark on nothing, since the opted-in list does not contain it:
+     * UNIFIED_ALL reads back as ALL rather than DEFAULT, so a taproot PSBT would show no recommendation
+     * at all.
+     */
+    static SigHash recommendedSigHashFor(SigHash requiredSigHash, SigHash psbtSigHash) {
+        return psbtSigHash.isUnified() ? requiredSigHash.withUnified() : requiredSigHash;
     }
 
     private static class BlockHeightContextMenu extends ContextMenu {
