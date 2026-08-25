@@ -21,7 +21,14 @@ git submodule update --init --recursive
 
 Java 25 or higher is required, as upstream. `--recursive` matters: the BLAKE2b work lives in the drongo submodule, and a plain clone leaves it empty. If you clone over SSH instead, make sure an ssh-agent is running with your key added, or the submodule clones fail with `Permission denied (publickey)` even though the parent clone succeeded.
 
-No release binaries are published for Shrike. Build from source.
+Pre-release binaries are published under [Releases](https://github.com/AcesHigh70/sparrow/releases). They are signed with GPG key `C9E21BFB DFC040AB 9BE85AFB 2053BF48 10B0A6FB`, not the Sparrow key named further down this file. Verify with:
+
+```bash
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+They are for testing and are not for real coins. Building from source is described above.
 
 ---
 
