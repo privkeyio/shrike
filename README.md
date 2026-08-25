@@ -1,5 +1,7 @@
 # Shrike
 
+> **Unmaintained.** This fork is no longer developed and no binaries are published. It is left here as a record of the work. Nothing in it should be used with real funds, and the code has not been reviewed or tested for that purpose. No warranty of any kind — see the [Apache 2.0 licence](LICENSE).
+
 Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork chain proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) — everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
 
 It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. The v2 header fork is live on testnet4, activating at height 149537. On mainnet the forked chain still uses SHA256d; the BLAKE2b proof-of-work change is scheduled for 1 September 2026, and the activation height is not yet announced. Shrike is therefore intended for developers and testing, not for holding funds.
@@ -21,14 +23,9 @@ git submodule update --init --recursive
 
 Java 25 or higher is required, as upstream. `--recursive` matters: the BLAKE2b work lives in the drongo submodule, and a plain clone leaves it empty. If you clone over SSH instead, make sure an ssh-agent is running with your key added, or the submodule clones fail with `Permission denied (publickey)` even though the parent clone succeeded.
 
-Pre-release binaries are published under [Releases](https://github.com/AcesHigh70/sparrow/releases). They are signed with GPG key `C9E21BFB DFC040AB 9BE85AFB 2053BF48 10B0A6FB`, not the Sparrow key named further down this file. Verify with:
+No binaries are published for this fork. Build from source as described above.
 
-```bash
-gpg --verify SHA256SUMS.asc SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing
-```
-
-They are for testing and are not for real coins. Building from source is described above.
+Binaries previously published here have been withdrawn. They predate a change to the unified sighash message and produce signatures a current node rejects, so they should not be used.
 
 ---
 
