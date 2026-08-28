@@ -11,6 +11,9 @@ env:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
+    env:
+      # The secrets context cannot be read from a step-level if, so its presence is surfaced here.
+      HAS_MACOS_CERT: ${{ secrets.MACOS_CERTIFICATE != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -32,15 +35,25 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew jpackage
       - name: Codesign, package and notarize macOS distribution
-        if: ${{ runner.os == 'macOS' }}
+        if: ${{ runner.os == 'macOS' && env.HAS_MACOS_CERT == 'true' }}
         uses: sparrowwallet/github-actions/codesign-macos@6eeb7bf9b882cf89ff96b77f99bcf487b9d33992 # v1
         with:
-          app-name: Sparrow
+          app-name: Shrike
           certificate: ${{ secrets.MACOS_CERTIFICATE }}
           certificate-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           apple-id: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
           team-id: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
           notarization-password: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+      - name: Package unsigned macOS distribution
+        if: ${{ runner.os == 'macOS' && env.HAS_MACOS_CERT != 'true' }}
+        run: |
+          set -euo pipefail
+          cd build/jpackage
+          # hdiutil ships with macOS; create-dmg would need a brew install that is not available here.
+          VERSION=$(grep -m1 "^version" ../../build.gradle | cut -d"'" -f2)
+          hdiutil create -volname Shrike -srcfolder Shrike.app -ov -format UDZO \
+            "Shrike-${VERSION}-$(uname -m)-unsigned.dmg"
+          ls -la *.dmg
       - name: Package Windows zip distribution
         if: ${{ runner.os == 'Windows' }}
         run: ./gradlew packageZipDistribution
