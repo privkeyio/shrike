@@ -1,14 +1,14 @@
 # Shrike
 
-> **Maintained here for testing the BLAKE2b hard fork.** This is not the Sparrow project and is not affiliated with it. Nothing in it should be used with real funds, and the code has not been audited for that purpose. No warranty of any kind — see the [Apache 2.0 licence](LICENSE).
+> **Maintained here for testing the BLAKE2b hard fork.** This is not the Sparrow project and is not affiliated with it. Nothing in it should be used with real funds, and the code has not been audited for that purpose. No warranty of any kind, see the [Apache 2.0 licence](LICENSE).
 
-Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork chain proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) — everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow), everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
 
 It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. The v2 header fork is live on testnet4, activating at height 150027. That height has moved between pre-release builds, so the wallet cross-checks the height it ships against the connected node and declines to opt in rather than follow either side of a disagreement. On mainnet the forked chain still uses SHA256d; the BLAKE2b proof-of-work change is scheduled for 1 September 2026, and the activation height is not yet announced. Shrike is therefore intended for developers and testing, not for holding funds.
 
 > **DO NOT USE THIS ON MAINNET OR THE FORKED MAINNET CHAIN.**
 >
-> **IF YOU DO, YOU HAVE NO REPLAY PROTECTION.** No build carries a mainnet activation height, so past activation the wallet declines to opt in and signs the legacy way. The same happens on any chain if even one keystore is hardware-held. Those signatures are valid on both the forked chain and the original one — which is exactly what replay protection exists to prevent. The wallet notes this in its log. It does not stop you.
+> **IF YOU DO, YOU HAVE NO REPLAY PROTECTION.** No build carries a mainnet activation height, so past activation the wallet declines to opt in and signs the legacy way. The same happens anywhere if even one keystore is hardware-held. A signature that does not opt in is valid under the pre-fork rules as well as the new ones, so it can be replayed against nodes that have not adopted the fork. Opting in is what prevents that. The wallet notes this in its log. It does not stop you.
 
 Shrike carries its own application identity, so it installs and runs alongside an existing Sparrow without sharing any state with it. Its configuration, wallets and log file live in `~/.shrike` and the corresponding XDG directories, rather than the `~/.sparrow` that upstream uses, and the two have separate single instance locks. The Linux packages are named `shrike` and `shrikeserver` and install under their own prefix, `/opt/shrike` or `/opt/shrikeserver`, registering their own desktop entry and MIME types rather than upstream's, so they should not overwrite an existing Sparrow install. That has been checked by inspecting the contents of the built deb and rpm, not by installing them on a machine alongside an upstream Sparrow. Only the Linux packaging has been renamed so far: the macOS bundle metadata and the Windows installer still carry upstream's names. The version reports as `2.5.4-blake2b.1`, being the upstream version this fork is based on with a suffix identifying it.
 
@@ -16,7 +16,7 @@ The v2 header parsing and serialisation, and the proof-of-work hash pipeline, li
 
 The drongo unit tests assert every stage of the proof-of-work pipeline against the reference implementation's own test vectors (`block_header_v2.json` from [luke-jr/bitcoin](https://github.com/luke-jr/bitcoin), branch `pow_hf_blake2b`). The wallet has also been verified end to end against a live forked regtest node: connect, sync, send and confirm. Instructions to [reproduce that verification](docs/blake2b-regtest.md) are provided.
 
-Building is the same as upstream, except that the drongo submodule must come from this fork — clone this repository, not upstream's:
+Building is the same as upstream, except that the drongo submodule must come from this fork, clone this repository, not upstream's:
 
 ```bash
 git clone --recursive https://github.com/privkeyio/sparrow.git shrike
