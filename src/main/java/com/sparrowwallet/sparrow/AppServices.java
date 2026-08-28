@@ -993,13 +993,22 @@ public class AppServices {
      * establish, it establishes more reliably than a person: whether the chain has reached the height,
      * whether the connected node agrees with the schedule this build ships, and whether every key that
      * will sign belongs to a signer that implements the opt-in. Opting in before the rules apply is
-     * refused by the network outright, checked against a node, with the reason "Signature hash type
-     * missing or not understood", while the same spend without the opt-in is accepted and mined.
+     * refused by the network, checked against a node both ways. On a chain that never schedules the
+     * fork the mempool refuses it outright, "Signature opts in to the hardfork, which is not active
+     * here". On one that schedules it but has not reached the height the mempool takes it, since relay
+     * is keyed to the fork being scheduled rather than active, and no block can carry it until
+     * activation. The same spend without the opt-in is accepted and mined in both cases.
      *
-     * That argument does not extend to forcing it off, and the sighash control in the transaction view
-     * already amounts to such a switch. Turning it off is a real want: the hash type travels in the PSBT,
-     * so a co-signer, a payjoin receiver or any other tool that does not know the byte will refuse a
-     * transaction this wallet considered safe, and a legacy signature is always valid.
+     * That argument does not extend to forcing it off, and there is currently no way to do so. The
+     * sighash control in the transaction view offers only opted-in types once the PSBT has opted in, so
+     * changing what the signature covers keeps the opt-in rather than dropping it. Turning it off is a
+     * real want: the hash type travels in the PSBT, so a co-signer, a payjoin receiver or any other tool
+     * that does not know the byte will refuse a transaction this wallet considered safe, and a legacy
+     * signature is always valid.
+     *
+     * It is deliberately not a bare toggle. Off means the signature verifies under both rule sets, so the
+     * transaction can be replayed on the chain that did not fork, which is the protection being given up
+     * and has to be said rather than implied.
      *
      * Nor is the wallet always better informed. Where this build ships no height for the network the
      * decision declines however far past activation the chain is, which is a stale table rather than a
