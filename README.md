@@ -1,10 +1,10 @@
 # Shrike
 
-> **Unmaintained.** This fork is no longer developed and no binaries are published. It is left here as a record of the work. Nothing in it should be used with real funds, and the code has not been reviewed or tested for that purpose. No warranty of any kind — see the [Apache 2.0 licence](LICENSE).
+> **Maintained here for testing the BLAKE2b hard fork.** This is not the Sparrow project and is not affiliated with it. Nothing in it should be used with real funds, and the code has not been audited for that purpose. No warranty of any kind — see the [Apache 2.0 licence](LICENSE).
 
 Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork chain proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) — everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
 
-It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. The v2 header fork is live on testnet4, activating at height 149537. On mainnet the forked chain still uses SHA256d; the BLAKE2b proof-of-work change is scheduled for 1 September 2026, and the activation height is not yet announced. Shrike is therefore intended for developers and testing, not for holding funds.
+It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. The v2 header fork is live on testnet4, activating at height 150027. That height has moved between pre-release builds, so the wallet cross-checks the height it ships against the connected node and declines to opt in rather than follow either side of a disagreement. On mainnet the forked chain still uses SHA256d; the BLAKE2b proof-of-work change is scheduled for 1 September 2026, and the activation height is not yet announced. Shrike is therefore intended for developers and testing, not for holding funds.
 
 > **DO NOT USE THIS ON MAINNET OR THE FORKED MAINNET CHAIN.**
 >
@@ -27,7 +27,17 @@ git submodule update --init --recursive
 
 Java 25 or higher is required, as upstream. `--recursive` matters: the BLAKE2b work lives in the drongo submodule, and a plain clone leaves it empty. If you clone over SSH instead, make sure an ssh-agent is running with your key added, or the submodule clones fail with `Permission denied (publickey)` even though the parent clone succeeded.
 
-No binaries are published for this fork. Build from source as described above.
+A signed Linux build is published under [Releases](https://github.com/privkeyio/sparrow/releases). To verify it:
+
+```bash
+gpg --import privkeyio-signing-key.asc
+gpg --verify shrike_2.5.4-1_amd64.deb.sha256.asc shrike_2.5.4-1_amd64.deb.sha256
+sha256sum -c shrike_2.5.4-1_amd64.deb.sha256
+```
+
+Signed by Kyle Santiago <kyle@privkey.io>, key `A47D99B6DB0D715D40C59A2023AE8A8EA7E24E38`. Only Linux is packaged; build from source as described above for other platforms.
+
+Builds published before the unified signature hash message changed produce signatures a current node rejects, and must be replaced rather than kept.
 
 Binaries previously published here have been withdrawn. They predate a change to the unified sighash message and produce signatures a current node rejects, so they should not be used.
 
