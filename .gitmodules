@@ -1,6 +1,6 @@
 [submodule "drongo"]
 	path = drongo
-	url = git@github.com:AcesHigh70/drongo.git
+	url = https://github.com/privkeyio/drongo.git
 [submodule "lark"]
 	path = lark
-	url = ../../sparrowwallet/lark.git
+	url = https://github.com/privkeyio/lark.git

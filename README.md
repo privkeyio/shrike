@@ -12,16 +12,16 @@ It adds support for the 164 byte v2 block header and the BLAKE2b proof of work u
 
 Shrike carries its own application identity, so it installs and runs alongside an existing Sparrow without sharing any state with it. Its configuration, wallets and log file live in `~/.shrike` and the corresponding XDG directories, rather than the `~/.sparrow` that upstream uses, and the two have separate single instance locks. The Linux packages are named `shrike` and `shrikeserver` and install under their own prefix, `/opt/shrike` or `/opt/shrikeserver`, registering their own desktop entry and MIME types rather than upstream's, so they should not overwrite an existing Sparrow install. That has been checked by inspecting the contents of the built deb and rpm, not by installing them on a machine alongside an upstream Sparrow. Only the Linux packaging has been renamed so far: the macOS bundle metadata and the Windows installer still carry upstream's names. The version reports as `2.5.4-blake2b.1`, being the upstream version this fork is based on with a suffix identifying it.
 
-The v2 header parsing and serialisation, and the proof-of-work hash pipeline, live in the drongo submodule, which points at [AcesHigh70/drongo](https://github.com/AcesHigh70/drongo) branch `blake2b-header`. The lark submodule remains upstream's. Within the wallet itself, the bundled Cormorant now uses raw header hex from bitcoind rather than rebuilding headers from verbose JSON.
+The v2 header parsing and serialisation, and the proof-of-work hash pipeline, live in the drongo submodule, which points at [privkeyio/drongo](https://github.com/privkeyio/drongo) branch `blake2b`. The lark submodule points at [privkeyio/lark](https://github.com/privkeyio/lark), pinned to the same commit as upstream's. Within the wallet itself, the bundled Cormorant now uses raw header hex from bitcoind rather than rebuilding headers from verbose JSON.
 
 The drongo unit tests assert every stage of the proof-of-work pipeline against the reference implementation's own test vectors (`block_header_v2.json` from [luke-jr/bitcoin](https://github.com/luke-jr/bitcoin), branch `pow_hf_blake2b`). The wallet has also been verified end to end against a live forked regtest node: connect, sync, send and confirm. Instructions to [reproduce that verification](docs/blake2b-regtest.md) are provided.
 
 Building is the same as upstream, except that the drongo submodule must come from this fork — clone this repository, not upstream's:
 
 ```bash
-git clone --recursive https://github.com/AcesHigh70/sparrow.git shrike
+git clone --recursive https://github.com/privkeyio/sparrow.git shrike
 cd shrike
-git checkout blake2b-header
+git checkout blake2b
 git submodule update --init --recursive
 ```
 
@@ -136,7 +136,7 @@ Specifying a home folder with the `-d` argument disables XDG resolution entirely
 
 ## Reporting Issues
 
-Please use the [Issues](https://github.com/AcesHigh70/sparrow/issues) tab above to report an issue with this fork. Issues that are not specific to the BLAKE2b fork should be reported [upstream](https://github.com/sparrowwallet/sparrow/issues) instead. If possible, look in the sparrow.log file in the configuration directory for information helpful in debugging. 
+Please use the [Issues](https://github.com/privkeyio/sparrow/issues) tab above to report an issue with this fork. Issues that are not specific to the BLAKE2b fork should be reported [upstream](https://github.com/sparrowwallet/sparrow/issues) instead. If possible, look in the sparrow.log file in the configuration directory for information helpful in debugging. 
 
 ## License
 
