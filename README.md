@@ -4,6 +4,8 @@
 
 Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow), everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
 
+Shrike was created by [AcesHigh70](https://github.com/AcesHigh70), who wrote the v2 block header and BLAKE2b proof-of-work support, the separate application identity, and the packaging. That work is no longer maintained there. This fork continues it, and adds the unified opt-in signature hash together with the changes needed to track Bitcoin Knots release candidates.
+
 It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. The v2 header fork is live on testnet4, activating at height 150027. That height has moved between pre-release builds, so the wallet cross-checks the height it ships against the connected node and declines to opt in rather than follow either side of a disagreement. On mainnet the forked chain still uses SHA256d; the BLAKE2b proof-of-work change is scheduled for 1 September 2026, and the activation height is not yet announced. Shrike is therefore intended for developers and testing, not for holding funds.
 
 > **DO NOT USE THIS ON MAINNET OR THE FORKED MAINNET CHAIN.**
