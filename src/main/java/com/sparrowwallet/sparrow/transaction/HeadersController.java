@@ -259,6 +259,8 @@ public class HeadersController extends TransactionFormController implements Init
 
     private ElectrumServer.TransactionMempoolService transactionMempoolService;
 
+    private BitcoinURI payjoinURI;
+
     private final Map<Integer, String> outputIndexLabels = new TreeMap<>();
 
     @Override
@@ -302,7 +304,6 @@ public class HeadersController extends TransactionFormController implements Init
                 EventManager.get().post(new TransactionChangedEvent(tx));
             }
         });
-        version.setDisable(!headersForm.isEditable());
 
         updateType();
 
@@ -446,13 +447,7 @@ public class HeadersController extends TransactionFormController implements Init
             }
         });
 
-        boolean locktimeEnabled = headersForm.getTransaction().isLocktimeSequenceEnabled();
-        locktimeNoneType.setDisable(!headersForm.isEditable() || !locktimeEnabled);
-        locktimeBlockType.setDisable(!headersForm.isEditable() || !locktimeEnabled);
-        locktimeDateType.setDisable(!headersForm.isEditable() || !locktimeEnabled);
-        locktimeBlock.setDisable(!headersForm.isEditable() || !locktimeEnabled);
-        locktimeDate.setDisable(!headersForm.isEditable() || !locktimeEnabled);
-        locktimeCurrentHeight.setDisable(!headersForm.isEditable() || !locktimeEnabled);
+        updateEditable(headersForm.isEditable());
 
         updateSize();
 
@@ -473,6 +468,10 @@ public class HeadersController extends TransactionFormController implements Init
         if(feeAmt != null) {
             updateFee(feeAmt);
         }
+
+        boolean silentPaymentOutput = headersForm.getPsbt() != null && headersForm.getPsbt().getPsbtOutputs().stream().anyMatch(o -> o.getSilentPaymentAddress() != null);
+        payjoinURI = silentPaymentOutput ? null : getPayjoinURI();
+        transactionDiagram.setPayjoinURI(payjoinURI);
 
         headersForm.walletTransactionProperty().addListener((observable, oldValue, walletTransaction) -> {
             transactionDiagram.update(walletTransaction);
@@ -502,7 +501,6 @@ public class HeadersController extends TransactionFormController implements Init
         saveFinalButton.visibleProperty().bind(broadcastButton.visibleProperty().not());
         broadcastButton.visibleProperty().bind(AppServices.onlineProperty());
 
-        BitcoinURI payjoinURI = getPayjoinURI();
         boolean isPayjoinOriginalTx = payjoinURI != null && headersForm.getPsbt() != null && headersForm.getPsbt().getPsbtInputs().stream().noneMatch(PSBTInput::isFinalized);
         payjoinButton.managedProperty().bind(payjoinButton.visibleProperty());
         payjoinButton.visibleProperty().set(isPayjoinOriginalTx);
@@ -540,7 +538,6 @@ public class HeadersController extends TransactionFormController implements Init
             noWalletsWarningLink.visibleProperty().bind(noWalletsWarning.visibleProperty());
 
             boolean taprootInput = psbt.getPsbtInputs().stream().anyMatch(PSBTInput::isTaproot);
-            boolean silentPaymentOutput = psbt.getPsbtOutputs().stream().anyMatch(o -> o.getSilentPaymentAddress() != null);
             SigHash requiredSigHash = taprootInput ? SigHash.DEFAULT : SigHash.ALL;
             SigHash psbtSigHash = silentPaymentOutput ? requiredSigHash : psbt.getPsbtInputs().stream().map(PSBTInput::getSigHash).filter(Objects::nonNull).findFirst().orElse(requiredSigHash);
             List<SigHash> signingTypes = unifiedItemsFor(taprootInput ? SigHash.TAPROOT_SIGNING_TYPES : SigHash.LEGACY_SIGNING_TYPES, psbtSigHash);
@@ -832,9 +829,22 @@ public class HeadersController extends TransactionFormController implements Init
         return null;
     }
 
+    private void updateEditable(boolean editable) {
+        version.setDisable(!editable);
+
+        boolean locktimeEnabled = editable && headersForm.getTransaction().isLocktimeSequenceEnabled();
+        locktimeNoneType.setDisable(!locktimeEnabled);
+        locktimeBlockType.setDisable(!locktimeEnabled);
+        locktimeDateType.setDisable(!locktimeEnabled);
+        locktimeBlock.setDisable(!locktimeEnabled);
+        locktimeDate.setDisable(!locktimeEnabled);
+        locktimeCurrentHeight.setDisable(!locktimeEnabled);
+    }
+
     private void updateBlockchainForm(BlockTransaction blockTransaction, Integer currentHeight) {
         signaturesForm.setVisible(false);
         blockchainForm.setVisible(true);
+        updateEditable(false);
 
         if(Sha256Hash.ZERO_HASH.equals(blockTransaction.getBlockHash()) && blockTransaction.getHeight() == 0 && headersForm.getSigningWallet() == null) {
             //A zero block hash indicates that this blocktransaction is incomplete and the height is likely incorrect if we are not sending a tx
@@ -919,21 +929,13 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     private BitcoinURI getPayjoinURI() {
-        if(headersForm.getPsbt() != null) {
-            for(TransactionOutput txOutput : headersForm.getPsbt().getTransaction().getOutputs()) {
-                try {
-                    Address address = txOutput.getScript().getToAddresses()[0];
-                    BitcoinURI bitcoinURI = AppServices.getPayjoinURI(address);
-                    if(bitcoinURI != null) {
-                        return bitcoinURI;
-                    }
-                } catch(Exception e) {
-                    //ignore
-                }
-            }
-        }
+        return AppServices.getPayjoinURI(headersForm.getPsbt());
+    }
 
-        return null;
+    private void registerPayjoinURI() {
+        if(payjoinURI != null) {
+            AppServices.addPayjoinURI(headersForm.getPsbt(), payjoinURI);
+        }
     }
 
     /**
@@ -1341,6 +1343,9 @@ public class HeadersController extends TransactionFormController implements Init
 
         ElectrumServer.BroadcastTransactionService broadcastTransactionService = new ElectrumServer.BroadcastTransactionService(headersForm.getTransaction(), fee.getValue());
         broadcastTransactionService.setOnSucceeded(workerStateEvent -> {
+            AppServices.clearPayjoinURI(headersForm.getPsbt());
+            payjoinButton.setVisible(false);
+
             //Although we wait for WalletNodeHistoryChangedEvent to indicate tx is in mempool, start a scheduled service to check the script hashes should notifications fail
             if(headersForm.getSigningWallet() != null) {
                 if(transactionMempoolService != null) {
@@ -1496,12 +1501,12 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     public void getPayjoinTransaction(ActionEvent event) {
-        BitcoinURI payjoinURI = getPayjoinURI();
-        if(payjoinURI == null) {
+        BitcoinURI currentPayjoinURI = getPayjoinURI();
+        if(currentPayjoinURI == null) {
             throw new IllegalStateException("No valid Payjoin URI");
         }
 
-        Payjoin payjoin = new Payjoin(payjoinURI, headersForm.getSigningWallet(), headersForm.getPsbt());
+        Payjoin payjoin = new Payjoin(currentPayjoinURI, headersForm.getSigningWallet(), headersForm.getPsbt());
         Payjoin.RequestPayjoinPSBTService requestPayjoinPSBTService = new Payjoin.RequestPayjoinPSBTService(payjoin, true);
         requestPayjoinPSBTService.setOnSucceeded(successEvent -> {
             PSBT proposalPsbt = requestPayjoinPSBTService.getValue();
@@ -1559,13 +1564,8 @@ public class HeadersController extends TransactionFormController implements Init
     public void transactionChanged(TransactionChangedEvent event) {
         if(headersForm.getTransaction().equals(event.getTransaction())) {
             updateTxId();
-            boolean locktimeEnabled = headersForm.isEditable() && headersForm.getTransaction().isLocktimeSequenceEnabled();
-            locktimeNoneType.setDisable(!locktimeEnabled);
-            locktimeBlockType.setDisable(!locktimeEnabled);
-            locktimeBlock.setDisable(!locktimeEnabled);
-            locktimeDateType.setDisable(!locktimeEnabled);
-            locktimeDate.setDisable(!locktimeEnabled);
-            locktimeCurrentHeight.setDisable(!locktimeEnabled);
+            updateEditable(headersForm.isEditable());
+            registerPayjoinURI();
         }
     }
 
@@ -1911,6 +1911,7 @@ public class HeadersController extends TransactionFormController implements Init
         if(event.getPsbt().equals(headersForm.getPsbt())) {
             updateTxId();
             headersForm.setWalletTransaction(getWalletTransaction(headersForm.getInputTransactions()));
+            registerPayjoinURI();
         }
     }
 

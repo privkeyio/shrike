@@ -4,6 +4,7 @@ import com.github.arteam.simplejsonrpc.client.exception.JsonRpcException;
 import com.google.common.base.Throwables;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.net.HostAndPort;
+import com.google.common.net.InetAddresses;
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.OsType;
 import com.sparrowwallet.drongo.policy.PolicyType;
@@ -174,6 +175,8 @@ public class ServerSettingsController extends SettingsDetailController {
 
     private Boolean useProxyOriginal;
 
+    private boolean coreServerWarningShown;
+
     @Override
     public void initializeView(Config config) {
         EventManager.get().register(this);
@@ -182,6 +185,7 @@ public class ServerSettingsController extends SettingsDetailController {
             if(connectionService != null && connectionService.isRunning()) {
                 connectionService.cancel();
             }
+            Platform.runLater(() -> showRemoteCoreServerWarning(config));
         });
 
         Platform.runLater(this::setupValidation);
@@ -403,7 +407,7 @@ public class ServerSettingsController extends SettingsDetailController {
         });
 
         useProxy.selectedProperty().addListener((observable, oldValue, newValue) -> {
-            config.setUseProxy(newValue);
+            config.setUseProxy(newValue && config.getProxyServer() != null && !config.getProxyServer().isBlank());
             proxyHost.setText(proxyHost.getText() + " ");
             proxyHost.setText(proxyHost.getText().trim());
             proxyHost.setDisable(!newValue);
@@ -422,6 +426,7 @@ public class ServerSettingsController extends SettingsDetailController {
         testConnection.setVisible(!isConnected);
         setTestResultsFont();
         testConnection.setOnAction(event -> {
+            showRemoteCoreServerWarning(config);
             testConnection.setGraphic(getGlyph(FontAwesome5.Glyph.ELLIPSIS_H, null));
             testResults.setText("Connecting " + (config.hasServer() ? "to " + config.getServer().getUrl() : "") + "...");
 
@@ -748,7 +753,7 @@ public class ServerSettingsController extends SettingsDetailController {
         ));
 
         validationSupport.registerValidator(proxyHost, Validator.combine(
-                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Proxy host required", useProxy.isSelected() && newValue.isEmpty()),
+                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Proxy host required", useProxy.isSelected() && newValue.isBlank()),
                 (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Invalid host name", getHost(newValue) == null)
         ));
 
@@ -814,6 +819,53 @@ public class ServerSettingsController extends SettingsDetailController {
         }
     }
 
+    private void showRemoteCoreServerWarning(Config config) {
+        Server coreServer = config.getCoreServer();
+        if(!coreServerWarningShown && config.getServerType() == ServerType.BITCOIN_CORE && isRemoteNode(coreServer)) {
+            coreServerWarningShown = true;
+
+            //A host that is not an IP literal is not resolved here, so it can only be reported as unconfirmed
+            String location = InetAddresses.isInetAddress(coreServer.getHost()) ? " is not on" : " could not be confirmed to be on";
+            StringBuilder warning = new StringBuilder("Bitcoin Core at " + coreServer.getHostAndPort() + location + " this computer or your local network.\n");
+            if(AppServices.isUsingProxy()) {
+                String proxy = config.isUseProxy() ? "configured proxy" : "internal Tor proxy";
+                warning.append("\nConnections to Bitcoin Core are made directly, and the " + proxy + " is only used for onion addresses. ");
+                warning.append("Your IP address will be visible to the node.\n");
+            }
+            if(coreServer.getProtocol() == Protocol.HTTP) {
+                warning.append("\nThe RPC credentials and wallet descriptors sent to it are unencrypted, and can be read by anyone on the network path.\n");
+            } else if(Storage.getCertificateFile(coreServer.getHost()) == null) {
+                warning.append("\nThe certificate presented by the node on the first connection will be trusted and required on all connections thereafter.\n");
+            }
+            warning.append("\nConnecting to the Bitcoin Core RPC interface over an untrusted network is not recommended by either Sparrow or Bitcoin Core. ");
+            warning.append("Consider using a node on this computer or your local network, connecting over a Tor onion address, or tunnelling to it over a VPN or SSH.");
+
+            AppServices.showWarningDialog("Remote Bitcoin Core node", warning.toString());
+        }
+    }
+
+    private boolean isRemoteNode(Server coreServer) {
+        if(coreServer == null || coreServer.isOnionAddress()) {
+            return false;
+        }
+
+        String host = coreServer.getHost();
+        if(IpAddressMatcher.isLocalNetworkName(host)) {
+            return false;
+        }
+
+        if(!InetAddresses.isInetAddress(host)) {
+            //Resolving a hostname here would block the user interface thread, and an unresolved host cannot be shown to be local
+            return true;
+        }
+
+        try {
+            return !IpAddressMatcher.isLocalNetworkAddress(host);
+        } catch(IllegalArgumentException e) {
+            return true;
+        }
+    }
+
     @NotNull
     private ChangeListener<String> getBitcoinAuthListener(Config config) {
         return (observable, oldValue, newValue) -> {
@@ -874,14 +926,22 @@ public class ServerSettingsController extends SettingsDetailController {
                 return;
             }
 
-            String hostAsString = getHost(proxyHost.getText());
-            Integer portAsInteger = getPort(proxyPort.getText());
-            if(hostAsString != null && portAsInteger != null && isValidPort(portAsInteger)) {
-                config.setProxyServer(HostAndPort.fromParts(hostAsString, portAsInteger).toString());
-            } else if(hostAsString != null) {
-                config.setProxyServer(HostAndPort.fromHost(hostAsString).toString());
-            }
+            setProxyConfig(config);
         };
+    }
+
+    private void setProxyConfig(Config config) {
+        String hostAsString = getHost(proxyHost.getText());
+        Integer portAsInteger = getPort(proxyPort.getText());
+        String proxyServer = null;
+        if(hostAsString != null && !hostAsString.isBlank() && portAsInteger != null && isValidPort(portAsInteger)) {
+            proxyServer = HostAndPort.fromParts(hostAsString, portAsInteger).toString();
+        } else if(hostAsString != null && !hostAsString.isBlank()) {
+            proxyServer = HostAndPort.fromHost(hostAsString).toString();
+        }
+
+        config.setProxyServer(proxyServer);
+        config.setUseProxy(useProxy.isSelected() && proxyServer != null);
     }
 
     private Protocol getProtocol() {
@@ -890,7 +950,7 @@ public class ServerSettingsController extends SettingsDetailController {
 
     private String getHost(String text) {
         try {
-            return HostAndPort.fromHost(text).getHost();
+            return HostAndPort.fromHost(text.trim()).getHost();
         } catch(IllegalArgumentException e) {
             return null;
         }

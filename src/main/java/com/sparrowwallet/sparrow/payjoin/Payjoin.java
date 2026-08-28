@@ -42,6 +42,10 @@ public class Payjoin {
             throw new IllegalArgumentException("Payjoin URI must have an address");
         }
 
+        if(psbt.getPsbtOutputs().stream().anyMatch(psbtOutput -> psbtOutput.getSilentPaymentAddress() != null)) {
+            throw new IllegalArgumentException("Original PSBT for payjoin transaction cannot contain silent payment outputs");
+        }
+
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
             if(psbtInput.getUtxo() == null) {
                 throw new IllegalArgumentException("Original PSBT for payjoin transaction must have non_witness_utxo or witness_utxo fields for all inputs");
@@ -183,8 +187,8 @@ public class Payjoin {
                 proposedPSBTInput.getTapDerivedPublicKeys().putAll(originalPSBTInput.getTapDerivedPublicKeys());
                 proposedPSBTInput.setTapInternalKey(originalPSBTInput.getTapInternalKey());
                 proposedPSBTInput.getProprietary().putAll(originalPSBTInput.getProprietary());
-                proposedPSBTInput.setRedeemScript(originalPSBTInput.getFinalScriptSig().getFirstNestedScript());
-                proposedPSBTInput.setWitnessScript(originalPSBTInput.getFinalScriptWitness().getWitnessScript());
+                proposedPSBTInput.setRedeemScript(originalPSBTInput.getFinalScriptSig() == null ? null : originalPSBTInput.getFinalScriptSig().getFirstNestedScript());
+                proposedPSBTInput.setWitnessScript(originalPSBTInput.getFinalScriptWitness() == null ? null : originalPSBTInput.getFinalScriptWitness().getWitnessScript());
                 proposedPSBTInput.setSigHash(originalPSBTInput.getSigHash());
             } else {
                 // Verify the PSBT input is finalized

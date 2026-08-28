@@ -12,6 +12,7 @@ import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletNode;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
+import com.sparrowwallet.sparrow.event.CormorantImportStatusEvent;
 import com.sparrowwallet.sparrow.event.CormorantPruneStatusEvent;
 import com.sparrowwallet.sparrow.event.CormorantScanStatusEvent;
 import com.sparrowwallet.sparrow.event.CormorantSyncStatusEvent;
@@ -19,6 +20,7 @@ import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.net.Bwt;
 import com.sparrowwallet.sparrow.net.ConfigurationException;
 import com.sparrowwallet.sparrow.net.CoreAuthType;
+import com.sparrowwallet.sparrow.net.ElectrumServerRpc;
 import com.sparrowwallet.sparrow.net.cormorant.Cormorant;
 import com.sparrowwallet.drongo.address.Address;
 import com.sparrowwallet.drongo.address.InvalidAddressException;
@@ -50,7 +52,6 @@ public class BitcoindClient {
     private static final long PRUNED_RESCAN_TIMEGAP_MILLIS = 7200*1000;
 
     //Error codes from https://github.com/bitcoin/bitcoin/blob/master/src/rpc/protocol.h
-    public static final int RPC_METHOD_NOT_FOUND = -32601;
     public static final int RPC_WALLET_NOT_FOUND = -18;
 
     public static final String WALLET_ALREADY_LOADING_MESSAGE = "Wallet already loading.";
@@ -92,6 +93,7 @@ public class BitcoindClient {
     private boolean initialImportStarted;
 
     private final List<String> pruneWarnedDescriptors = new ArrayList<>();
+    private final Set<String> importFailedDescriptors = Collections.synchronizedSet(new HashSet<>());
 
     private final Map<Sha256Hash, VsizeFeerate> mempoolEntries = new ConcurrentHashMap<>();
     private MempoolEntriesState mempoolEntriesState = MempoolEntriesState.UNINITIALIZED;
@@ -174,7 +176,7 @@ public class BitcoindClient {
             }
             legacyWalletExists = loadedWallets.contains(Bwt.DEFAULT_CORE_WALLET);
         } catch(JsonRpcException e) {
-            if(e.getErrorMessage().getCode() == RPC_METHOD_NOT_FOUND) {
+            if(ElectrumServerRpc.isMethodNotFound(e)) {
                 throw new BitcoinRPCException("Wallet support must be enabled in Bitcoin Core");
             } else {
                 throw e;
@@ -346,7 +348,7 @@ public class BitcoindClient {
         return wallet.getStandardAccountType() == StandardAccount.WHIRLPOOL_POSTMIX && keyPurpose == KeyPurpose.RECEIVE ? POSTMIX_GAP_LIMIT : DEFAULT_GAP_LIMIT;
     }
 
-    private void importDescriptors(Map<String, ScanDate> descriptors) throws ScanDateBeforePruneException {
+    private void importDescriptors(Map<String, ScanDate> descriptors) throws ScanDateBeforePruneException, ImportFailedException {
         //Sort descriptors in alphanumeric order to avoid deadlocks, particularly with BIP47 wallets
         Set<String> sortedDescriptors = new TreeSet<>(descriptors.keySet());
         for(String descriptor : sortedDescriptors) {
@@ -371,7 +373,7 @@ public class BitcoindClient {
         }
     }
 
-    private Set<String> addDescriptors(Map<String, ScanDate> descriptors) throws ScanDateBeforePruneException {
+    private Set<String> addDescriptors(Map<String, ScanDate> descriptors) throws ScanDateBeforePruneException, ImportFailedException {
         boolean forceRescan = descriptors.values().stream().anyMatch(scanDate -> scanDate.forceRescan);
         if(!initialized || forceRescan) {
             ListDescriptorsResult listDescriptorsResult = getBitcoindService().listDescriptors(false);
@@ -443,15 +445,28 @@ public class BitcoindClient {
                 scanningDescriptors.clear();
             }
 
+            if(results.size() != importDescriptors.size()) {
+                String error = "Bitcoin Core returned " + results.size() + " results for " + importDescriptors.size() + " imported descriptors";
+                log.error(error);
+                postImportFailure(importingDescriptors.keySet().stream().collect(Collectors.toMap(descriptor -> descriptor, descriptor -> error, (a, b) -> a, LinkedHashMap::new)));
+                throw new ImportFailedException(error);
+            }
+
+            Map<String, String> failedDescriptors = new LinkedHashMap<>();
             for(int i = 0; i < importDescriptors.size(); i++) {
                 ImportDescriptor importDescriptor = importDescriptors.get(i);
                 ImportDescriptorResult importDescriptorResult = results.get(i);
                 if(importDescriptorResult.success()) {
                     importedDescriptors.put(importDescriptor.getDesc(), importingDescriptors.get(importDescriptor.getDesc()));
+                    importFailedDescriptors.remove(importDescriptor.getDesc());
                 } else {
                     log.error("Error importing descriptor " + importDescriptor.getDesc() + ": " + importDescriptorResult);
+                    String error = importDescriptorResult.error() == null ? null : importDescriptorResult.error().getMessage();
+                    failedDescriptors.put(importDescriptor.getDesc(), error == null ? "Unknown error" : error);
                 }
             }
+
+            postImportFailure(failedDescriptors);
         }
 
         initialized = true;
@@ -462,6 +477,7 @@ public class BitcoindClient {
         AppServices.clearNodeHardforkHeight();
         timer.cancel();
         pruneWarnedDescriptors.clear();
+        importFailedDescriptors.clear();
         stopped = true;
     }
 
@@ -784,6 +800,32 @@ public class BitcoindClient {
         }
 
         return scanningWallets;
+    }
+
+    private void postImportFailure(Map<String, String> failedDescriptors) {
+        //Only warn once for each descriptor, until it is successfully imported again
+        failedDescriptors.keySet().removeIf(descriptor -> !importFailedDescriptors.add(descriptor));
+        if(!failedDescriptors.isEmpty()) {
+            Set<Wallet> failedWallets = getDescriptorWallets(failedDescriptors.keySet());
+            String errorMessage = failedDescriptors.values().stream().distinct().collect(Collectors.joining("\n"));
+            Platform.runLater(() -> EventManager.get().post(new CormorantImportStatusEvent("Error importing descriptors", failedWallets, errorMessage)));
+        }
+    }
+
+    private Set<Wallet> getDescriptorWallets(Collection<String> descriptors) {
+        Set<Wallet> descriptorWallets = new LinkedHashSet<>();
+        for(Wallet openWallet : AppServices.get().getOpenWallets().keySet()) {
+            if(openWallet.isValid()) {
+                for(KeyPurpose keyPurpose : KeyPurpose.DEFAULT_PURPOSES) {
+                    if(descriptors.contains(OutputDescriptor.normalize(OutputDescriptor.getOutputDescriptor(openWallet, keyPurpose).toString(false, false)))) {
+                        descriptorWallets.add(openWallet);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return descriptorWallets;
     }
 
     private boolean isEmptyBlockchain(BlockchainInfo blockchainInfo) {

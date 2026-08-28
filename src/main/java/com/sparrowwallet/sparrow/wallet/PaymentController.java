@@ -151,6 +151,8 @@ public class PaymentController extends WalletFormController implements Initializ
 
     private final ObjectProperty<DnsPayment> dnsPaymentProperty = new SimpleObjectProperty<>();
 
+    private final ObjectProperty<BitcoinURI> payjoinURIProperty = new SimpleObjectProperty<>();
+
     private static final Wallet payNymWallet = new Wallet() {
         @Override
         public String getFullDisplayName() {
@@ -184,6 +186,10 @@ public class PaymentController extends WalletFormController implements Initializ
 
             if(silentPaymentAddressProperty.get() != null && !newValue.equals(silentPaymentAddressProperty.get().getAddress())) {
                 silentPaymentAddressProperty.set(null);
+            }
+
+            if(payjoinURIProperty.get() != null && !newValue.equals(payjoinURIProperty.get().getAddress().toString())) {
+                payjoinURIProperty.set(null);
             }
 
             try {
@@ -222,10 +228,15 @@ public class PaymentController extends WalletFormController implements Initializ
                 }
 
                 DnsPaymentService dnsPaymentService = new DnsPaymentService(dnsPaymentHrn);
-                dnsPaymentService.setOnSucceeded(_ -> dnsPaymentService.getValue().ifPresent(dnsPayment -> setDnsPayment(dnsPayment)));
+                dnsPaymentService.setOnSucceeded(_ -> {
+                    if(isCurrentHrn(dnsPaymentHrn)) {
+                        dnsPaymentService.getValue().ifPresent(dnsPayment -> setDnsPayment(dnsPayment));
+                    }
+                });
                 dnsPaymentService.setOnFailed(failEvent -> {
-                    if(failEvent.getSource().getException() != null && !(failEvent.getSource().getException().getCause() instanceof TimeoutException)) {
-                        AppServices.showErrorDialog("Validation failed for " + dnsPaymentHrn, Throwables.getRootCause(failEvent.getSource().getException()).getMessage());
+                    Throwable exception = failEvent.getSource().getException();
+                    if(isCurrentHrn(dnsPaymentHrn) && exception != null && !(exception.getCause() instanceof TimeoutException)) {
+                        AppServices.showErrorDialog("Validation failed for " + dnsPaymentHrn, Throwables.getRootCause(exception).getMessage());
                     }
                 });
                 dnsPaymentService.start();
@@ -447,6 +458,12 @@ public class PaymentController extends WalletFormController implements Initializ
         if(existingPayNym != null && payNym.nymName().equals(existingPayNym.nymName())) {
             sendController.updateTransaction();
         }
+    }
+
+    //Resolution is slow enough that several may be in flight at once, since every keystroke forming a valid hrn starts one.
+    //Only the hrn the address field currently holds may be applied - an earlier one landing later must not replace the recipient.
+    private boolean isCurrentHrn(String hrn) {
+        return DnsPayment.getHrn(address.getText()).filter(hrn::equals).isPresent();
     }
 
     public void setDnsPayment(DnsPayment dnsPayment) {
@@ -674,6 +691,10 @@ public class PaymentController extends WalletFormController implements Initializ
         field.textProperty().addListener(listener);
     }
 
+    public BitcoinURI getPayjoinURI() {
+        return payjoinURIProperty.get();
+    }
+
     public boolean isValidPayment() {
         try {
             getPayment();
@@ -741,12 +762,6 @@ public class PaymentController extends WalletFormController implements Initializ
     }
 
     public void clear() {
-        try {
-            AppServices.clearPayjoinURI(getRecipientAddress());
-        } catch(InvalidAddressException e) {
-            //ignore
-        }
-
         address.setText("");
         label.setText("");
 
@@ -762,6 +777,7 @@ public class PaymentController extends WalletFormController implements Initializ
         payNymProperty.set(null);
         dnsPaymentProperty.set(null);
         silentPaymentAddressProperty.set(null);
+        payjoinURIProperty.set(null);
     }
 
     public void setMaxInput(ActionEvent event) {
@@ -813,6 +829,8 @@ public class PaymentController extends WalletFormController implements Initializ
     private void updateFromURI(BitcoinURI bitcoinURI) {
         if(bitcoinURI.getAddress() != null) {
             address.setText(bitcoinURI.getAddress().toString());
+        } else if(bitcoinURI.getSilentPaymentAddress() != null) {
+            address.setText(bitcoinURI.getSilentPaymentAddress().getAddress());
         }
         if(bitcoinURI.getLabel() != null) {
             label.setText(bitcoinURI.getLabel());
@@ -821,10 +839,14 @@ public class PaymentController extends WalletFormController implements Initializ
             setRecipientValueSats(bitcoinURI.getAmount());
             setFiatAmount(AppServices.getFiatCurrencyExchangeRate(), bitcoinURI.getAmount());
         }
-        if(bitcoinURI.getAddress() != null && bitcoinURI.getPayjoinUrl() != null) {
-            AppServices.addPayjoinURI(bitcoinURI);
-        }
+        setPayjoinURI(bitcoinURI);
         sendController.updateTransaction();
+    }
+
+    public void setPayjoinURI(BitcoinURI bitcoinURI) {
+        if(bitcoinURI.getAddress() != null && bitcoinURI.getPayjoinUrl() != null) {
+            payjoinURIProperty.set(bitcoinURI);
+        }
     }
 
     private List<Address> getOtherAddresses() {

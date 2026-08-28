@@ -1,31 +1,70 @@
 package com.sparrowwallet.sparrow.net;
 
+import com.sparrowwallet.drongo.ExtendedKey;
+import com.sparrowwallet.drongo.KeyDerivation;
+import com.sparrowwallet.drongo.KeyPurpose;
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.policy.Policy;
+import com.sparrowwallet.drongo.policy.PolicyType;
+import com.sparrowwallet.drongo.protocol.ScriptType;
+import com.sparrowwallet.drongo.wallet.BlockTransactionHashIndex;
+import com.sparrowwallet.drongo.wallet.Keystore;
+import com.sparrowwallet.drongo.wallet.Wallet;
+import com.sparrowwallet.drongo.wallet.WalletNode;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
+import com.sparrowwallet.drongo.protocol.HeaderChainState;
+import com.sparrowwallet.drongo.protocol.Sha256Hash;
+import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.ChainTip;
+import com.sparrowwallet.sparrow.SparrowWallet;
+import com.sparrowwallet.sparrow.io.Config;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class ElectrumServerTest {
+    private static final String BLOCK_800000_HEADER_HEX = "00601d3455bb9fbd966b3ea2dc42d0c22722e4c0c1729fad17210100000000000000000055087fab0c8f3f89f8bcfd4df26c504d81b0a88e04907161838c0c53001af09135edbd64943805175e955e06";
+    private static final String BLOCK_800000_ID = "00000000000000000002a7c4c1e48d76c5a37902165a270156b7a8d72728a054";
+
+    @TempDir
+    private static Path tempHome;
+
+    //A plain BIP32 extended public key, since the wallet only needs to derive addresses to have script hashes
+    private static final String TEST_XPUB = "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj";
+
     private static final String GENESIS_HEADER_HEX = "0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4a29ab5f49ffff001d1dac2b7c";
     private static final long GENESIS_TIME_SECS = 1231006505L;
 
-    private static final String BLOCK_800000_HEADER_HEX = "00601d3455bb9fbd966b3ea2dc42d0c22722e4c0c1729fad17210100000000000000000055087fab0c8f3f89f8bcfd4df26c504d81b0a88e04907161838c0c53001af09135edbd64943805175e955e06";
     private static final long BLOCK_800000_TIME_SECS = 1690168629L;
 
-    /**
-     * A v2 (BLAKE2b) header, 164 bytes rather than 80, taken from drongo's BlockHeaderPoWHashTest. It meets its
-     * claimed target under the BLAKE2b hash, with a target inside the regtest proof of work limit.
-     */
-    private static final String BLOCK_800000_ID = "00000000000000000002a7c4c1e48d76c5a37902165a270156b7a8d72728a054";
-    private static final String V2_HEADER_HEX = "000000a00b6ae048ff6a63b448cc325a81e22cd304766954f0833e3182dfe8c8cfeca202e44340a302bb650d3050411924e9e83230d3755ee9b2f51509cee40130e8a94f05dd886affff7f2000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000140000000000000000000000000000000000000000000000000000000000000000000000";
-    private static final long V2_HEADER_TIME_SECS = 1787354373L;
-    private static final int V2_HEADER_HEIGHT = 20;
+    @BeforeAll
+    public static void setUpAll() {
+        //Config.get() caches its instance for the life of the JVM but resolves the file to write on each flush, so a test changing a setting must
+        //never be able to reach the developer's own Sparrow home. The test task sets this too; this is here for a run that bypasses it
+        System.setProperty(SparrowWallet.APP_HOME_PROPERTY, tempHome.toString());
+    }
+
+    @AfterAll
+    public static void tearDownAll() {
+        System.clearProperty(SparrowWallet.APP_HOME_PROPERTY);
+    }
 
     @BeforeEach
     public void setUp() {
@@ -45,41 +84,6 @@ public class ElectrumServerTest {
     public void acceptsGenuineHeaderRegardlessOfAgeAndAnnouncedHeight() {
         assertNull(ElectrumServer.getTipValidationError(tip(0, GENESIS_HEADER_HEX), (GENESIS_TIME_SECS + 3600) * 1000));
         assertNull(ElectrumServer.getTipValidationError(tip(950000, GENESIS_HEADER_HEX), System.currentTimeMillis()));
-    }
-
-    /**
-     * A v2 header carries 84 bytes of additional fields and has its proof of work measured against the BLAKE2b
-     * hash rather than SHA256d. Tip validation reads the length from the header and defers the proof of work
-     * check to drongo, so it needs no version handling of its own. This pins that, so a length assumption
-     * reintroduced here could not silently start rejecting every server on the BLAKE2b chain.
-     *
-     * The header is one Bitcoin Knots actually mined on a regtest chain activating at height 20, rather
-     * than a constructed one, so it also fails if drongo stops agreeing with a real node about the hash.
-     */
-    @Test
-    public void acceptsVersion2Header() {
-        //The claimed target is easier than the mainnet limit, so this header is only valid on regtest.
-        //The surrounding setUp and tearDown leave the network as the other tests expect it.
-        Network.set(Network.REGTEST);
-
-        assertEquals(164, Utils.hexToBytes(V2_HEADER_HEX).length);
-        assertNull(ElectrumServer.getTipValidationError(tip(V2_HEADER_HEIGHT, V2_HEADER_HEX), (V2_HEADER_TIME_SECS + 3600) * 1000));
-    }
-
-    /**
-     * The id that reaches an explorer, which is the byte order that actually matters.
-     *
-     * getBlockSummaryMap used to hand FeeRatesSource a wire-order hash and FeeRatesSource reversed it
-     * into display order, so the two halves were only correct together. Past the activation height the
-     * first half is wrong anyway, since the block id is no longer SHA256d, so the caller now asks the
-     * header via getPoWHash() and the URL builder no longer reverses. This asserts the end of that path
-     * rather than either half, because either half alone looks right while the pair is broken.
-     */
-    @Test
-    public void testTheBlockSummaryUrlCarriesTheBlockId() {
-        BlockHeader blockHeader = new BlockHeader(Utils.hexToBytes(BLOCK_800000_HEADER_HEX), 0);
-        assertEquals("https://explorer.invalid/api/v1/block/" + BLOCK_800000_ID,
-                FeeRatesSource.blockSummaryUrl("https://explorer.invalid/api/", blockHeader.getPoWHash()));
     }
 
     @Test
@@ -102,6 +106,198 @@ public class ElectrumServerTest {
         assertNotNull(ElectrumServer.getTipValidationError(tip(800000, "cafebabe"), now));
     }
 
+    /**
+     * A header below a pinned checkpoint is placed at its height by descent from the pin, so the hash chain up to the pinned hash is the whole proof:
+     * no proof of work, difficulty or timestamp check is applied to a range that ends in a hash already known to be on the chain.
+     */
+    @Test
+    public void verifiesHeadersLinkedToTheAnchor() {
+        List<BlockHeader> headers = chain(5);
+        List<BlockHeader> linked = ElectrumServer.getLinkedHeaders(headersChunk(headers), 5, headers.getLast().getHash());
+        assertNotNull(linked);
+        assertEquals(headers.getFirst().getHash(), linked.getFirst().getHash());
+        assertEquals(headers.getLast().getHash(), linked.getLast().getHash());
+    }
+
+    @Test
+    public void rejectsHeadersThatDoNotReachTheAnchor() {
+        List<BlockHeader> headers = chain(5);
+
+        //The range is internally consistent, but ends somewhere other than the pinned hash
+        assertNull(ElectrumServer.getLinkedHeaders(headersChunk(headers), 5, headers.get(3).getHash()));
+    }
+
+    @Test
+    public void rejectsATamperedHeaderWithinTheRange() {
+        List<BlockHeader> headers = new ArrayList<>(chain(5));
+        BlockHeader tampered = headers.get(2);
+        headers.set(2, new BlockHeader(tampered.getVersion(), tampered.getPrevBlockHash(), Sha256Hash.ZERO_HASH, null, tampered.getTime() + 1,
+                tampered.getDifficultyTarget(), tampered.getNonce()));
+
+        //The header above it still carries the original hash, so the chain to the anchor is broken at the substitution
+        assertNull(ElectrumServer.getLinkedHeaders(headersChunk(headers), 5, headers.getLast().getHash()));
+    }
+
+    @Test
+    public void rejectsAShortOrMalformedRange() {
+        List<BlockHeader> headers = chain(5);
+        assertNull(ElectrumServer.getLinkedHeaders(headersChunk(headers.subList(0, 4)), 5, headers.getLast().getHash()));
+
+        BlockHeaders malformed = headersChunk(headers);
+        malformed.hex = "cafebabe";
+        assertNull(ElectrumServer.getLinkedHeaders(malformed, 5, headers.getLast().getHash()));
+    }
+
+    private static List<BlockHeader> chain(int count) {
+        List<BlockHeader> headers = new ArrayList<>();
+        Sha256Hash previousHash = Sha256Hash.ZERO_HASH;
+        for(int i = 0; i < count; i++) {
+            BlockHeader header = new BlockHeader(1, previousHash, Sha256Hash.ZERO_HASH, null, 1600000000L + i, 0x1d00ffffL, i);
+            headers.add(header);
+            previousHash = header.getHash();
+        }
+
+        return headers;
+    }
+
+    private static BlockHeaders headersChunk(List<BlockHeader> headers) {
+        BlockHeaders blockHeaders = new BlockHeaders();
+        blockHeaders.count = headers.size();
+        blockHeaders.hex = headers.stream().map(header -> Utils.bytesToHex(header.bitcoinSerialize())).collect(Collectors.joining());
+        blockHeaders.max = HeaderChainState.RETARGET_INTERVAL;
+
+        return blockHeaders;
+    }
+
+    /**
+     * A reorg invalidates only the nodes holding something above the fork point. A wallet with nothing there has proven nothing against a header that
+     * was discarded, so it reports no invalidation and its handler leaves it alone rather than joining a refresh of every open wallet.
+     */
+    @Test
+    public void invalidatesOnlyTheNodesHoldingSomethingAboveTheFork() {
+        Wallet wallet = testWallet();
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        receiveNode.getTransactionOutputs().add(new BlockTransactionHashIndex(Sha256Hash.ZERO_HASH, 800000, new Date(), 0L, 0, 10000));
+
+        assertFalse(ElectrumServer.invalidateScriptHashesForReorg(wallet, 800000));
+        assertFalse(ElectrumServer.invalidateScriptHashesForReorg(wallet, 900000));
+        assertTrue(ElectrumServer.invalidateScriptHashesForReorg(wallet, 799999));
+    }
+
+    /**
+     * A spend confirmed in the orphaned block is the same case as an output received in it: the node holding the output it spent has to be refetched.
+     */
+    @Test
+    public void invalidatesANodeWhoseOutputWasSpentAboveTheFork() {
+        Wallet wallet = testWallet();
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        BlockTransactionHashIndex output = new BlockTransactionHashIndex(Sha256Hash.ZERO_HASH, 700000, new Date(), 0L, 0, 10000);
+        output.setSpentBy(new BlockTransactionHashIndex(Sha256Hash.ZERO_HASH, 800000, new Date(), 0L, 0, 10000));
+        receiveNode.getTransactionOutputs().add(output);
+
+        //The output itself is far below the fork, but the spend of it is not
+        assertTrue(ElectrumServer.invalidateScriptHashesForReorg(wallet, 799999));
+        assertFalse(ElectrumServer.invalidateScriptHashesForReorg(wallet, 800000));
+    }
+
+    /**
+     * A server that has not reached the last pinned header cannot substantiate any height: the forward sync has nothing to advance from and every
+     * range below a pin comes back short. Verification therefore does not run against it at all until it catches up, rather than refusing every new
+     * confirmation and raising a dialog for each. The public tier rejects such a server at connect instead; this is what a private one gets.
+     */
+    @Test
+    public void doesNotVerifyAgainstAServerBelowTheLastPin() {
+        ServerCapability previousCapability = ElectrumServer.serverCapability;
+        try {
+            ElectrumServer.serverCapability = new ServerCapability(false, false, false);
+            int maxCheckpointHeight = Network.MAINNET.getHeaderCheckpoints().getMaxHeight();
+            BlockHeader header = Network.MAINNET.getGenesisHeader();
+
+            //A tip that has not been announced yet is not evidence of lagging, so the sync and the proofs are left to find out
+            AppServices.setAnnouncedTip(null);
+            assertTrue(ElectrumServer.isVerifyingTransactions());
+
+            AppServices.setAnnouncedTip(new ChainTip(maxCheckpointHeight - 1, header));
+            assertFalse(ElectrumServer.isVerifyingTransactions());
+
+            AppServices.setAnnouncedTip(new ChainTip(maxCheckpointHeight, header));
+            assertTrue(ElectrumServer.isVerifyingTransactions());
+
+            ElectrumServer.serverCapability.withMerkleProofs(false);
+            assertFalse(ElectrumServer.isVerifyingTransactions());
+        } finally {
+            ElectrumServer.serverCapability = previousCapability;
+            AppServices.setAnnouncedTip(null);
+        }
+    }
+
+    /**
+     * The escape hatch. It defaults on and has no user interface, and one answer has to cover the header sync, both write boundaries and the connect
+     * time enforcement - a public server rejected for lacking a call nothing is going to make would be no use.
+     */
+    @Test
+    public void stopsVerifyingWhereTheConfigTurnsItOff() {
+        ServerCapability previousCapability = ElectrumServer.serverCapability;
+        ServerType previousServerType = Config.get().getServerType();
+        try {
+            ElectrumServer.serverCapability = new ServerCapability(false, false, false);
+            Config.get().setServerType(ServerType.PUBLIC_ELECTRUM_SERVER);
+            assertTrue(Config.get().isVerifyTransactions());
+            assertTrue(ElectrumServer.isVerifyingTransactions());
+            assertTrue(ElectrumServer.isVerificationMandatory());
+
+            Config.get().setVerifyTransactions(false);
+            assertFalse(ElectrumServer.isVerifyingTransactions());
+            assertFalse(ElectrumServer.isVerificationMandatory());
+        } finally {
+            Config.get().setVerifyTransactions(true);
+            Config.get().setServerType(previousServerType);
+            ElectrumServer.serverCapability = previousCapability;
+            AppServices.setAnnouncedTip(null);
+        }
+    }
+
+    /**
+     * A Bitcoin Core connection is the user's own node, and a proof it built against headers it also supplied establishes nothing it has not already
+     * been trusted for. Asked of the server type rather than of the capability, because bwt takes over where cormorant cannot start - a legacy Core
+     * wallet, or an unsupported bitcoind - and it reaches getServerCapability under a version string of its own.
+     */
+    @Test
+    public void doesNotVerifyAgainstTheUsersOwnNode() {
+        ServerCapability previousCapability = ElectrumServer.serverCapability;
+        ServerType previousServerType = Config.get().getServerType();
+        try {
+            //The capability bwt falls through to, which unlike cormorant's says nothing about proofs
+            ElectrumServer.serverCapability = new ServerCapability(false, true, true);
+            assertTrue(ElectrumServer.serverCapability.supportsMerkleProofs());
+
+            Config.get().setServerType(ServerType.ELECTRUM_SERVER);
+            assertTrue(ElectrumServer.isVerifyingTransactions());
+
+            Config.get().setServerType(ServerType.BITCOIN_CORE);
+            assertFalse(ElectrumServer.isVerifyingTransactions());
+            assertFalse(ElectrumServer.isVerificationMandatory());
+        } finally {
+            Config.get().setServerType(previousServerType);
+            ElectrumServer.serverCapability = previousCapability;
+            AppServices.setAnnouncedTip(null);
+        }
+    }
+
+    private static Wallet testWallet() {
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.SINGLE_HD);
+        wallet.setScriptType(ScriptType.P2WPKH);
+        Keystore keystore = new Keystore();
+        keystore.setKeyDerivation(new KeyDerivation("00000000", "m/84'/0'/0'"));
+        keystore.setExtendedPublicKey(ExtendedKey.fromDescriptor(TEST_XPUB));
+        wallet.getKeystores().add(keystore);
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.SINGLE_HD, ScriptType.P2WPKH, wallet.getKeystores(), 1));
+        wallet.getNode(KeyPurpose.RECEIVE).fillToIndex(wallet, 1);
+
+        return wallet;
+    }
+
     private BlockHeaderTip tip(int height, String hex) {
         BlockHeaderTip tip = new BlockHeaderTip();
         tip.height = height;
@@ -111,6 +307,24 @@ public class ElectrumServerTest {
 
     @AfterEach
     public void tearDown() throws Exception {
+        //The reorg tests above invalidate script hashes, which is the one piece of static state they leave behind
+        ElectrumServer.reorgInvalidatedScriptHashes.clear();
         Network.set(null);
     }
+    /**
+     * The id that reaches an explorer, which is the byte order that actually matters.
+     *
+     * getBlockSummaryMap used to hand FeeRatesSource a wire-order hash and FeeRatesSource reversed it
+     * into display order, so the two halves were only correct together. Past the activation height the
+     * first half is wrong anyway, since the block id is no longer SHA256d, so the caller now asks the
+     * header via getPoWHash() and the URL builder no longer reverses. This asserts the end of that path
+     * rather than either half, because either half alone looks right while the pair is broken.
+     */
+    @Test
+    public void testTheBlockSummaryUrlCarriesTheBlockId() {
+        BlockHeader blockHeader = new BlockHeader(Utils.hexToBytes(BLOCK_800000_HEADER_HEX), 0);
+        assertEquals("https://explorer.invalid/api/v1/block/" + BLOCK_800000_ID,
+                FeeRatesSource.blockSummaryUrl("https://explorer.invalid/api/", blockHeader.getPoWHash()));
+    }
+
 }

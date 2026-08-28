@@ -44,8 +44,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static com.sparrowwallet.drongo.OutputDescriptor.KEY_ORIGIN_PATTERN;
+import static com.sparrowwallet.drongo.OutputDescriptor.LEGACY_MULTI_PATTERN;
 import static com.sparrowwallet.drongo.OutputDescriptor.XPUB_PATTERN;
 import static com.sparrowwallet.sparrow.AppServices.showErrorDialog;
 import static com.sparrowwallet.sparrow.AppServices.showWarningDialog;
@@ -487,7 +489,7 @@ public class SettingsController extends WalletFormController implements Initiali
                 (walletForm.getWallet().getPolicyType() == PolicyType.MULTI_HD ? "\nKey expressions are shown in canonical order." : ""));
         Optional<String> text = dialog.showAndWait();
         if(text.isPresent() && !text.get().isEmpty() && !text.get().equals(outputDescriptorString)) {
-            if(text.get().contains("(multi(")) {
+            if(LEGACY_MULTI_PATTERN.matcher(text.get()).find()) {
                 AppServices.showWarningDialog("Legacy multisig wallet detected", "Sparrow supports BIP67 compatible multisig wallets only.\n\nThe public keys will be lexicographically sorted, and the output descriptor represented with sortedmulti.");
             }
 
@@ -940,31 +942,93 @@ public class SettingsController extends WalletFormController implements Initiali
     @Subscribe
     public void existingWalletImported(ExistingWalletImportedEvent event) {
         if(event.getExistingWalletId().equals(getWalletForm().getWalletId())) {
-            List<Keystore> importedKeystores = event.getImportedWallet().getKeystores();
+            Wallet importedWallet = event.getImportedWallet();
+            List<Keystore> importedKeystores = importedWallet.getKeystores();
             List<Keystore> nonWatchKeystores = walletForm.getWallet().getKeystores().stream().filter(k -> k.isValid() && k.getSource() != KeystoreSource.SW_WATCH).collect(Collectors.toList());
+
+            //BIP129 requires a signer to verify its own key is present in the imported descriptor by an exact match, and not by a shortcut such as the master fingerprint
+            Map<Integer, Keystore> ownKeystores = new LinkedHashMap<>();
+            List<Keystore> absentKeystores = new ArrayList<>();
             for(Keystore nonWatchKeystore : nonWatchKeystores) {
-                Optional<Keystore> optReplacedKeystore = importedKeystores.stream().filter(k -> Objects.equals(nonWatchKeystore.getExtendedPublicKey(), k.getExtendedPublicKey())).findFirst();
-                if(optReplacedKeystore.isPresent()) {
-                    int index = importedKeystores.indexOf(optReplacedKeystore.get());
-                    importedKeystores.remove(index);
-                    importedKeystores.add(index, nonWatchKeystore);
+                int index = IntStream.range(0, importedKeystores.size())
+                        .filter(i -> Objects.equals(nonWatchKeystore.getExtendedPublicKey(), importedKeystores.get(i).getExtendedPublicKey())).findFirst().orElse(-1);
+                if(index >= 0) {
+                    ownKeystores.put(index, nonWatchKeystore);
+                } else {
+                    absentKeystores.add(nonWatchKeystore);
                 }
             }
 
-            replaceWallet(event.getImportedWallet());
+            if(AppServices.disallowAnyInvalidDerivationPaths(importedWallet)) {
+                return;
+            }
+
+            try {
+                importedWallet.checkWallet();
+            } catch(InvalidWalletException e) {
+                showErrorDialog("Error Importing Wallet", "The imported wallet is not valid: " + e.getMessage());
+                return;
+            }
+
+            if(!confirmImportedPolicy(importedWallet, ownKeystores.keySet(), absentKeystores)) {
+                return;
+            }
+
+            //Substituted only once the import is accepted, so the current wallet is untouched if it is not. Cosigners of the same model share a label, and the coordinator has
+            //already made those unique, so the label of the replaced cosigner is taken rather than the local one - which would often duplicate another cosigner's label.
+            ownKeystores.forEach((index, ownKeystore) -> {
+                ownKeystore.setLabel(importedKeystores.get(index).getLabel());
+                importedKeystores.set(index, ownKeystore);
+            });
+
+            replaceWallet(importedWallet);
         }
     }
 
-    private void saveWallet(boolean changePassword, boolean suggestChangePassword) {
+    //The imported policy, cosigners and the position of the user's own keys are adopted wholesale, so BIP129 requires the signer be shown them before they are
+    private boolean confirmImportedPolicy(Wallet importedWallet, Set<Integer> ownIndexes, List<Keystore> absentKeystores) {
+        List<Keystore> importedKeystores = importedWallet.getKeystores();
+        int threshold = importedWallet.getDefaultPolicy().getNumSignaturesRequired();
+
+        StringBuilder content = new StringBuilder("This import completes the configuration of ").append(walletForm.getWallet().getFullDisplayName()).append(".\n\n");
+        content.append("Quorum: ").append(threshold).append(" of ").append(importedKeystores.size());
+        int configuredThreshold = (int)multisigControl.getLowValue();
+        int configuredCosigners = (int)multisigControl.getHighValue();
+        if(threshold != configuredThreshold || importedKeystores.size() != configuredCosigners) {
+            content.append(", replacing the ").append(configuredThreshold).append(" of ").append(configuredCosigners).append(" configured here");
+        }
+        content.append("\n\n");
+
+        for(int i = 0; i < importedKeystores.size(); i++) {
+            Keystore keystore = importedKeystores.get(i);
+            KeyDerivation keyDerivation = keystore.getKeyDerivation();
+            content.append("Cosigner ").append(i + 1).append(": ").append(keystore.getLabel());
+            content.append(" [").append(keyDerivation.getMasterFingerprint()).append(KeyDerivation.writePath(keyDerivation.getDerivation()).substring(1)).append("]");
+            if(ownIndexes.contains(i)) {
+                content.append(" - your keystore");
+            }
+            content.append("\n");
+        }
+
+        for(Keystore absentKeystore : absentKeystores) {
+            content.append("\nThe keystore ").append(absentKeystore.getLabel()).append(" configured here is not present in this import and will be removed. You will not be able to sign with it.\n");
+        }
+
+        content.append("\nVerify the quorum and the cosigner key origins above against those provided by the coordinator before applying.");
+
+        Optional<ButtonType> optResponse = showWarningDialog("Complete Multisig Wallet?", content.toString(), ButtonType.CANCEL, ButtonType.OK);
+        return optResponse.isPresent() && optResponse.get() == ButtonType.OK;
+    }
+
+    //Returns true if the wallet save was initiated, and false if it was abandoned without any change to the wallet or its storage
+    private boolean saveWallet(boolean changePassword, boolean suggestChangePassword) {
         ECKey existingPubKey = walletForm.getStorage().getEncryptionPubKey();
 
         WalletPasswordDialog.PasswordRequirement requirement;
-        if(existingPubKey == null) {
-            if(changePassword) {
-                requirement = WalletPasswordDialog.PasswordRequirement.UPDATE_CHANGE;
-            } else {
-                requirement = WalletPasswordDialog.PasswordRequirement.UPDATE_NEW;
-            }
+        if(changePassword) {
+            requirement = WalletPasswordDialog.PasswordRequirement.UPDATE_CHANGE;
+        } else if(existingPubKey == null) {
+            requirement = WalletPasswordDialog.PasswordRequirement.UPDATE_NEW;
         } else if(Storage.NO_PASSWORD_KEY.equals(existingPubKey)) {
             requirement = WalletPasswordDialog.PasswordRequirement.UPDATE_EMPTY;
         } else {
@@ -976,7 +1040,7 @@ public class SettingsController extends WalletFormController implements Initiali
             if(optResponse.isPresent() && optResponse.get().equals(ButtonType.CANCEL)) {
                 revert.setDisable(false);
                 apply.setDisable(false);
-                return;
+                return false;
             }
         }
 
@@ -992,7 +1056,7 @@ public class SettingsController extends WalletFormController implements Initiali
                     AppServices.showErrorDialog("Error saving wallet backup", e.getMessage());
                     revert.setDisable(false);
                     apply.setDisable(false);
-                    return;
+                    return false;
                 }
             }
 
@@ -1017,7 +1081,8 @@ public class SettingsController extends WalletFormController implements Initiali
                     try {
                         ECKey encryptionPubKey = ECKey.fromPublicOnly(encryptionFullKey);
 
-                        if(existingPubKey != null && !Storage.NO_PASSWORD_KEY.equals(existingPubKey) && !existingPubKey.equals(encryptionPubKey)) {
+                        //When changing the password, the existing encryption key is retained until the new one is derived, so a different key is expected here
+                        if(!changePassword && existingPubKey != null && !Storage.NO_PASSWORD_KEY.equals(existingPubKey) && !existingPubKey.equals(encryptionPubKey)) {
                             AppServices.showErrorDialog("Incorrect Password", "The password was incorrect.");
                             revert.setDisable(false);
                             apply.setDisable(false);
@@ -1032,14 +1097,22 @@ public class SettingsController extends WalletFormController implements Initiali
                                 walletForm.deleteBackups();
                             }
 
-                            walletForm.getStorage().setEncryptionPubKey(null);
                             masterWallet.decrypt(key);
                             for(Wallet childWallet : masterWallet.getChildWallets()) {
                                 if(!childWallet.isNested()) {
                                     childWallet.decrypt(key);
                                 }
                             }
-                            saveWallet(true, false);
+
+                            //If a new password is not provided, re-encrypt with the existing key rather than leaving the wallet decrypted for the session
+                            if(!saveWallet(true, false)) {
+                                masterWallet.encrypt(key);
+                                for(Wallet childWallet : masterWallet.getChildWallets()) {
+                                    if(!childWallet.isNested()) {
+                                        childWallet.encrypt(key);
+                                    }
+                                }
+                            }
                             return;
                         }
 
@@ -1076,9 +1149,12 @@ public class SettingsController extends WalletFormController implements Initiali
                 EventManager.get().post(new StorageEvent(walletForm.getWalletId(), TimedEvent.Action.START, "Encrypting wallet..."));
                 keyDerivationService.start();
             }
+
+            return true;
         } else {
             revert.setDisable(false);
             apply.setDisable(false);
+            return false;
         }
     }
 

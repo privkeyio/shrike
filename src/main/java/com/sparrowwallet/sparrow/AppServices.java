@@ -19,6 +19,7 @@ import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
+import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import com.sparrowwallet.drongo.protocol.SigHash;
 import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.psbt.PSBT;
@@ -132,11 +133,10 @@ public class AppServices {
 
     private ScheduledService<Void> preventSleepService;
 
-    private static Integer currentBlockHeight;
+    private static volatile ChainTip announcedTip;
 
-    private static BlockHeader latestBlockHeader;
     //Written from the Cormorant connection task and read on the FX thread when a PSBT is built,
-    //so unlike latestBlockHeader this one is not confined to a single thread
+    //so this is not confined to a single thread
     private static volatile Integer nodeHardforkHeight;
     private static final AtomicReference<String> lastReportedActivationHeightMismatch = new AtomicReference<>();
 
@@ -160,7 +160,7 @@ public class AppServices {
 
     private static final List<URI> argUris = new ArrayList<>();
 
-    private static final Map<Address, BitcoinURI> payjoinURIs = new HashMap<>();
+    private static final Map<Sha256Hash, BitcoinURI> payjoinURIs = new HashMap<>();
 
     private final ChangeListener<Boolean> onlineServicesListener = new ChangeListener<>() {
         @Override
@@ -214,6 +214,7 @@ public class AppServices {
     public void start() {
         Config config = Config.get();
         connectionService = createConnectionService();
+        registerHeaderSyncService();
         feeRatesService = createFeeRatesService();
         ratesService = createRatesService(config.getExchangeSource(), config.getFiatCurrency());
         versionCheckService = createVersionCheckService();
@@ -402,6 +403,25 @@ public class AppServices {
         return feeRatesService;
     }
 
+    /**
+     * The header sync service is driven entirely by the events it subscribes to - started by an announced tip, cancelled on disconnection - so nothing
+     * here holds it or restarts it. Registering it with the event bus is what keeps it reachable for the life of the session.
+     */
+    private void registerHeaderSyncService() {
+        ElectrumServer.HeaderSyncService headerSyncService = new ElectrumServer.HeaderSyncService();
+        headerSyncService.setPeriod(Duration.seconds(ElectrumServer.HeaderSyncService.RETRY_PERIOD_SECS));
+        headerSyncService.setRestartOnFailure(true);
+        EventManager.get().register(headerSyncService);
+
+        //The service is started by the tip it is told about, so a successful run has nothing left to do until the next one
+        headerSyncService.setOnSucceeded(successEvent -> {
+            headerSyncService.cancel();
+        });
+        headerSyncService.setOnFailed(failEvent -> {
+            log.warn("Failed to sync block headers, retrying in " + ElectrumServer.HeaderSyncService.RETRY_PERIOD_SECS + "s", failEvent.getSource().getException());
+        });
+    }
+
     private ExchangeSource.RatesService createRatesService(ExchangeSource exchangeSource, Currency currency) {
         ExchangeSource.RatesService ratesService = new ExchangeSource.RatesService(
                 exchangeSource == null ? DEFAULT_EXCHANGE_SOURCE : exchangeSource,
@@ -440,7 +460,7 @@ public class AppServices {
         enumerateService.setOnSucceeded(workerStateEvent -> {
             List<Device> devices = enumerateService.getValue();
 
-            //Null devices are returned if the app is currently prompting for a pin. Otherwise, the enumerate clears the pin screen
+            //Null devices are returned if the app is currently prompting for a pin (the enumerate would clear the pin screen) or another device operation is in progress
             if(devices != null) {
                 //If another instance of HWI is currently accessing the usb interface, HWI returns empty device models. Ignore this run if that happens
                 List<Device> validDevices = devices.stream().filter(device -> device.getModel() != null).collect(Collectors.toList());
@@ -745,11 +765,25 @@ public class AppServices {
     }
 
     public static Integer getCurrentBlockHeight() {
-        return currentBlockHeight;
+        ChainTip tip = announcedTip;
+        return tip == null ? null : tip.height();
     }
 
     public static BlockHeader getLatestBlockHeader() {
-        return latestBlockHeader;
+        ChainTip tip = announcedTip;
+        return tip == null ? null : tip.header();
+    }
+
+    /**
+     * The chain tip as the connected server last announced it, whose height and header are written together. A reader needing both must take them from
+     * one of these, since the two accessors above read the tip separately and can straddle a new block, pairing a new height with the previous header.
+     */
+    public static ChainTip getAnnouncedTip() {
+        return announcedTip;
+    }
+
+    public static void setAnnouncedTip(ChainTip announcedTip) {
+        AppServices.announcedTip = announcedTip;
     }
 
     /**
@@ -768,7 +802,10 @@ public class AppServices {
      * would not verify at all.
      */
     public static boolean isUnifiedSigHashActive() {
-        return isUnifiedSigHashActive(Network.get(), currentBlockHeight, latestBlockHeader);
+        //Read once: ChainTip carries the height and the header together so the decision cannot take the
+        //height of one block with the header of another, which two separate reads would allow.
+        ChainTip tip = announcedTip;
+        return isUnifiedSigHashActive(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header());
     }
 
     /**
@@ -969,7 +1006,8 @@ public class AppServices {
      * wallet also holds a device, since the device is no obstacle until the rules are live.
      */
     public static UnifiedSigHashDecision getUnifiedSigHashDecision(Wallet wallet) {
-        return combinedDecision(chainDecision(Network.get(), currentBlockHeight, latestBlockHeader), wallet);
+        ChainTip tip = announcedTip;
+        return combinedDecision(chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header()), wallet);
     }
 
     /**
@@ -1126,19 +1164,21 @@ public class AppServices {
         return devices == null ? new ArrayList<>() : devices;
     }
 
-    public static BitcoinURI getPayjoinURI(Address address) {
-        return payjoinURIs.get(address);
+    public static BitcoinURI getPayjoinURI(PSBT psbt) {
+        return psbt == null ? null : payjoinURIs.get(psbt.getTransaction().calculateTxId(false));
     }
 
-    public static void addPayjoinURI(BitcoinURI bitcoinURI) {
+    public static void addPayjoinURI(PSBT psbt, BitcoinURI bitcoinURI) {
         if(bitcoinURI.getPayjoinUrl() == null || bitcoinURI.getAddress() == null) {
             throw new IllegalArgumentException("Not a valid payjoin URI");
         }
-        payjoinURIs.put(bitcoinURI.getAddress(), bitcoinURI);
+        payjoinURIs.put(psbt.getTransaction().calculateTxId(false), bitcoinURI);
     }
 
-    public static void clearPayjoinURI(Address address) {
-        payjoinURIs.remove(address);
+    public static void clearPayjoinURI(PSBT psbt) {
+        if(psbt != null) {
+            payjoinURIs.remove(psbt.getTransaction().calculateTxId(false));
+        }
     }
 
     public static void clearTransactionHistoryCache(Wallet wallet) {
@@ -1379,7 +1419,7 @@ public class AppServices {
             if(wallet != null) {
                 final Wallet sendingWallet = wallet;
                 EventManager.get().post(new SendActionEvent(sendingWallet, new ArrayList<>(sendingWallet.getSpendableUtxos().keySet()), true));
-                Platform.runLater(() -> EventManager.get().post(new SendPaymentsEvent(sendingWallet, List.of(bitcoinURI.toPayment()))));
+                Platform.runLater(() -> EventManager.get().post(new SendPaymentsEvent(sendingWallet, List.of(bitcoinURI.toPayment()), bitcoinURI)));
             }
         } catch(Exception e) {
             showErrorDialog("Not a valid bitcoin URI", e.getMessage());
@@ -1390,7 +1430,7 @@ public class AppServices {
         try {
             Auth47 auth47 = new Auth47(uri);
             List<ScriptType> scriptTypes = PaymentCode.SEGWIT_SCRIPT_TYPES;
-            Wallet wallet = selectWallet(List.of(PolicyType.SINGLE_HD), scriptTypes, false, true, "login to " + auth47.getCallback().getHost(), true);
+            Wallet wallet = selectWallet(List.of(PolicyType.SINGLE_HD), scriptTypes, false, true, auth47.getLoginMessage(), true);
 
             if(wallet != null) {
                 try {
@@ -1569,13 +1609,12 @@ public class AppServices {
 
     @Subscribe
     public void newConnection(ConnectionEvent event) {
-        currentBlockHeight = event.getBlockHeight();
-        System.setProperty(Network.BLOCK_HEIGHT_PROPERTY, Integer.toString(currentBlockHeight));
+        setAnnouncedTip(new ChainTip(event.getBlockHeight(), event.getBlockHeader()));
+        System.setProperty(Network.BLOCK_HEIGHT_PROPERTY, Integer.toString(event.getBlockHeight()));
         if(getConfiguredMinimumRelayFeeRate(Config.get()) == null) {
             minimumRelayFeeRate = event.getMinimumRelayFeeRate() == null ? Transaction.DEFAULT_MIN_RELAY_FEE : event.getMinimumRelayFeeRate();
         }
         serverMinimumRelayFeeRate = event.getMinimumRelayFeeRate();
-        latestBlockHeader = event.getBlockHeader();
         Config.get().addRecentServer();
 
         FeeRatesSource feeRatesSource = Config.get().getFeeRatesSource();
@@ -1584,7 +1623,7 @@ public class AppServices {
             fetchFeeRates();
         }
 
-        if(!blockSummaries.containsKey(currentBlockHeight)) {
+        if(!blockSummaries.containsKey(getCurrentBlockHeight())) {
             fetchBlockSummaries(Collections.emptyList());
         }
     }
@@ -1596,9 +1635,8 @@ public class AppServices {
 
     @Subscribe
     public void newBlock(NewBlockEvent event) {
-        currentBlockHeight = event.getHeight();
-        System.setProperty(Network.BLOCK_HEIGHT_PROPERTY, Integer.toString(currentBlockHeight));
-        latestBlockHeader = event.getBlockHeader();
+        setAnnouncedTip(new ChainTip(event.getHeight(), event.getBlockHeader()));
+        System.setProperty(Network.BLOCK_HEIGHT_PROPERTY, Integer.toString(event.getHeight()));
         String status = "Updating to new block height " + event.getHeight();
         EventManager.get().post(new StatusEvent(status));
         newBlockSubject.onNext(event);
@@ -1607,8 +1645,9 @@ public class AppServices {
     @Subscribe
     public void blockSummary(BlockSummaryEvent event) {
         blockSummaries.putAll(event.getBlockSummaryMap());
-        if(AppServices.currentBlockHeight != null) {
-            blockSummaries.keySet().removeIf(height -> AppServices.currentBlockHeight - height > 5);
+        Integer currentBlockHeight = getCurrentBlockHeight();
+        if(currentBlockHeight != null) {
+            blockSummaries.keySet().removeIf(height -> currentBlockHeight - height > 5);
         }
         nextBlockMedianFeeRate = event.getNextBlockMedianFeeRate();
     }
@@ -1783,6 +1822,43 @@ public class AppServices {
             }
             onlineProperty.set(true);
         }
+    }
+
+    @Subscribe
+    public void transactionProofsFailed(TransactionProofsFailedEvent event) {
+        showProofsDialog(event, "Transaction Verification Failed", describeProofs(event.getReferences())
+                + (event.getReferences().size() == 1 ? " but the proof of inclusion it supplied does not match that block." : " but the proofs of inclusion it supplied do not match those blocks.")
+                + " This means the server is either faulty or dishonest, and what it reported may not have been confirmed at all.");
+    }
+
+    @Subscribe
+    public void transactionProofsRefused(TransactionProofsRefusedEvent event) {
+        showProofsDialog(event, "Transaction Verification Refused", describeProofs(event.getReferences())
+                + (event.getReferences().size() == 1 ? " which then declined to prove it at that height." : " which then declined to prove them at those heights.")
+                + " A server contradicting itself in this way may be faulty or overloaded, and what it reported cannot be taken as confirmed.");
+    }
+
+    private void showProofsDialog(TransactionProofsEvent event, String title, String content) {
+        Platform.runLater(() -> {
+            ButtonType refreshButton = new ButtonType("Refresh Wallet", ButtonBar.ButtonData.OK_DONE);
+            Optional<ButtonType> optType = showErrorDialog(title, content + (event.getReferences().size() == 1 ? " It is" : " They are")
+                    + " shown as unconfirmed until verified.\n\nConsider switching servers, and refreshing the wallet afterwards.",
+                    ButtonType.CANCEL, refreshButton);
+            if(optType.isPresent() && optType.get() == refreshButton) {
+                EventManager.get().post(new RequestWalletRefreshEvent(event.getWallet()));
+            }
+        });
+    }
+
+    private static String describeProofs(Set<BlockTransactionHash> references) {
+        BlockTransactionHash first = references.iterator().next();
+        String firstId = first.getHashAsString().substring(0, 8) + "..";
+        if(references.size() == 1) {
+            return "Transaction " + firstId + " was reported as confirmed in block " + first.getHeight() + " by the connected server,";
+        }
+
+        return references.size() + " transactions, the first being " + firstId + " in block " + first.getHeight()
+                + ", were reported as confirmed by the connected server,";
     }
 
     @Subscribe
