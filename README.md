@@ -27,19 +27,29 @@ git submodule update --init --recursive
 
 Java 25 or higher is required, as upstream. `--recursive` matters: the BLAKE2b work lives in the drongo submodule, and a plain clone leaves it empty. If you clone over SSH instead, make sure an ssh-agent is running with your key added, or the submodule clones fail with `Permission denied (publickey)` even though the parent clone succeeded.
 
-A signed Linux build is published under [Releases](https://github.com/privkeyio/sparrow/releases). To verify it:
+Builds for Linux, Windows and macOS are published under [Releases](https://github.com/privkeyio/sparrow/releases), together with a signed `SHA256SUMS` covering every file:
 
 ```bash
 gpg --import privkeyio-signing-key.asc
-gpg --verify shrike_2.5.4-1_amd64.deb.sha256.asc shrike_2.5.4-1_amd64.deb.sha256
-sha256sum -c shrike_2.5.4-1_amd64.deb.sha256
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
 ```
 
-Signed by Kyle Santiago <kyle@privkey.io>, key `A47D99B6DB0D715D40C59A2023AE8A8EA7E24E38`. Only Linux is packaged; build from source as described above for other platforms.
+Signed by Kyle Santiago <kyle@privkey.io>, key `A47D99B6DB0D715D40C59A2023AE8A8EA7E24E38`.
+
+> **The macOS builds are not code signed or notarized.**
+>
+> Notarization requires a paid Apple Developer account, which this project does not have. The `.dmg` files are named `-unsigned` to say so plainly. macOS will refuse to open the app on first launch, reporting that it is damaged or from an unidentified developer; that message means it is unsigned, not that anything is wrong with the download. To run it anyway, clear the quarantine attribute:
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/Shrike.app
+> ```
+>
+> **Verify `SHA256SUMS` before doing that.** Clearing quarantine removes the check that would otherwise stop a tampered download, so the signature is the only assurance left. Anyone unwilling to take that step should build from source instead.
+
+The Windows installer is not Authenticode signed either, and SmartScreen will warn accordingly. Upstream Sparrow does not sign its installer either; both projects rely on the signed manifest above.
 
 Builds published before the unified signature hash message changed produce signatures a current node rejects, and must be replaced rather than kept.
-
-Binaries previously published here have been withdrawn. They predate a change to the unified sighash message and produce signatures a current node rejects, so they should not be used.
 
 ---
 
