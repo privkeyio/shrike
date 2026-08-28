@@ -30,7 +30,9 @@ import java.util.Locale;
  * reachable, and are not restated by a test here that would pass whatever they did.
  */
 public class UnifiedSigHashDecisionTest {
-    private static final int ACTIVATION = 149537;
+    //Taken from the shipped schedule rather than restated, so a height move breaks the one test that
+    //pins the constant (UnifiedSigHashPolicyTest) rather than every test that happens to use it.
+    private static final int ACTIVATION = AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4);
 
     private static final String V2_HEADER_HEX = "000000a01f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010000112233445566778899aabbccddeeff00102030405060708090a0b0c0d0e0f0a8913577ffff00200df0ad0b3a000000efcdab89ffeeddccbbaa998877665544332211005802000003005c000000000000000000000000000000000040d10c008967452301efcdab8967452301efcdab8967452301efcdab8967452301efcdab";
     private static final String V1_HEADER_HEX = "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299";

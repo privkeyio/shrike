@@ -324,7 +324,7 @@ public class UnifiedSigHashPolicyTest {
      */
     @Test
     public void testTheShippedTestnet4HeightIsTheOneKnotsUses() {
-        Assertions.assertEquals(149537, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
+        Assertions.assertEquals(150027, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
                 "Update the provenance comment alongside this value");
     }
 
