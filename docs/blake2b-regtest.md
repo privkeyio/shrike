@@ -55,7 +55,8 @@ That field comes from [bitcoinknots PR #363](https://github.com/bitcoinknots/bit
 ## Point Shrike at it
 
 ```
-SPARROW_NETWORK=regtest ./sparrow
+SPARROW_NETWORK=regtest /opt/shrike/bin/Shrike     # installed from the published deb
+SPARROW_NETWORK=regtest ./gradlew run             # or from a source checkout
 ```
 
 The environment variable and the launch script keep their upstream names; only the application was renamed, so `SPARROW_NETWORK` is correct here despite the mismatch.

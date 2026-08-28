@@ -2,7 +2,7 @@
 
 How to run Shrike against a solo regtest chain that activates the fork at a low height, to confirm that transactions it sends after activation opt in to the unified signature hash and that the node accepts them.
 
-This requires a build of Bitcoin Knots from the `hf-sighash-opt-in` branch of https://github.com/bitcoinknots/bitcoin/pull/357, which is based on `__base_29_blake2` and so carries the BLAKE2b proof of work as well. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below. The setup is the same as [blake2b-regtest.md](blake2b-regtest.md); only the checks at the end differ.
+This requires a build of Bitcoin Knots at `v29.4.1.knots20260508rc3` or later, which carries the BLAKE2b proof of work and the unified signature hash together. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below. Earlier release candidates define a different signature hash message and will reject what this wallet signs. The setup is the same as [blake2b-regtest.md](blake2b-regtest.md); only the checks at the end differ.
 
 ## Start the node
 
@@ -27,13 +27,14 @@ alias cli='bitcoin-cli -regtest -datadir=$HOME/unified-sighash-regtest -rpcuser=
 cli createwallet test
 ADDR=$(cli getnewaddress)
 cli generatetoaddress 25 $ADDR
-cli getdeploymentinfo | grep -A2 hardfork      # active: true
+cli getdeploymentinfo | jq .blake2b            # {"height": 20, "active": true}
 ```
 
 ## Point Shrike at it
 
 ```
-SPARROW_NETWORK=regtest ./sparrow
+SPARROW_NETWORK=regtest /opt/shrike/bin/Shrike     # installed from the published deb
+SPARROW_NETWORK=regtest ./gradlew run             # or from a source checkout
 ```
 
 Choose the **Bitcoin Core** server type with URL `127.0.0.1:18443` and the RPC user and password above.
