@@ -27,6 +27,27 @@ import com.sparrowwallet.drongo.wallet.WalletNode;
  */
 public class SparrowSendHarness {
     private static final String MNEMONIC = "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor";
+    private static final String MNEMONIC2 = "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle";
+
+    /**
+     * A 2-of-2 P2WSH wallet, both keys software seeds so the opt-in applies.
+     *
+     * The unified message takes the witnessScript as the script code for a segwit v0 input, where a
+     * P2WPKH input takes the implied P2PKH script instead. Every other end to end test here spends
+     * P2WPKH, so this is the one that exercises the other branch of that choice.
+     */
+    private static Wallet multisigWallet() throws Exception {
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(String mnemonic : new String[] {MNEMONIC, MNEMONIC2}) {
+            DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+            wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, wallet.getScriptType().getDefaultDerivation()));
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), 2));
+        wallet.getNode(KeyPurpose.RECEIVE);
+        return wallet;
+    }
 
     private static Wallet wallet() throws Exception {
         Wallet wallet = new Wallet();
@@ -49,14 +70,16 @@ public class SparrowSendHarness {
     }
 
     public static void main(String[] args) throws Exception {
-        Wallet wallet = wallet();
+        boolean multisig = args[0].endsWith("-multi");
+        String mode = multisig ? args[0].substring(0, args[0].length() - "-multi".length()) : args[0];
+        Wallet wallet = multisig ? multisigWallet() : wallet();
 
-        if("scriptpubkey".equals(args[0])) {
+        if("scriptpubkey".equals(mode)) {
             System.out.println("SPK=" + Utils.bytesToHex(wallet.getOutputScript(firstReceiveNode(wallet)).getProgram()));
             return;
         }
 
-        if(!"send".equals(args[0])) {
+        if(!"send".equals(mode)) {
             throw new IllegalArgumentException("Unknown mode " + args[0]);
         }
 
@@ -79,6 +102,12 @@ public class SparrowSendHarness {
         PSBT psbt = new PSBT(transaction);
         PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
         psbtInput.setWitnessUtxo(new TransactionOutput(null, prevValue, spk.getProgram()));
+        if(multisig) {
+            //A P2WSH input carries the witnessScript; it is also the script code the unified message
+            //commits to, where a P2WPKH input uses the implied P2PKH script instead.
+            psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(
+                    wallet.getDefaultPolicy().getNumSignaturesRequired(), receiveNode.getPubKeys()));
+        }
         //What PSBT(WalletTransaction) sets for a non-taproot input, which the opt-in is applied on top of
         psbtInput.setSigHash(SigHash.ALL);
 
@@ -97,7 +126,12 @@ public class SparrowSendHarness {
         if(witness == null || witness.getPushes().isEmpty()) {
             throw new IllegalStateException("No witness was produced");
         }
-        byte[] signature = witness.getPushes().getFirst();
+        //A P2WSH multisig witness starts with the empty element CHECKMULTISIG consumes, and ends with
+        //the witnessScript, so take the first push that actually looks like a signature.
+        byte[] signature = witness.getPushes().stream()
+                .filter(push -> push.length >= 70 && push.length <= 73)
+                .findFirst()
+                .orElse(witness.getPushes().getFirst());
 
         System.out.println("SIGHASH_BYTE=" + String.format("%02x", signature[signature.length - 1]));
         System.out.println("RAWTX=" + Utils.bytesToHex(finalTx.bitcoinSerialize()));
