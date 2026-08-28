@@ -17,6 +17,6 @@ public class DeploymentInfoHarness {
 
         DeploymentInfo info = service.getDeploymentInfo();
         System.out.println("HARDFORK_HEIGHT=" + info.getHardforkHeight());
-        System.out.println("HARDFORK_ACTIVE=" + (info.hardfork() == null ? null : info.hardfork().active()));
+        System.out.println("HARDFORK_ACTIVE=" + (info.blake2b() == null ? null : info.blake2b().active()));
     }
 }
