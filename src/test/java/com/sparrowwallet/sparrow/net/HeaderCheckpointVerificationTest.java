@@ -139,7 +139,7 @@ public class HeaderCheckpointVerificationTest {
     }
 
     private BlockHeader header(BlockHeaders blockHeaders, int index) {
-        return new BlockHeader(Utils.hexToBytes(blockHeaders.hex.substring(index * BlockHeaders.HEADER_HEX_LENGTH, (index + 1) * BlockHeaders.HEADER_HEX_LENGTH)));
+        return blockHeaders.getHeaders(index + 1).get(index);
     }
 
     @AfterEach

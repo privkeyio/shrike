@@ -259,7 +259,7 @@ public enum FeeRatesSource {
     }
 
     /**
-     * @param blockId the block id in display order, as BlockHeader.getPoWHash() returns it, which is the
+     * @param blockId the block id in display order, as BlockHeader.getHash() returns it, which is the
      *                order explorers use in a URL. Sha256Hash.toString() renders that order directly, so
      *                nothing here should reverse it again.
      */
@@ -359,7 +359,7 @@ public enum FeeRatesSource {
     /**
      * The block summary URL for an explorer.
      *
-     * blockId is in display order, which is what BlockHeader.getPoWHash() returns and what an explorer
+     * blockId is in display order, which is what BlockHeader.getHash() returns and what an explorer
      * expects in a path, and Sha256Hash.toString() renders that order directly. This existed inline at
      * two call sites reversing the bytes, which was correct only while the caller passed a wire-order
      * hash; keeping it in one place means the convention is stated once rather than assumed twice.

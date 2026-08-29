@@ -23,10 +23,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -38,6 +43,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,6 +69,9 @@ public class HeaderSyncTest {
             "01000000672ae405fdb9e4f2a37ffa660a328e138fa08a9ac7ae99382aee270e00000000342fedae2d72975552ac0797556817d11006ec322e2bf97ce88f91caf39525794fe93a4bffff001d94282401",
             "0100000049c1daab3b6536ff1b2633c3a316a6e06ec287676cdeec4ca7baae6b00000000ac10b36b8f354b3353207de15940a5edbc05bb8364af75b4b5409e7823f2b48923ec3a4bffff001dbd5fa412")
             .map(hex -> new BlockHeader(Utils.hexToBytes(hex))).toList();
+
+    private static final String REGTEST_CHAIN = "/com/sparrowwallet/sparrow/net/regtest_blake2b_headers.tsv";
+    private static final int REGTEST_ACTIVATION_HEIGHT = 10;
 
     private static final long CHAIN_TIME = 1600000000L;
     private static final long BRANCH_TIME = 1700000000L;
@@ -750,6 +760,61 @@ public class HeaderSyncTest {
         }
     }
 
+    /**
+     * The activation crossing, over headers a Bitcoin Knots node mined and identified itself. The response check, the chunk split and the store record
+     * all have to take each header's own length, since a v2 header is 164 bytes rather than 80, and a v2 header's identifier is the BLAKE2b hash the
+     * chain links on rather than its SHA256d. Any of those wrong and every height from activation up is refused, which a wallet shows as a confirmed
+     * transaction sitting at no confirmations.
+     */
+    @Test
+    public void syncsARealChainThatCrossesIntoV2Headers() throws Exception {
+        List<BlockHeader> chain = readRegtestChain();
+        HeaderStore store = ElectrumServer.getHeaderStore();
+        serve(chain);
+
+        new ElectrumServer().syncHeaders(new ChainTip(chain.size(), chain.getLast()));
+
+        assertEquals(chain.size(), store.getTipHeight());
+        assertEquals(chain.getLast().getHash(), store.getTipHash());
+        assertFalse(store.getHeader(REGTEST_ACTIVATION_HEIGHT - 1).isHeaderV2());
+        assertTrue(store.getHeader(REGTEST_ACTIVATION_HEIGHT).isHeaderV2());
+        assertEquals(chain.get(REGTEST_ACTIVATION_HEIGHT - 1).getHash(), store.getHeader(REGTEST_ACTIVATION_HEIGHT).getHash());
+    }
+
+    /**
+     * The same crossing reached the way a wallet history reaches it: the height a transaction was confirmed at is above activation, and the header
+     * proving it has to come back rather than the null that becomes a refusal.
+     */
+    @Test
+    public void verifiesARealHeightAboveTheV2Crossing() throws Exception {
+        List<BlockHeader> chain = readRegtestChain();
+        serve(chain);
+        AppServices.setAnnouncedTip(new ChainTip(chain.size(), chain.getLast()));
+
+        BlockHeader verified = new ElectrumServer().getVerifiedHeader(chain.size() - 1);
+
+        assertEquals(chain.get(chain.size() - 2).getHash(), verified.getHash());
+        assertTrue(verified.isHeaderV2());
+    }
+
+    /**
+     * Every height the store serves, against the identifier the node that mined the block reported for it.
+     */
+    @Test
+    public void storesEachHeightUnderTheIdentifierTheNodeReported() throws Exception {
+        List<BlockHeader> chain = readRegtestChain();
+        HeaderStore store = ElectrumServer.getHeaderStore();
+        serve(chain);
+
+        new ElectrumServer().syncHeaders(new ChainTip(chain.size(), chain.getLast()));
+
+        for(Map.Entry<Integer, String> entry : readRegtestBlockIds().entrySet()) {
+            if(entry.getKey() > 0) {
+                assertEquals(entry.getValue(), store.getHeader(entry.getKey()).getHash().toString(), "height " + entry.getKey());
+            }
+        }
+    }
+
     private static HeaderStore seedStore(List<BlockHeader> chain, int toHeight) throws Exception {
         HeaderStore store = ElectrumServer.getHeaderStore();
         for(int height = 1; height <= toHeight; height++) {
@@ -757,6 +822,48 @@ public class HeaderSyncTest {
         }
 
         return store;
+    }
+
+    /**
+     * The regtest chain in the fixture, from height 1 up. Mined by a Bitcoin Knots node run with the BLAKE2b fork scheduled at height
+     * REGTEST_ACTIVATION_HEIGHT, so the run crosses from 80 byte headers to 164 byte ones partway up, and each row carries the block identifier that
+     * node reported for it. The fixture's height 0 is the genesis header the store anchors at, and is checked here rather than served.
+     */
+    private static List<BlockHeader> readRegtestChain() throws IOException {
+        List<BlockHeader> chain = new ArrayList<>();
+        for(Map.Entry<Integer, String> entry : readRegtestRows().entrySet()) {
+            BlockHeader header = new BlockHeader(Utils.hexToBytes(entry.getValue()));
+            if(entry.getKey() == 0) {
+                assertEquals(Network.REGTEST.getGenesisHeader().getHash(), header.getHash());
+            } else {
+                chain.add(header);
+            }
+        }
+
+        return chain;
+    }
+
+    private static Map<Integer, String> readRegtestBlockIds() throws IOException {
+        return readRegtestColumn(2);
+    }
+
+    private static Map<Integer, String> readRegtestRows() throws IOException {
+        return readRegtestColumn(1);
+    }
+
+    private static Map<Integer, String> readRegtestColumn(int column) throws IOException {
+        try(InputStream inputStream = HeaderSyncTest.class.getResourceAsStream(REGTEST_CHAIN)) {
+            assertNotNull(inputStream, "Missing test resource " + REGTEST_CHAIN);
+            Map<Integer, String> rows = new TreeMap<>();
+            for(String line : new String(inputStream.readAllBytes(), StandardCharsets.UTF_8).lines().toList()) {
+                if(!line.isBlank()) {
+                    String[] columns = line.split("\t");
+                    rows.put(Integer.parseInt(columns[0]), columns[column]);
+                }
+            }
+
+            return rows;
+        }
     }
 
     private static FakeElectrumServerRpc serve(List<BlockHeader> chain) {

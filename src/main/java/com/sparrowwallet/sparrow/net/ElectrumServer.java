@@ -1449,15 +1449,12 @@ public class ElectrumServer {
                 throw new VerificationException("Server returned no headers from height " + startHeight + " while the store must reach height " + targetHeight);
             }
 
-            List<BlockHeader> headers;
-            try {
-                //Parsed whole here rather than one at a time below, so that a chunk carrying fewer headers than it claims is a refusal like any other
-                //malformed response rather than an exception escaping the sync
-                byte[] bytes = Utils.hexToBytes(chunk.hex);
-                headers = IntStream.range(0, chunk.count).mapToObj(i -> new BlockHeader(bytes, i * HeaderStore.HEADER_LENGTH)).toList();
-            } catch(ProtocolException | IllegalArgumentException e) {
+            //Split whole here rather than one at a time below, so that a chunk carrying fewer headers than it claims is a refusal like any other
+            //malformed response rather than an exception escaping the sync
+            List<BlockHeader> headers = chunk.getHeaders(chunk.count);
+            if(headers == null) {
                 //Refusal class, as a short chunk is: the server could not substantiate the range
-                throw new VerificationException("Server returned a malformed header chunk from height " + startHeight, e);
+                throw new VerificationException("Server returned a malformed header chunk from height " + startHeight);
             }
 
             if(!headers.getFirst().getPrevBlockHash().equals(store.getTipHash())) {
@@ -1486,12 +1483,9 @@ public class ElectrumServer {
             throw new VerificationException("Server returned " + chunk.count + " of " + count + " headers when reconciling to height " + endHeight);
         }
 
-        List<BlockHeader> candidate;
-        try {
-            byte[] bytes = Utils.hexToBytes(chunk.hex);
-            candidate = IntStream.range(0, count).mapToObj(i -> new BlockHeader(bytes, i * HeaderStore.HEADER_LENGTH)).toList();
-        } catch(ProtocolException | IllegalArgumentException e) {
-            throw new VerificationException("Server returned a malformed header chunk when reconciling to height " + endHeight, e);
+        List<BlockHeader> candidate = chunk.getHeaders(count);
+        if(candidate == null) {
+            throw new VerificationException("Server returned a malformed header chunk when reconciling to height " + endHeight);
         }
 
         //Walk back from the announced tip, checking each header against the one below it, until one descends from a header the store already holds
@@ -1652,11 +1646,8 @@ public class ElectrumServer {
             return null;
         }
 
-        List<BlockHeader> headers;
-        try {
-            byte[] bytes = Utils.hexToBytes(chunk.hex);
-            headers = IntStream.range(0, count).mapToObj(i -> new BlockHeader(bytes, i * HeaderStore.HEADER_LENGTH)).toList();
-        } catch(ProtocolException | IllegalArgumentException e) {
+        List<BlockHeader> headers = chunk.getHeaders(count);
+        if(headers == null) {
             return null;
         }
 
@@ -2069,7 +2060,7 @@ public class ElectrumServer {
                     return feeRatesSource.getRecentBlockSummaries();
                 } else {
                     Map<Integer, BlockSummary> blockSummaryMap = new HashMap<>();
-                    BlockSummary blockSummary = feeRatesSource.getBlockSummary(blockHeader.getPoWHash());
+                    BlockSummary blockSummary = feeRatesSource.getBlockSummary(blockHeader.getHash());
                     if(blockSummary != null && blockSummary.getHeight() != null) {
                         blockSummaryMap.put(blockSummary.getHeight(), blockSummary);
                     }

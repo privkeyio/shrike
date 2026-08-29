@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.arteam.simplejsonrpc.client.Transport;
+import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.HeaderChainState;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import com.sparrowwallet.drongo.protocol.VerificationException;
@@ -145,7 +146,7 @@ public class ElectrumServerRpcTest {
     private static BlockHeaders headers(int count, int hexHeaders, int max) {
         BlockHeaders blockHeaders = new BlockHeaders();
         blockHeaders.count = count;
-        blockHeaders.hex = hexHeaders < 0 ? null : "0".repeat(hexHeaders * BlockHeaders.HEADER_HEX_LENGTH);
+        blockHeaders.hex = hexHeaders < 0 ? null : "0".repeat(hexHeaders * 2 * BlockHeader.V1_LENGTH);
         blockHeaders.max = max;
 
         return blockHeaders;

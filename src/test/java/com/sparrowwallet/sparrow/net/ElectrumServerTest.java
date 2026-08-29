@@ -317,14 +317,14 @@ public class ElectrumServerTest {
      * getBlockSummaryMap used to hand FeeRatesSource a wire-order hash and FeeRatesSource reversed it
      * into display order, so the two halves were only correct together. Past the activation height the
      * first half is wrong anyway, since the block id is no longer SHA256d, so the caller now asks the
-     * header via getPoWHash() and the URL builder no longer reverses. This asserts the end of that path
+     * header via getHash() and the URL builder no longer reverses. This asserts the end of that path
      * rather than either half, because either half alone looks right while the pair is broken.
      */
     @Test
     public void testTheBlockSummaryUrlCarriesTheBlockId() {
         BlockHeader blockHeader = new BlockHeader(Utils.hexToBytes(BLOCK_800000_HEADER_HEX), 0);
         assertEquals("https://explorer.invalid/api/v1/block/" + BLOCK_800000_ID,
-                FeeRatesSource.blockSummaryUrl("https://explorer.invalid/api/", blockHeader.getPoWHash()));
+                FeeRatesSource.blockSummaryUrl("https://explorer.invalid/api/", blockHeader.getHash()));
     }
 
 }

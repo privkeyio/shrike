@@ -18,12 +18,17 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.List;
 
 /**
- * The block headers above the last pinned checkpoint, held as a flat file of consecutive raw 80 byte records named for the height of its first record,
- * which is the height following the last pin. The height h is stored at offset (h - startHeight) * 80, and the first record must descend from the pin,
- * so that the compiled-in checkpoints and the file agree on where each height lies.
+ * The block headers above the last pinned checkpoint, held as a flat file of consecutive fixed width records named for the height of its first record,
+ * which is the height following the last pin. The height h is stored at offset (h - startHeight) * RECORD_LENGTH, and the first record must descend
+ * from the pin, so that the compiled-in checkpoints and the file agree on where each height lies.
+ * <p>
+ * A record is as wide as the longest header rather than as wide as the header it holds: an 80 byte v1 header is written into it zero padded, and the
+ * v2 flag in the version word is what tells a reader how much of the record the header occupies. A height therefore still lies at a fixed offset
+ * across the fork, where packing the headers end to end would cost a walk from the anchor to find one.
  * <p>
  * Nothing in the file is trusted: the whole chain is re-verified from the pinned anchor on every load, which costs a few tens of milliseconds per year
  * of headers. A torn, truncated or tampered file therefore costs a re-download of the headers above the damage rather than admitting an unverified
@@ -35,7 +40,7 @@ import java.util.List;
 public class HeaderStore {
     private static final Logger log = LoggerFactory.getLogger(HeaderStore.class);
 
-    public static final int HEADER_LENGTH = 80;
+    static final int RECORD_LENGTH = BlockHeader.V2_LENGTH;
 
     private final File file;
     private final int startHeight;      //the height of the record at offset zero, being the header immediately above the last pin
@@ -106,12 +111,12 @@ public class HeaderStore {
      */
     public synchronized void append(List<BlockHeader> headers) throws IOException {
         long offset = getOffset(chainState.getHeight() + 1);
-        ByteArrayOutputStream accepted = new ByteArrayOutputStream(headers.size() * HEADER_LENGTH);
+        ByteArrayOutputStream accepted = new ByteArrayOutputStream(headers.size() * RECORD_LENGTH);
         VerificationException rejected = null;
         try {
             for(BlockHeader header : headers) {
                 chainState.add(header);
-                accepted.writeBytes(header.bitcoinSerialize());
+                accepted.writeBytes(Arrays.copyOf(header.bitcoinSerialize(), RECORD_LENGTH));
             }
         } catch(VerificationException e) {
             rejected = e;
@@ -230,9 +235,9 @@ public class HeaderStore {
         }
 
         //A header interrupted mid write costs only itself: the tip append is deliberately not synced, and what is lost is fetched again
-        long records = file.length() / HEADER_LENGTH;
-        if(records * HEADER_LENGTH != file.length()) {
-            setLength(records * HEADER_LENGTH);
+        long records = file.length() / RECORD_LENGTH;
+        if(records * RECORD_LENGTH != file.length()) {
+            setLength(records * RECORD_LENGTH);
         }
 
         rebuild();
@@ -253,13 +258,13 @@ public class HeaderStore {
      */
     private HeaderChainState walkTo(long endOffset) throws IOException {
         HeaderChainState state = checkpoints.newChainState();
-        if(endOffset < HEADER_LENGTH) {
+        if(endOffset < RECORD_LENGTH) {
             return state;
         }
 
         try(DataInputStream inputStream = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
-            byte[] record = new byte[HEADER_LENGTH];
-            for(long offset = 0; offset + HEADER_LENGTH <= endOffset; offset += HEADER_LENGTH) {
+            byte[] record = new byte[RECORD_LENGTH];
+            for(long offset = 0; offset + RECORD_LENGTH <= endOffset; offset += RECORD_LENGTH) {
                 inputStream.readFully(record);
                 try {
                     state.add(new BlockHeader(record, 0));
@@ -282,13 +287,13 @@ public class HeaderStore {
     }
 
     private byte[] readRecord(long offset) throws IOException {
-        if(offset < 0 || file.length() < offset + HEADER_LENGTH) {
+        if(offset < 0 || file.length() < offset + RECORD_LENGTH) {
             return null;
         }
 
         try(RandomAccessFile randomAccessFile = new RandomAccessFile(file, "r")) {
             randomAccessFile.seek(offset);
-            byte[] record = new byte[HEADER_LENGTH];
+            byte[] record = new byte[RECORD_LENGTH];
             randomAccessFile.readFully(record);
 
             return record;
@@ -302,6 +307,6 @@ public class HeaderStore {
     }
 
     private long getOffset(int height) {
-        return (long)(height - startHeight) * HEADER_LENGTH;
+        return (long)(height - startHeight) * RECORD_LENGTH;
     }
 }

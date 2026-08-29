@@ -181,9 +181,9 @@ public interface ElectrumServerRpc {
         if(blockHeaders.count > count) {
             throw new VerificationException("Requested " + count + " block headers from height " + startHeight + " but the server returned " + blockHeaders.count);
         }
-        if(blockHeaders.hex.length() != blockHeaders.count * BlockHeaders.HEADER_HEX_LENGTH) {
+        if(blockHeaders.getHeaders(blockHeaders.count) == null) {
             throw new VerificationException("Response to a request for block headers from height " + startHeight + " contains " + blockHeaders.hex.length() / 2
-                    + " bytes for " + blockHeaders.count + " headers");
+                    + " bytes, which do not split into " + blockHeaders.count + " headers");
         }
 
         if(blockHeaders.count < count && tip != null && startHeight + blockHeaders.count - 1 < tip) {
