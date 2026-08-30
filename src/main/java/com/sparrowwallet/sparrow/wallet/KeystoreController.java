@@ -111,11 +111,31 @@ public class KeystoreController extends WalletFormController implements Initiali
     @FXML
     private Button switchXpubHeader;
 
+    @FXML
+    private Field unifiedSigHashField;
+
+    @FXML
+    private CheckBox unifiedSigHash;
+
     private final ValidationSupport validationSupport = new ValidationSupport();
 
     private final ChangeListener<String> labelChangeListener = (observable, oldValue, newValue) -> {
         keystore.setLabel(newValue);
         EventManager.get().post(new SettingsChangedEvent(walletForm.getWallet(), SettingsChangedEvent.Type.KEYSTORE_LABEL));
+    };
+
+    //Set while the control is being brought into line with the keystore, so that refreshing it is not taken for the
+    //user changing it. updateType runs before the listener is attached and again after an import, so a remove and
+    //re-add around the refresh would attach a second listener on the first pass and fire twice on every later click
+    private boolean refreshingUnifiedSigHash;
+
+    private final ChangeListener<Boolean> unifiedSigHashChangeListener = (observable, oldValue, newValue) -> {
+        if(refreshingUnifiedSigHash) {
+            return;
+        }
+
+        keystore.setUnifiedSigHashSupported(newValue);
+        EventManager.get().post(new SettingsChangedEvent(walletForm.getWallet(), SettingsChangedEvent.Type.KEYSTORE_UNIFIED_SIGHASH));
     };
 
     @Override
@@ -182,6 +202,9 @@ public class KeystoreController extends WalletFormController implements Initiali
         } else {
             keystore.setKeyDerivation(new KeyDerivation("",""));
         }
+
+        unifiedSigHashField.managedProperty().bind(unifiedSigHashField.visibleProperty());
+        unifiedSigHash.selectedProperty().addListener(unifiedSigHashChangeListener);
 
         label.textProperty().addListener(labelChangeListener);
         fingerprint.textProperty().addListener((observable, oldValue, newValue) -> {
@@ -378,6 +401,17 @@ public class KeystoreController extends WalletFormController implements Initiali
         setEditable(spScan, editable);
 
         xpubField.setVisible(getWalletForm().getWallet().getPolicyType() != PolicyType.SINGLE_SP);
+
+        //Only a device is taken at its owner's word: a software seed signs from a key this wallet holds, and a watch
+        //only keystore signs nothing at all, so neither has anything to declare here. Refreshed here rather than at
+        //setup so that replacing the keystore with another source shows the right thing
+        unifiedSigHashField.setVisible(keystore.getSource().isHardware());
+        refreshingUnifiedSigHash = true;
+        try {
+            unifiedSigHash.setSelected(keystore.isUnifiedSigHashSupported());
+        } finally {
+            refreshingUnifiedSigHash = false;
+        }
     }
 
     private void setEditable(TextInputControl textInputControl, boolean editable) {

@@ -194,6 +194,11 @@
     -fx-padding: 0 0 0 10;
 }
 
+/* A status that can be acted on by clicking it, underlined on hover as a link is */
+.help-label.actionable:hover {
+    -fx-underline: true;
+}
+
 .default-button {
     -fx-base: -fx-default-button;
 }

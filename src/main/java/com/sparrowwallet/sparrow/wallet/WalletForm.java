@@ -566,6 +566,13 @@ public class WalletForm {
     }
 
     @Subscribe
+    public void keystoreUnifiedSigHashChanged(KeystoreUnifiedSigHashChangedEvent event) {
+        if(event.getWalletId().equals(getWalletId())) {
+            Platform.runLater(() -> EventManager.get().post(new WalletDataChangedEvent(wallet)));
+        }
+    }
+
+    @Subscribe
     public void keystoreEncryptionChanged(KeystoreEncryptionChangedEvent event) {
         if(event.getWalletId().equals(getWalletId())) {
             Platform.runLater(() -> EventManager.get().post(new WalletDataChangedEvent(wallet)));

@@ -28,6 +28,9 @@ public class KeystoreMapper implements RowMapper<Keystore> {
         keystore.setExternalPaymentCode(rs.getString("keystore.externalPaymentCode") == null ? null : PaymentCode.fromString(rs.getString("keystore.externalPaymentCode")));
         keystore.setSilentPaymentScanAddress(rs.getBytes("keystore.silentPaymentScanAddress") == null ? null : SilentPaymentScanAddress.fromBytes(rs.getBytes("keystore.silentPaymentScanAddress")));
         keystore.setDeviceRegistration(rs.getBytes("keystore.deviceRegistration"));
+        //Null for a keystore written before the column existed, or by a build that does not know it, and getBoolean
+        //reads that as false: an unmarked device, which is what those rows mean
+        keystore.setUnifiedSigHashSupported(rs.getBoolean("keystore.unifiedSigHashSupported"));
 
         if(rs.getBytes("masterPrivateExtendedKey.privateKey") != null) {
             MasterPrivateExtendedKey masterPrivateExtendedKey = new MasterPrivateExtendedKey(rs.getBytes("masterPrivateExtendedKey.privateKey"), rs.getBytes("masterPrivateExtendedKey.chainCode"));

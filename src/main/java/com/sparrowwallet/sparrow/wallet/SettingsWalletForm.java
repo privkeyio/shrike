@@ -92,6 +92,11 @@ public class SettingsWalletForm extends WalletForm {
                 EventManager.get().post(new KeystoreLabelsChangedEvent(wallet, pastWallet, getWalletId(), labelChangedKeystores));
             }
 
+            List<Keystore> unifiedSigHashChangedKeystores = getUnifiedSigHashChangedKeystores(wallet, walletCopy);
+            if(!unifiedSigHashChangedKeystores.isEmpty()) {
+                EventManager.get().post(new KeystoreUnifiedSigHashChangedEvent(wallet, pastWallet, getWalletId(), unifiedSigHashChangedKeystores));
+            }
+
             if(!Objects.equals(wallet.getWatchLast(), walletCopy.getWatchLast())) {
                 EventManager.get().post(new WalletWatchLastChangedEvent(wallet, pastWallet, getWalletId(), walletCopy.getWatchLast()));
             }
@@ -113,7 +118,7 @@ public class SettingsWalletForm extends WalletForm {
                 }
             }
 
-            if(labelChangedKeystores.isEmpty() && encryptionChangedKeystores.isEmpty()) {
+            if(labelChangedKeystores.isEmpty() && encryptionChangedKeystores.isEmpty() && unifiedSigHashChangedKeystores.isEmpty()) {
                 //Can only be a wallet password change on a wallet without private keys
                 EventManager.get().post(new WalletPasswordChangedEvent(wallet, pastWallet, getWalletId()));
             }
@@ -204,6 +209,25 @@ public class SettingsWalletForm extends WalletForm {
 
     private Integer getNumSignaturesRequired(Policy policy) {
         return policy == null ? null : policy.getNumSignaturesRequired();
+    }
+
+    /**
+     * The keystores whose mark has changed, applied to the original as the label diff does, so that the wallet the
+     * rest of the application holds carries the change once the event that persists it has been posted.
+     */
+    private List<Keystore> getUnifiedSigHashChangedKeystores(Wallet original, Wallet changed) {
+        List<Keystore> changedKeystores = new ArrayList<>();
+        for(int i = 0; i < original.getKeystores().size(); i++) {
+            Keystore originalKeystore = original.getKeystores().get(i);
+            Keystore changedKeystore = changed.getKeystores().get(i);
+
+            if(originalKeystore.isUnifiedSigHashSupported() != changedKeystore.isUnifiedSigHashSupported()) {
+                originalKeystore.setUnifiedSigHashSupported(changedKeystore.isUnifiedSigHashSupported());
+                changedKeystores.add(originalKeystore);
+            }
+        }
+
+        return changedKeystores;
     }
 
     private List<Keystore> getLabelChangedKeystores(Wallet original, Wallet changed) {

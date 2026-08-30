@@ -10,16 +10,16 @@ import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import java.util.List;
 
 public interface KeystoreDao {
-    @SqlQuery("select keystore.id, keystore.label, keystore.source, keystore.walletModel, keystore.masterFingerprint, keystore.derivationPath, keystore.extendedPublicKey, keystore.externalPaymentCode, keystore.silentPaymentScanAddress, keystore.deviceRegistration, " +
+    @SqlQuery("select keystore.id, keystore.label, keystore.source, keystore.walletModel, keystore.masterFingerprint, keystore.derivationPath, keystore.extendedPublicKey, keystore.externalPaymentCode, keystore.silentPaymentScanAddress, keystore.deviceRegistration, keystore.unifiedSigHashSupported, " +
               "masterPrivateExtendedKey.id, masterPrivateExtendedKey.privateKey, masterPrivateExtendedKey.chainCode, masterPrivateExtendedKey.initialisationVector, masterPrivateExtendedKey.encryptedBytes, masterPrivateExtendedKey.keySalt, masterPrivateExtendedKey.deriver, masterPrivateExtendedKey.crypter, " +
               "seed.id, seed.type, seed.mnemonicString, seed.initialisationVector, seed.encryptedBytes, seed.keySalt, seed.deriver, seed.crypter, seed.needsPassphrase, seed.creationTimeSeconds " +
               "from keystore left join masterPrivateExtendedKey on keystore.masterPrivateExtendedKey = masterPrivateExtendedKey.id left join seed on keystore.seed = seed.id where keystore.wallet = ? order by keystore.index asc")
     @RegisterRowMapper(KeystoreMapper.class)
     List<Keystore> getForWalletId(Long id);
 
-    @SqlUpdate("insert into keystore (label, source, walletModel, masterFingerprint, derivationPath, extendedPublicKey, externalPaymentCode, silentPaymentScanAddress, deviceRegistration, masterPrivateExtendedKey, seed, wallet, index) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    @SqlUpdate("insert into keystore (label, source, walletModel, masterFingerprint, derivationPath, extendedPublicKey, externalPaymentCode, silentPaymentScanAddress, deviceRegistration, unifiedSigHashSupported, masterPrivateExtendedKey, seed, wallet, index) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     @GetGeneratedKeys("id")
-    long insert(String label, int source, int walletModel, String masterFingerprint, String derivationPath, String extendedPublicKey, String externalPaymentCode, byte[] silentPaymentScanAddress, byte[] deviceRegistration, Long masterPrivateExtendedKey, Long seed, long wallet, int index);
+    long insert(String label, int source, int walletModel, String masterFingerprint, String derivationPath, String extendedPublicKey, String externalPaymentCode, byte[] silentPaymentScanAddress, byte[] deviceRegistration, boolean unifiedSigHashSupported, Long masterPrivateExtendedKey, Long seed, long wallet, int index);
 
     @SqlUpdate("insert into masterPrivateExtendedKey (privateKey, chainCode, initialisationVector, encryptedBytes, keySalt, deriver, crypter, creationTimeSeconds) values (?, ?, ?, ?, ?, ?, ?, ?)")
     @GetGeneratedKeys("id")
@@ -40,6 +40,9 @@ public interface KeystoreDao {
 
     @SqlUpdate("update keystore set deviceRegistration = ? where id = ?")
     void updateDeviceRegistration(byte[] deviceRegistration, long id);
+
+    @SqlUpdate("update keystore set unifiedSigHashSupported = ? where id = ?")
+    void updateUnifiedSigHashSupported(boolean unifiedSigHashSupported, long id);
 
     default void addKeystores(Wallet wallet) {
         for(int i = 0; i < wallet.getKeystores().size(); i++) {
@@ -75,6 +78,7 @@ public interface KeystoreDao {
                     keystore.getExternalPaymentCode() == null ? null : keystore.getExternalPaymentCode().toString(),
                     keystore.getSilentPaymentScanAddress() == null ? null : keystore.getSilentPaymentScanAddress().toBytes(),
                     keystore.getDeviceRegistration(),
+                    keystore.isUnifiedSigHashSupported(),
                     keystore.getMasterPrivateExtendedKey() == null ? null : keystore.getMasterPrivateExtendedKey().getId(),
                     keystore.getSeed() == null ? null : keystore.getSeed().getId(), wallet.getId(), i);
             keystore.setId(id);

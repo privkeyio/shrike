@@ -986,16 +986,25 @@ public class AppServices {
     }
 
     /**
-     * As canSignUnified, keeping the reason. SW_WATCH falls here alongside the hardware sources: a
-     * watch only keystore produces no signature either, so the wallet is in no position to opt in.
+     * As canSignUnified, keeping the reason. A software seed signs from a key the wallet holds, so its support is
+     * not in question; a device is taken at its owner's word, since nothing it sends says which firmware it runs.
+     * SW_WATCH is neither: it produces no signature at all, so the wallet is in no position to opt in whatever it
+     * has been marked as.
+     *
+     * A PSBT carries one hash type for every signer, so one keystore that cannot opt in decides for the wallet.
      */
     static UnifiedSigHashDecision keystoreDecision(Wallet wallet) {
         if(wallet == null || wallet.getKeystores().isEmpty()) {
             return UnifiedSigHashDecision.NO_SIGNING_KEYS;
         }
 
-        return wallet.getKeystores().stream().allMatch(keystore -> keystore.getSource() == KeystoreSource.SW_SEED)
+        return wallet.getKeystores().stream().allMatch(AppServices::canKeystoreSignUnified)
                 ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.EXTERNAL_SIGNER;
+    }
+
+    private static boolean canKeystoreSignUnified(Keystore keystore) {
+        return keystore.getSource() == KeystoreSource.SW_SEED
+                || (keystore.getSource().isHardware() && keystore.isUnifiedSigHashSupported());
     }
 
     /**

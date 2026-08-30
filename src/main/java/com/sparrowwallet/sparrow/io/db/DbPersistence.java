@@ -412,6 +412,13 @@ public class DbPersistence implements Persistence {
                     }
                 }
 
+                if(!dirtyPersistables.unifiedSigHashKeystores.isEmpty()) {
+                    KeystoreDao keystoreDao = handle.attach(KeystoreDao.class);
+                    for(Keystore keystore : dirtyPersistables.unifiedSigHashKeystores) {
+                        keystoreDao.updateUnifiedSigHashSupported(keystore.isUnifiedSigHashSupported(), keystore.getId());
+                    }
+                }
+
                 if(!dirtyPersistables.registrationKeystores.isEmpty()) {
                     KeystoreDao keystoreDao = handle.attach(KeystoreDao.class);
                     for(Keystore keystore : dirtyPersistables.registrationKeystores) {
@@ -1051,6 +1058,13 @@ public class DbPersistence implements Persistence {
     }
 
     @Subscribe
+    public void keystoreUnifiedSigHashChanged(KeystoreUnifiedSigHashChangedEvent event) {
+        if(persistsFor(event.getWallet())) {
+            updateExecutor.execute(() -> dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).unifiedSigHashKeystores.addAll(event.getChangedKeystores()));
+        }
+    }
+
+    @Subscribe
     public void keystoreEncryptionChanged(KeystoreEncryptionChangedEvent event) {
         if(persistsFor(event.getWallet())) {
             updateExecutor.execute(() -> dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).encryptionKeystores.addAll(event.getChangedKeystores()));
@@ -1096,6 +1110,7 @@ public class DbPersistence implements Persistence {
         public final List<Keystore> labelKeystores = new ArrayList<>();
         public final List<Keystore> encryptionKeystores = new ArrayList<>();
         public final List<Keystore> registrationKeystores = new ArrayList<>();
+        public final List<Keystore> unifiedSigHashKeystores = new ArrayList<>();
         public boolean silentPaymentAddresses;
 
         public String toString() {
@@ -1119,6 +1134,7 @@ public class DbPersistence implements Persistence {
                     "\nKeystore labels:" + labelKeystores.stream().map(Keystore::getLabel).collect(Collectors.toList()) +
                     "\nKeystore encryptions:" + encryptionKeystores.stream().map(Keystore::getLabel).collect(Collectors.toList()) +
                     "\nKeystore registrations:" + registrationKeystores.stream().map(Keystore::getDeviceRegistration).collect(Collectors.toList()) +
+                    "\nKeystore unified sighash marks:" + unifiedSigHashKeystores.stream().map(Keystore::isUnifiedSigHashSupported).collect(Collectors.toList()) +
                     "\nSilent payment addresses:" + silentPaymentAddresses;
         }
     }

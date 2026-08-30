@@ -978,7 +978,7 @@ public class HeadersController extends TransactionFormController implements Init
             label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
             label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
             label.setTooltip(new Tooltip(optedIn
-                    ? "These signatures cannot be replayed on a chain without the fork, and commit to the amounts they spend."
+                    ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend."
                     : "These signatures are made the way they always have been. They carry no replay protection."));
         }
     }

@@ -43,16 +43,26 @@ public enum UnifiedSigHashDecision {
     NO_SIGNING_KEYS("this wallet holds no keys of its own"),
 
     /**
-     * At least one keystore is not a software seed. A device that has not implemented the opt-in either
-     * refuses the hash type or signs the legacy message while the PSBT declares the new one, and a PSBT
-     * carries one hash type for every signer, so one such keystore decides for the whole wallet.
+     * At least one device in this wallet is not marked as supporting the opt-in. Nothing a device sends says
+     * which firmware it runs, so this is what its owner told the wallet rather than something detected, and it
+     * is off until they say otherwise. A PSBT carries one hash type for every signer, so one unmarked device
+     * decides for the whole wallet.
+     *
+     * The only decision here with a remedy the user can act on, which is why it carries one.
      */
-    EXTERNAL_SIGNER("a signer in this wallet does not support it");
+    EXTERNAL_SIGNER("a signer in this wallet is not marked as supporting it",
+            "If its firmware does support it, mark the device under Replay protection in the keystore tab of the wallet settings.");
 
     private final String reason;
+    private final String remedy;
 
     UnifiedSigHashDecision(String reason) {
+        this(reason, null);
+    }
+
+    UnifiedSigHashDecision(String reason, String remedy) {
         this.reason = reason;
+        this.remedy = remedy;
     }
 
     public boolean isOptedIn() {
@@ -67,11 +77,19 @@ public enum UnifiedSigHashDecision {
     }
 
     /**
+     * What the user can do about it, or null where nothing they control decides this. A chain that has not
+     * activated is not something to act on, so saying nothing is the honest answer for most of these.
+     */
+    public String getRemedy() {
+        return remedy;
+    }
+
+    /**
      * What the signature does, in terms of the consequence rather than the hash type that carries it.
      *
      * The sighash control names the type already, and the byte is not what a person is deciding about:
-     * the choice is between a signature that cannot be replayed on another chain and commits to the
-     * amounts it spends, and one that predates both guarantees.
+     * the choice is between a signature that cannot be replayed against nodes that have not adopted the
+     * fork and commits to the amounts it spends, and one that predates both guarantees.
      */
     public String getSummary() {
         return summaryFor(isOptedIn());

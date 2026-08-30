@@ -41,6 +41,7 @@ import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
 import javafx.scene.Node;
+import javafx.scene.Cursor;
 import javafx.scene.control.*;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -1112,11 +1113,51 @@ public class SendController extends WalletFormController implements Initializabl
         optInStatus.setText(decision.getSummary());
         optInStatus.setGraphic(decision.isOptedIn() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
 
+        //The one decision the user can act on is offered here rather than only described: the send screen is where
+        //they find out, and a setting reached by leaving the send and hunting through a tab is a setting nobody uses
+        boolean actionable = decision == UnifiedSigHashDecision.EXTERNAL_SIGNER;
+        optInStatus.getStyleClass().removeAll("actionable");
+        if(actionable) {
+            optInStatus.getStyleClass().add("actionable");
+            optInStatus.setCursor(Cursor.HAND);
+            optInStatus.setOnMouseClicked(event -> markKeystores(walletTransaction.getWallet()));
+        } else {
+            optInStatus.setCursor(Cursor.DEFAULT);
+            optInStatus.setOnMouseClicked(null);
+        }
+
         Tooltip tooltip = new Tooltip(decision.isOptedIn()
-                ? "These signatures cannot be replayed on a chain without the fork, and commit to the amounts they spend."
-                : "Signing the way it always has been, because " + decision.getReason() + ".");
+                ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend."
+                : "Signing the way it always has been, because " + decision.getReason() + "."
+                    + (decision.getRemedy() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getRemedy()));
         tooltip.setShowDuration(Duration.INDEFINITE);
         optInStatus.setTooltip(tooltip);
+    }
+
+    /**
+     * Marks the wallet's devices from the send screen, applying and posting exactly what the settings save does, so
+     * the change is written the same way however it was reached. The wallet is not rewritten for it, which is why
+     * this needs none of the password the settings save asks for.
+     */
+    private void markKeystores(Wallet wallet) {
+        UnifiedSigHashKeystoreDialog dialog = new UnifiedSigHashKeystoreDialog(wallet);
+        if(!dialog.hasKeystores()) {
+            return;
+        }
+
+        dialog.initOwner(optInStatus.getScene().getWindow());
+        Optional<List<Keystore>> changed = dialog.showAndWait();
+        if(changed.isEmpty() || changed.get().isEmpty()) {
+            return;
+        }
+
+        Wallet pastWallet = wallet.copy();
+        for(Keystore keystore : changed.get()) {
+            keystore.setUnifiedSigHashSupported(dialog.isMarked(keystore));
+        }
+
+        EventManager.get().post(new KeystoreUnifiedSigHashChangedEvent(wallet, pastWallet, getWalletForm().getWalletId(), changed.get()));
+        updateOptInStatus(walletTransactionProperty.get());
     }
 
     public void clear(ActionEvent event) {

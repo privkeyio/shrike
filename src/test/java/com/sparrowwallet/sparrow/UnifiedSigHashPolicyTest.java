@@ -191,20 +191,59 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
-     * Only opt in when this wallet holds the keys.
+     * Opt in where this wallet holds the keys, and where a device has been marked as supporting it.
      *
      * A device that has not implemented the opt-in either refuses the hash type outright, as the BitBox02
      * does, or ignores the PSBT's request and signs the legacy message while the PSBT declares the new
-     * one, as Trezor and Ledger do. The second case is the dangerous one: the signature simply does not
-     * verify, and the user is told the PSBT is invalid with nothing to act on. Opting in is optional, so
-     * a device-backed wallet keeps signing the way it does today.
+     * one, as Trezor and Ledger do. A third case, measured against stock embit at 84cce66, is worse than
+     * either: sign_with skips an input whose hash type it does not recognise, so the device adds no
+     * signature at all and reports a failure of its own. An airgapped one returns nothing at that point,
+     * so there is no signature for the wallet to inspect and nothing to fall back from.
+     *
+     * That is why an unmarked device does not opt in. Nothing a device sends says which firmware it runs,
+     * so assuming support would break signing rather than cost it replay protection.
      */
     @Test
-    public void testOnlyASoftwareWalletOptsIn() {
+    public void testAnUnmarkedDeviceDoesNotOptIn() {
         Assertions.assertTrue(AppServices.canSignUnified(walletWith(KeystoreSource.SW_SEED)));
         for(KeystoreSource source : List.of(KeystoreSource.HW_USB, KeystoreSource.HW_AIRGAPPED, KeystoreSource.SW_WATCH)) {
             Assertions.assertFalse(AppServices.canSignUnified(walletWith(source)),
-                    source + " cannot be relied on to produce an opted-in signature");
+                    source + " cannot be relied on to produce an opted-in signature unmarked");
+        }
+    }
+
+    /**
+     * Marked, a device is taken at its owner's word, which is the only source of the answer there is.
+     */
+    @Test
+    public void testAMarkedDeviceOptsIn() {
+        for(KeystoreSource source : List.of(KeystoreSource.HW_USB, KeystoreSource.HW_AIRGAPPED)) {
+            Assertions.assertTrue(AppServices.canSignUnified(markedWalletWith(source)),
+                    source + " should opt in once marked as supporting it");
+        }
+    }
+
+    /**
+     * A watch only keystore produces no signature whatever it has been marked as, so marking one cannot
+     * put the wallet in a position to opt in. Worth pinning, since the flag is stored on every keystore.
+     */
+    @Test
+    public void testMarkingAWatchOnlyKeystoreChangesNothing() {
+        Assertions.assertFalse(AppServices.canSignUnified(markedWalletWith(KeystoreSource.SW_WATCH)));
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER, AppServices.keystoreDecision(markedWalletWith(KeystoreSource.SW_WATCH)));
+    }
+
+    /**
+     * The reason a user is shown has to point at the thing they can change, or the setting exists and
+     * nobody finds it. This is the only decision with anything to act on.
+     */
+    @Test
+    public void testOnlyTheUnmarkedDeviceReasonCarriesARemedy() {
+        Assertions.assertNotNull(UnifiedSigHashDecision.EXTERNAL_SIGNER.getRemedy());
+        for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
+            if(decision != UnifiedSigHashDecision.EXTERNAL_SIGNER) {
+                Assertions.assertNull(decision.getRemedy(), decision + " has no remedy the user can act on");
+            }
         }
     }
 
@@ -218,6 +257,12 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertTrue(AppServices.canSignUnified(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_SEED)));
         Assertions.assertFalse(AppServices.canSignUnified(walletWith()), "A wallet with no keystores cannot sign");
         Assertions.assertFalse(AppServices.canSignUnified(null));
+
+        //One unmarked device is enough to decide for the whole wallet, and marking it is enough to change that
+        Wallet mixed = walletWith(KeystoreSource.SW_SEED, KeystoreSource.HW_AIRGAPPED);
+        Assertions.assertFalse(AppServices.canSignUnified(mixed));
+        mixed.getKeystores().getLast().setUnifiedSigHashSupported(true);
+        Assertions.assertTrue(AppServices.canSignUnified(mixed));
     }
 
     /**
@@ -365,6 +410,13 @@ public class UnifiedSigHashPolicyTest {
             keystore.setSource(source);
             wallet.getKeystores().add(keystore);
         }
+
+        return wallet;
+    }
+
+    private Wallet markedWalletWith(KeystoreSource... sources) {
+        Wallet wallet = walletWith(sources);
+        wallet.getKeystores().forEach(keystore -> keystore.setUnifiedSigHashSupported(true));
 
         return wallet;
     }
