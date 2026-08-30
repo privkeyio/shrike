@@ -108,7 +108,7 @@ public class BitcoindClient {
         } else if(config.getCoreAuth() != null) {
             bitcoindTransport = new BitcoindTransport(config.getCoreServer(), CORE_WALLET_NAME, config.getCoreAuth());
         } else {
-            throw new ConfigurationException("Bitcoin Core data folder or user and password is required");
+            throw new ConfigurationException("Bitcoin Knots data folder or user and password is required");
         }
 
         this.jsonRpcClient = new JsonRpcClient(bitcoindTransport);
@@ -134,7 +134,7 @@ public class BitcoindClient {
     public void initialize() throws CormorantBitcoindException {
         networkInfo = getBitcoindService().getNetworkInfo();
         if(networkInfo.version() < 240000) {
-            throw new CormorantBitcoindException("Bitcoin Core versions older than v24 are not supported");
+            throw new CormorantBitcoindException("Bitcoin Knots versions older than v24 are not supported");
         }
 
         BlockchainInfo blockchainInfo = getBitcoindService().getBlockchainInfo();
@@ -172,12 +172,12 @@ public class BitcoindClient {
         try {
             loadedWallets = getBitcoindService().listWallets();
             if(loadedWallets == null) {
-                throw new BitcoinRPCException("Wallet support must be enabled in Bitcoin Core");
+                throw new BitcoinRPCException("Wallet support must be enabled in Bitcoin Knots");
             }
             legacyWalletExists = loadedWallets.contains(Bwt.DEFAULT_CORE_WALLET);
         } catch(JsonRpcException e) {
             if(ElectrumServerRpc.isMethodNotFound(e)) {
-                throw new BitcoinRPCException("Wallet support must be enabled in Bitcoin Core");
+                throw new BitcoinRPCException("Wallet support must be enabled in Bitcoin Knots");
             } else {
                 throw e;
             }
@@ -226,7 +226,7 @@ public class BitcoindClient {
                 if(!legacyWalletExists) {
                     legacyWalletExists = checkLegacyWalletExists();
                 }
-                Platform.runLater(() -> EventManager.get().post(new CormorantPruneStatusEvent("Error: Wallet birthday earlier than Bitcoin Core prune date", prePruneWallets.getFirst(), e.getRescanSince(), e.getPrunedDate(), legacyWalletExists)));
+                Platform.runLater(() -> EventManager.get().post(new CormorantPruneStatusEvent("Error: Wallet birthday earlier than Bitcoin Knots prune date", prePruneWallets.getFirst(), e.getRescanSince(), e.getPrunedDate(), legacyWalletExists)));
             }
             throw new ImportFailedException("Wallet birthday earlier than prune date");
         }
@@ -446,7 +446,7 @@ public class BitcoindClient {
             }
 
             if(results.size() != importDescriptors.size()) {
-                String error = "Bitcoin Core returned " + results.size() + " results for " + importDescriptors.size() + " imported descriptors";
+                String error = "Bitcoin Knots returned " + results.size() + " results for " + importDescriptors.size() + " imported descriptors";
                 log.error(error);
                 postImportFailure(importingDescriptors.keySet().stream().collect(Collectors.toMap(descriptor -> descriptor, descriptor -> error, (a, b) -> a, LinkedHashMap::new)));
                 throw new ImportFailedException(error);
@@ -775,7 +775,7 @@ public class BitcoindClient {
                 }
             } catch(Exception e) {
                 lastPollException = e;
-                log.warn("Error polling Bitcoin Core", e);
+                log.warn("Error polling Bitcoin Knots", e);
 
                 if(syncing) {
                     syncingLock.lock();
