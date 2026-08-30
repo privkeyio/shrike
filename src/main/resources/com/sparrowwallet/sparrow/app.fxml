@@ -161,7 +161,7 @@
                     <MenuItem mnemonicParsing="false" text="Show Log File" onAction="#showLogFile"/>
                     <MenuItem mnemonicParsing="false" text="Get Support" onAction="#openSupport"/>
                     <MenuItem mnemonicParsing="false" text="Submit Bug Report" onAction="#submitBugReport"/>
-                    <MenuItem styleClass="osxHide" mnemonicParsing="false" text="About Sparrow" onAction="#showAbout"/>
+                    <MenuItem fx:id="aboutItem" styleClass="osxHide" mnemonicParsing="false" text="About" onAction="#showAbout"/>
                 </Menu>
             </menus>
         </MenuBar>

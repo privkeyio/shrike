@@ -17,6 +17,15 @@ public enum UnifiedSigHashDecision {
     CHAIN_NOT_ACTIVATED("the chain has not activated it"),
 
     /**
+     * No tip to read at all, which is every offline session and the moment before the first one arrives.
+     *
+     * Distinct from the chain having answered and said no. Reporting that here would state something about the
+     * chain that was never checked, and the two are not the same thing to a user deciding whether to sign now or
+     * connect first.
+     */
+    CHAIN_UNSEEN("the chain cannot be seen from here"),
+
+    /**
      * A v2 tip but no height to compare against, so there is nothing to decide on.
      */
     CHAIN_HEIGHT_UNKNOWN("the current block height is not known"),

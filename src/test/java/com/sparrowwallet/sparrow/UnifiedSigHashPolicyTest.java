@@ -470,6 +470,31 @@ public class UnifiedSigHashPolicyTest {
         }
     }
 
+    /**
+     * Offline there is no tip, and the wallet says so rather than reporting what the chain decided.
+     *
+     * These are different claims. One is the chain having answered, the other is never having asked, and a user
+     * choosing between signing now and connecting first is deciding on exactly that difference. Reporting the
+     * first for the second states something about a chain that was never seen.
+     */
+    @Test
+    public void testAnUnseenChainIsNotReportedAsNotActivated() {
+        for(Network network : List.of(Network.MAINNET, Network.TESTNET4, Network.REGTEST)) {
+            Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_UNSEEN, AppServices.chainDecision(network, null, null),
+                    network + " with no tip has not been told anything about the chain");
+            Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_UNSEEN, AppServices.chainDecision(network, 1000, null),
+                    network + " with a height but no header still has no header to judge");
+        }
+
+        //A header that is present and v1 is the chain answering, which is the other reason entirely
+        BlockHeader v1 = Network.MAINNET.getGenesisHeader();
+        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED, AppServices.chainDecision(Network.MAINNET, 1000, v1));
+
+        Assertions.assertFalse(UnifiedSigHashDecision.CHAIN_UNSEEN.isOptedIn());
+        Assertions.assertNull(UnifiedSigHashDecision.CHAIN_UNSEEN.getRemedy(),
+                "connecting is not something the wallet can do for the user, so no remedy is offered");
+    }
+
     private Wallet markedWalletWith(KeystoreSource... sources) {
         Wallet wallet = walletWith(sources);
         wallet.getKeystores().forEach(keystore -> keystore.setUnifiedSigHashSupported(true));
