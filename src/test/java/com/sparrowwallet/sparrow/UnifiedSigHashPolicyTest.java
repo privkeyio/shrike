@@ -414,6 +414,34 @@ public class UnifiedSigHashPolicyTest {
         return wallet;
     }
 
+    /**
+     * The whole chain, from the mark a user sets to the hash type the PSBT carries.
+     *
+     * Every piece of this is covered on its own: the keystore decision, the chain decision, the order the two are
+     * asked in, and applying the result to a PSBT. None of that says the mark reaches the transaction, which is the
+     * only thing the feature exists to do. A wiring mistake anywhere between them passes every other test here.
+     */
+    @Test
+    public void aMarkedDeviceProducesAnOptedInPsbt() {
+        for(KeystoreSource source : List.of(KeystoreSource.HW_USB, KeystoreSource.HW_AIRGAPPED)) {
+            Wallet unmarked = walletWith(source);
+            PSBT unmarkedPsbt = AppServices.applyUnifiedSigHash(twoInputPsbt(),
+                    AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, unmarked).isOptedIn());
+            for(PSBTInput psbtInput : unmarkedPsbt.getPsbtInputs()) {
+                Assertions.assertNotEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash(),
+                        source + " unmarked must not produce an opted-in PSBT");
+            }
+
+            Wallet marked = markedWalletWith(source);
+            PSBT markedPsbt = AppServices.applyUnifiedSigHash(twoInputPsbt(),
+                    AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, marked).isOptedIn());
+            for(PSBTInput psbtInput : markedPsbt.getPsbtInputs()) {
+                Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash(),
+                        source + " marked must produce an opted-in PSBT");
+            }
+        }
+    }
+
     private Wallet markedWalletWith(KeystoreSource... sources) {
         Wallet wallet = walletWith(sources);
         wallet.getKeystores().forEach(keystore -> keystore.setUnifiedSigHashSupported(true));
