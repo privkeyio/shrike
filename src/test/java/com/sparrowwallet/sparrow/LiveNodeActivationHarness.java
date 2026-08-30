@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
  * literals, so the arithmetic is exercised on values a node actually reports.
  */
 public class LiveNodeActivationHarness {
-    private static final int WALLET_HEIGHT = 150027;
-    private static final int NODE_HEIGHT = 150027;
+    private static final int WALLET_HEIGHT = 150308;
+    private static final int NODE_HEIGHT = 150308;
     private static final int TIP = 161442;
 
     @Test
@@ -27,13 +27,13 @@ public class LiveNodeActivationHarness {
         AppServices.clearNodeHardforkHeight();
         Assertions.assertFalse(AppServices.isUnifiedSigHashActive(WALLET_HEIGHT, 149537, TIP),
                 "A node on an older schedule is a disagreement, not something to follow");
-        Assertions.assertEquals("150027/149537", AppServices.getLastActivationHeightReport());
+        Assertions.assertEquals("150308/149537", AppServices.getLastActivationHeightReport());
     }
 
     @Test
     public void testANetworkWithNoShippedHeightDeclinesAndReports() {
         AppServices.clearNodeHardforkHeight();
         Assertions.assertFalse(AppServices.isUnifiedSigHashActive(null, NODE_HEIGHT, TIP));
-        Assertions.assertEquals("unknown/150027", AppServices.getLastActivationHeightReport());
+        Assertions.assertEquals("unknown/150308", AppServices.getLastActivationHeightReport());
     }
 }

@@ -820,14 +820,11 @@ public class AppServices {
      * the chain is the only available answer there.
      */
     static Integer getUnifiedSigHashActivationHeight(Network network) {
-        return switch(network) {
-            //consensus.Blake2bHeight in CTestNet4Params. The schedule has moved more than once before a
-            //final release, and each move replaced the chain that followed the old one, so this value is
-            //not something to trust on its own: isUnifiedSigHashActive cross-checks it against the
-            //connected node and declines rather than follow either side of a disagreement.
-            case TESTNET4 -> 150027;
-            default -> null;
-        };
+        //Held on the network alongside the checkpoints, so the header chain and this decision cannot hold different
+        //ideas of when the fork activates. The schedule has moved more than once before a final release, and each
+        //move replaced the chain that followed the old one, so it is not trusted on its own: isUnifiedSigHashActive
+        //cross-checks it against the connected node and declines rather than follow either side of a disagreement.
+        return network.getBlake2bHeight();
     }
 
     /**

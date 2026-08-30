@@ -69,18 +69,34 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
-     * The property that matters for mainnet: the fork is not scheduled there, so no header a server
-     * serves can make a wallet opt in. Without this floor a forged v2 header would be enough to make
-     * every transaction the wallet produced unbroadcastable.
+     * The property that matters for mainnet, now that a height ships for it.
+     *
+     * This used to hold because mainnet was unscheduled, so no header could make a wallet opt in at all. That floor
+     * is gone: the shipped height is what a server cannot move, and below it a forged v2 header buys nothing. Above
+     * it the wallet does opt in on a v2 tip, which is the point of shipping a height, and the node cross-check is
+     * what covers a server lying about the tip.
      */
     @Test
-    public void testAForgedV2TipCannotOptInOnMainnet() {
+    public void testAForgedV2TipCannotOptInBelowTheMainnetHeight() {
         BlockHeader forged = header(V2_HEADER_HEX);
         Assertions.assertTrue(forged.isHeaderV2());
-        Assertions.assertNull(AppServices.getUnifiedSigHashActivationHeight(Network.MAINNET),
-                "Mainnet must have no activation height until the fork is scheduled");
-        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.MAINNET, 900000, forged));
-        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.MAINNET, Integer.MAX_VALUE, forged));
+
+        int activationHeight = AppServices.getUnifiedSigHashActivationHeight(Network.MAINNET);
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.MAINNET, activationHeight - 1, forged));
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.MAINNET, 1, forged));
+        Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.MAINNET, activationHeight, forged),
+                "at the height the chain has activated, so a v2 tip opts in");
+    }
+
+    /**
+     * A v1 tip never opts in, whatever height is claimed. The proof of work change and this one activate together,
+     * so a chain still serving v1 headers has not activated whatever its height says.
+     */
+    @Test
+    public void testAV1TipNeverOptsInOnMainnet() {
+        BlockHeader v1 = Network.MAINNET.getGenesisHeader();
+        Assertions.assertFalse(v1.isHeaderV2());
+        Assertions.assertFalse(AppServices.isUnifiedSigHashActive(Network.MAINNET, Integer.MAX_VALUE, v1));
     }
 
     /**
@@ -369,8 +385,20 @@ public class UnifiedSigHashPolicyTest {
      */
     @Test
     public void testTheShippedTestnet4HeightIsTheOneKnotsUses() {
-        Assertions.assertEquals(150027, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
+        Assertions.assertEquals(150308, AppServices.getUnifiedSigHashActivationHeight(Network.TESTNET4),
                 "Update the provenance comment alongside this value");
+    }
+
+    /**
+     * Mainnet ships a height now, so the wallet opts in there once the chain reaches it. Until it did, the build
+     * declined everywhere on mainnet, which is a materially different thing to be shipping.
+     */
+    @Test
+    public void testTheShippedMainnetHeightIsTheOneKnotsUses() {
+        Assertions.assertEquals(961640, AppServices.getUnifiedSigHashActivationHeight(Network.MAINNET),
+                "Update the provenance comment alongside this value");
+        Assertions.assertNull(AppServices.getUnifiedSigHashActivationHeight(Network.REGTEST),
+                "Regtest chooses its own height through the node, so this build ships none");
     }
 
     /**
