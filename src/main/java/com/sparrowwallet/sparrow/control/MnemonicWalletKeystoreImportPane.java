@@ -146,7 +146,7 @@ public class MnemonicWalletKeystoreImportPane extends MnemonicKeystorePane {
             } else {
                 discoverButton.setDisable(false);
                 Optional<ButtonType> optButtonType = AppServices.showErrorDialog("No existing wallet found",
-                        Config.get().getServerType() == ServerType.BITCOIN_CORE ? "The configured server type is Bitcoin Core, which does not support wallet discovery.\n\n" +
+                        Config.get().getServerType() == ServerType.BITCOIN_CORE ? "The configured server type is Bitcoin Knots, which does not support wallet discovery.\n\n" +
                                 "You can however import this wallet and scan the blockchain by supplying a start date. Do you want to import this wallet?" :
                                 "Could not find an HD wallet with existing transactions using this mnemonic. Import this wallet anyway?", ButtonType.NO, ButtonType.YES);
                 if(optButtonType.isPresent() && optButtonType.get() == ButtonType.YES) {

@@ -347,7 +347,7 @@ public class Bwt {
                                 Bwt.this.shutdown();
                                 terminating = false;
                             } else {
-                                Platform.runLater(() -> EventManager.get().post(new BwtBootStatusEvent("Connecting to Bitcoin Core node " + Config.get().getServerDisplayName() + "...")));
+                                Platform.runLater(() -> EventManager.get().post(new BwtBootStatusEvent("Connecting to Bitcoin Knots node " + Config.get().getServerDisplayName() + "...")));
                             }
                         }
 

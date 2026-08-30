@@ -277,7 +277,7 @@ public class ServerSettingsController extends SettingsDetailController {
             Stage window = new Stage();
 
             DirectoryChooser directorChooser = new DirectoryChooser();
-            directorChooser.setTitle("Select Bitcoin Core Data Directory");
+            directorChooser.setTitle("Select Bitcoin Knots Data Directory");
             directorChooser.setInitialDirectory(config.getCoreDataDir() != null ? config.getCoreDataDir() : new File(System.getProperty("user.home")));
 
             File dataDir = directorChooser.showDialog(window);
@@ -700,11 +700,11 @@ public class ServerSettingsController extends SettingsDetailController {
             reason = tlsServerException.getMessage() + "\n\n" + reason;
         } else if(exception instanceof ProxyServerException) {
             reason += ". Check if the proxy server is running.";
-        } else if(reason != null && (reason.contains("Check if Bitcoin Core is running") || reason.contains("Could not connect to Bitcoin Core RPC"))) {
+        } else if(reason != null && (reason.contains("Check if Bitcoin Knots is running") || reason.contains("Could not connect to Bitcoin Knots RPC"))) {
             reason += "\n\nSee https://sparrowwallet.com/docs/connect-node.html";
         } else if(reason != null && (reason.startsWith("Cannot connect to hidden service"))) {
             reason += " on the server. Check that the onion address and port are correct, and that both Tor and the Electrum server are running on the node. Usually SSL is not enabled, and the port is 50001.";
-        } else if(reason != null && (reason.startsWith("Cannot find Bitcoin Core cookie file at"))) {
+        } else if(reason != null && (reason.startsWith("Cannot find Bitcoin Knots cookie file at"))) {
             reason += "\n\nMake sure server=1 has been added to bitcoin.conf";
         }
 
@@ -826,10 +826,10 @@ public class ServerSettingsController extends SettingsDetailController {
 
             //A host that is not an IP literal is not resolved here, so it can only be reported as unconfirmed
             String location = InetAddresses.isInetAddress(coreServer.getHost()) ? " is not on" : " could not be confirmed to be on";
-            StringBuilder warning = new StringBuilder("Bitcoin Core at " + coreServer.getHostAndPort() + location + " this computer or your local network.\n");
+            StringBuilder warning = new StringBuilder("Bitcoin Knots at " + coreServer.getHostAndPort() + location + " this computer or your local network.\n");
             if(AppServices.isUsingProxy()) {
                 String proxy = config.isUseProxy() ? "configured proxy" : "internal Tor proxy";
-                warning.append("\nConnections to Bitcoin Core are made directly, and the " + proxy + " is only used for onion addresses. ");
+                warning.append("\nConnections to Bitcoin Knots are made directly, and the " + proxy + " is only used for onion addresses. ");
                 warning.append("Your IP address will be visible to the node.\n");
             }
             if(coreServer.getProtocol() == Protocol.HTTP) {
@@ -837,10 +837,10 @@ public class ServerSettingsController extends SettingsDetailController {
             } else if(Storage.getCertificateFile(coreServer.getHost()) == null) {
                 warning.append("\nThe certificate presented by the node on the first connection will be trusted and required on all connections thereafter.\n");
             }
-            warning.append("\nConnecting to the Bitcoin Core RPC interface over an untrusted network is not recommended by either Sparrow or Bitcoin Core. ");
+            warning.append("\nConnecting to the Bitcoin Knots RPC interface over an untrusted network is not recommended by either Sparrow or Bitcoin Knots. ");
             warning.append("Consider using a node on this computer or your local network, connecting over a Tor onion address, or tunnelling to it over a VPN or SSH.");
 
-            AppServices.showWarningDialog("Remote Bitcoin Core node", warning.toString());
+            AppServices.showWarningDialog("Remote Bitcoin Knots node", warning.toString());
         }
     }
 
@@ -1040,7 +1040,7 @@ public class ServerSettingsController extends SettingsDetailController {
         editConnection.setDisable(false);
         if(connectionService != null && connectionService.isRunning() && event.getProgress() < 100) {
             DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm");
-            testResults.appendText("\nThe connection to the Bitcoin Core node was successful, but it is still syncing and cannot be used yet.");
+            testResults.appendText("\nThe connection to the Bitcoin Knots node was successful, but it is still syncing and cannot be used yet.");
             testResults.appendText("\nCurrently " + event.getProgress() + "% completed to date " + dateFormat.format(event.getTip()));
             testConnection.setGraphic(getGlyph(FontAwesome5.Glyph.QUESTION_CIRCLE, null));
             connectionService.cancel();
@@ -1062,7 +1062,7 @@ public class ServerSettingsController extends SettingsDetailController {
         editConnection.setDisable(false);
         if(connectionService != null && connectionService.isRunning() && event.getProgress() < 100) {
             DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm");
-            testResults.appendText("\nThe connection to the Bitcoin Core node was successful, but it is still syncing and cannot be used yet.");
+            testResults.appendText("\nThe connection to the Bitcoin Knots node was successful, but it is still syncing and cannot be used yet.");
             testResults.appendText("\nCurrently " + event.getProgress() + "% completed to date " + dateFormat.format(event.getTip()));
             testConnection.setGraphic(getGlyph(FontAwesome5.Glyph.QUESTION_CIRCLE, null));
             connectionService.cancel();

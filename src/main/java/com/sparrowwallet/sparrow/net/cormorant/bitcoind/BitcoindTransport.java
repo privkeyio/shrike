@@ -68,7 +68,7 @@ public class BitcoindTransport implements Transport {
             }
             this.bitcoindUrl = new URI(serverUrl + "/wallet/" + bitcoindWallet).toURL();
         } catch(MalformedURLException | URISyntaxException e) {
-            log.error("Malformed Bitcoin Core RPC URL", e);
+            log.error("Malformed Bitcoin Knots RPC URL", e);
         }
     }
 
@@ -172,7 +172,7 @@ public class BitcoindTransport implements Transport {
     private String getBitcoindAuthEncoded() throws IOException {
         if(cookieFile != null) {
             if(!cookieFile.exists()) {
-                throw new IOException("Cannot find Bitcoin Core cookie file at " + cookieFile.getAbsolutePath());
+                throw new IOException("Cannot find Bitcoin Knots cookie file at " + cookieFile.getAbsolutePath());
             }
 
             if(cookieFileTimestamp == null || cookieFile.lastModified() != cookieFileTimestamp) {
@@ -181,7 +181,7 @@ public class BitcoindTransport implements Transport {
                     bitcoindAuthEncoded = Base64.getEncoder().encodeToString(userPass.getBytes(StandardCharsets.UTF_8));
                     cookieFileTimestamp = cookieFile.lastModified();
                 } catch(Exception e) {
-                    log.warn("Cannot read Bitcoin Core .cookie file", e);
+                    log.warn("Cannot read Bitcoin Knots .cookie file", e);
                 }
             }
         }

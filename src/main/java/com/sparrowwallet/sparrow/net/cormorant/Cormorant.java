@@ -38,7 +38,7 @@ public class Cormorant {
 
     public Server start() throws CormorantBitcoindException {
         if(useWallets && AppServices.get().getOpenWallets().keySet().stream().anyMatch(wallet -> wallet.getPolicyType() == PolicyType.SINGLE_SP)) {
-            throw new CormorantBitcoindUnsupportedException("Scanning silent payment wallets is not currently supported with Bitcoin Core");
+            throw new CormorantBitcoindUnsupportedException("Scanning silent payment wallets is not currently supported with Bitcoin Knots");
         }
 
         bitcoindClient = new BitcoindClient(useWallets);

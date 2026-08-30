@@ -184,7 +184,7 @@ public class ElectrumServer {
                     proxyServer = Config.get().getProxyServer();
                 } else if(Config.get().getServerType() == ServerType.BITCOIN_CORE) {
                     if(coreElectrumServer == null) {
-                        throw new ServerConfigException("Could not connect to Bitcoin Core RPC");
+                        throw new ServerConfigException("Could not connect to Bitcoin Knots RPC");
                     }
                     electrumServer = coreElectrumServer;
                     if(previousServer != null && previousServer.getUrl().contains(CORE_ELECTRUM_HOST)) {
@@ -2912,19 +2912,19 @@ public class ElectrumServer {
                                         if(bwtStartException != null) {
                                             Matcher walletLoadingMatcher = RPC_WALLET_LOADING_PATTERN.matcher(bwtStartException.getMessage());
                                             if(bwtStartException.getMessage().contains("Wallet file not specified")) {
-                                                throw new ServerException("Bitcoin Core requires Multi-Wallet to be enabled in the Server Settings");
+                                                throw new ServerException("Bitcoin Knots requires Multi-Wallet to be enabled in the Server Settings");
                                             } else if(bwtStartException.getMessage().contains("Upgrade Bitcoin Core to v24 or later for Taproot wallet support")) {
                                                 throw new ServerException(bwtStartException.getMessage());
                                             } else if(bwtStartException.getMessage().contains("Wallet file verification failed. Refusing to load database.")) {
-                                                throw new ServerException("Bitcoin Core wallet file verification failed. Try restarting Bitcoin Core.");
+                                                throw new ServerException("Bitcoin Knots wallet file verification failed. Try restarting Bitcoin Knots.");
                                             } else if(bwtStartException.getMessage().contains("This error could be caused by pruning or data corruption")) {
-                                                throw new ServerException("Scanning failed. Bitcoin Core is pruned to a date after the wallet birthday.");
+                                                throw new ServerException("Scanning failed. Bitcoin Knots is pruned to a date after the wallet birthday.");
                                             } else if(walletLoadingMatcher.matches() && walletLoadingMatcher.group(1) != null) {
                                                 throw new ServerException(walletLoadingMatcher.group(1));
                                             }
                                         }
 
-                                        throw new ServerException("Check if Bitcoin Core is running, and the authentication details are correct.");
+                                        throw new ServerException("Check if Bitcoin Knots is running, and the authentication details are correct.");
                                     }
                                 } catch(InterruptedException ex) {
                                     Thread.currentThread().interrupt();

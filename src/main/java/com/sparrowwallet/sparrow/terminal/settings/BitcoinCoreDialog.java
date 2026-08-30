@@ -23,7 +23,7 @@ public class BitcoinCoreDialog extends ServerUrlDialog {
     private final TextBox pass;
 
     public BitcoinCoreDialog() {
-        super("Bitcoin Core");
+        super("Bitcoin Knots");
 
         setHints(List.of(Hint.CENTERED));
         Panel mainPanel = new Panel(new GridLayout(3).setHorizontalSpacing(2).setVerticalSpacing(0));
@@ -83,7 +83,7 @@ public class BitcoinCoreDialog extends ServerUrlDialog {
             }
         });
         selectDataFolder.addListener(button -> {
-            DirectoryDialogBuilder builder = new DirectoryDialogBuilder().setTitle("Select Bitcoin Core Data Folder").setActionLabel("Select");
+            DirectoryDialogBuilder builder = new DirectoryDialogBuilder().setTitle("Select Bitcoin Knots Data Folder").setActionLabel("Select");
             builder.setShowHiddenDirectories(true);
             builder.setSelectedDirectory(Config.get().getCoreDataDir() == null ? new File(System.getProperty("user.home")) : Config.get().getCoreDataDir());
             File file = builder.build().showDialog(SparrowTerminal.get().getGui());
