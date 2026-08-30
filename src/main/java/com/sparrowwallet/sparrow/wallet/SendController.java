@@ -1564,6 +1564,18 @@ public class SendController extends WalletFormController implements Initializabl
         }
     }
 
+    /**
+     * The status describes a decision made from the chain tip and the node's schedule, neither of which this
+     * controller owns. Rendered only when the transaction changed, it goes stale the moment either moves: a node
+     * upgraded mid-session reports a new activation height, the disagreement clears, and the screen carries on
+     * saying the two disagree while the transaction it builds is opted in. The label and the PSBT then say
+     * different things about the same send, and the label is the one that is wrong.
+     */
+    @Subscribe
+    public void unifiedSigHashSchedule(UnifiedSigHashScheduleEvent event) {
+        updateOptInStatus(walletTransactionProperty.get());
+    }
+
     @Subscribe
     public void blockSummary(BlockSummaryEvent event) {
         Platform.runLater(() -> recentBlocksView.update(AppServices.getBlockSummaries().values().stream().sorted().toList(), AppServices.getNextBlockMedianFeeRate()));
@@ -1740,6 +1752,9 @@ public class SendController extends WalletFormController implements Initializabl
         if(cpfpFeeRate.isVisible()) {
             updateTransaction();
         }
+
+        //A new tip can be the first v2 header, or can carry the chain past the activation height
+        updateOptInStatus(walletTransactionProperty.get());
     }
 
     @Subscribe
