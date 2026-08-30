@@ -592,17 +592,22 @@ public class AppController implements Initializable {
     }
 
     public void installUdevRules(ActionEvent event) {
+        //Both the install directory and the launcher are named for this application, so neither can be written out
+        //here: they were, and the rename left commands pointing at a directory this build never creates, which
+        //fails and leaves the rules uninstalled
+        String installDir = "/opt/" + SparrowWallet.APP_ID;
+        String launcher = "bin/" + SparrowWallet.APP_NAME;
         String commands = """
-                sudo install -m 644 /opt/sparrowwallet/lib/runtime/conf/udev/*.rules /etc/udev/rules.d
+                sudo install -m 644 %s/lib/runtime/conf/udev/*.rules /etc/udev/rules.d
                 sudo udevadm control --reload
                 sudo udevadm trigger
                 sudo groupadd -f -r plugdev
                 sudo usermod -aG plugdev `whoami`
-                """;
+                """.formatted(installDir);
         String home = System.getProperty(SparrowWallet.JPACKAGE_APP_PATH);
-        if(home != null && !home.startsWith("/opt/sparrowwallet") && home.endsWith("bin/Sparrow")) {
-            home = home.replace("bin/Sparrow", "");
-            commands = commands.replace("/opt/sparrowwallet/", home);
+        if(home != null && !home.startsWith(installDir) && home.endsWith(launcher)) {
+            home = home.replace(launcher, "");
+            commands = commands.replace(installDir + "/", home);
         }
 
         TextAreaDialog dialog = new TextAreaDialog(commands, false);
