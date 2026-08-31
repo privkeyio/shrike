@@ -60,7 +60,19 @@ public enum UnifiedSigHashDecision {
      * The only decision here with a remedy the user can act on, which is why it carries one.
      */
     EXTERNAL_SIGNER("a signer in this wallet is not marked as supporting it",
-            "If its firmware does support it, mark the device under Replay protection in the keystore tab of the wallet settings.");
+            "If its firmware does support it, mark the device under Replay protection in the keystore tab of the wallet settings."),
+
+    /**
+     * A keystore holding neither a key of this wallet's own nor a device, so there is nothing to mark and marking
+     * it changes nothing.
+     *
+     * Separate from EXTERNAL_SIGNER because that remedy sends the user to a control the keystore tab only shows
+     * for hardware sources. Reporting it for a watch only keystore describes a checkbox that is not there, which
+     * leaves the user hunting for it rather than changing the thing that actually decides this.
+     */
+    NO_DEVICE_TO_MARK("a keystore in this wallet has no device to mark",
+            "A watch only keystore cannot opt in whatever it is marked as. If a device signs for this wallet, "
+                    + "re-import it with that device as an airgapped hardware wallet, so it can be marked under Replay protection.");
 
     private final String reason;
     private final String remedy;

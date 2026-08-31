@@ -250,7 +250,7 @@ public class UnifiedSigHashPolicyTest {
     @Test
     public void testMarkingAWatchOnlyKeystoreChangesNothing() {
         Assertions.assertFalse(AppServices.canSignUnified(markedWalletWith(KeystoreSource.SW_WATCH)));
-        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER, AppServices.keystoreDecision(markedWalletWith(KeystoreSource.SW_WATCH)));
+        Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK, AppServices.keystoreDecision(markedWalletWith(KeystoreSource.SW_WATCH)));
     }
 
     /**
@@ -259,11 +259,34 @@ public class UnifiedSigHashPolicyTest {
      */
     @Test
     public void testOnlyTheUnmarkedDeviceReasonCarriesARemedy() {
-        Assertions.assertNotNull(UnifiedSigHashDecision.EXTERNAL_SIGNER.getRemedy());
+        List<UnifiedSigHashDecision> actionable =
+                List.of(UnifiedSigHashDecision.EXTERNAL_SIGNER, UnifiedSigHashDecision.NO_DEVICE_TO_MARK);
         for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
-            if(decision != UnifiedSigHashDecision.EXTERNAL_SIGNER) {
+            if(actionable.contains(decision)) {
+                Assertions.assertNotNull(decision.getRemedy(), decision + " has something the user can act on");
+            } else {
                 Assertions.assertNull(decision.getRemedy(), decision + " has no remedy the user can act on");
             }
+        }
+    }
+
+    /**
+     * The remedy on EXTERNAL_SIGNER names the Replay protection control, which KeystoreController only shows for
+     * hardware sources. So that reason must only be reachable for a wallet that has one, or it describes a
+     * checkbox that is not there.
+     *
+     * That was the bug: a watch only wallet reported EXTERNAL_SIGNER and sent its owner hunting for a control the
+     * keystore tab never draws for it.
+     */
+    @Test
+    public void testTheMarkableReasonIsOnlyGivenWhereThereIsSomethingToMark() {
+        for(KeystoreSource blocking : List.of(KeystoreSource.SW_WATCH, KeystoreSource.SW_PAYMENT_CODE)) {
+            Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
+                    AppServices.keystoreDecision(walletWith(blocking)),
+                    blocking + " has no device to mark, so must not be told to mark one");
+            Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
+                    AppServices.keystoreDecision(walletWith(KeystoreSource.HW_USB, blocking)),
+                    blocking + " alongside a device still cannot be fixed by marking");
         }
     }
 

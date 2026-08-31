@@ -122,10 +122,14 @@ public class UnifiedSigHashDecisionTest {
      */
     @Test
     public void testAnySourceOtherThanASoftwareSeedDeclines() {
-        for(KeystoreSource source : List.of(KeystoreSource.HW_USB, KeystoreSource.HW_AIRGAPPED, KeystoreSource.SW_WATCH)) {
+        for(KeystoreSource source : List.of(KeystoreSource.HW_USB, KeystoreSource.HW_AIRGAPPED)) {
             Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
                     AppServices.keystoreDecision(walletWith(KeystoreSource.SW_SEED, source)), source.toString());
         }
+
+        //Watch only declines too, but for a reason marking cannot fix
+        Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
+                AppServices.keystoreDecision(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_WATCH)));
     }
 
     /**

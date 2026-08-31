@@ -1001,8 +1001,16 @@ public class AppServices {
             return UnifiedSigHashDecision.NO_SIGNING_KEYS;
         }
 
-        return wallet.getKeystores().stream().allMatch(AppServices::canKeystoreSignUnified)
-                ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.EXTERNAL_SIGNER;
+        if(wallet.getKeystores().stream().allMatch(AppServices::canKeystoreSignUnified)) {
+            return UnifiedSigHashDecision.OPTED_IN;
+        }
+
+        //An unmarked device has a remedy the user can act on; a keystore with no device behind it does not, and
+        //reporting the markable reason for one points at a control the keystore tab does not show for it. Where
+        //both are present the one that cannot be fixed by marking is the one worth naming.
+        return wallet.getKeystores().stream()
+                .anyMatch(keystore -> !canKeystoreSignUnified(keystore) && !keystore.getSource().isHardware())
+                ? UnifiedSigHashDecision.NO_DEVICE_TO_MARK : UnifiedSigHashDecision.EXTERNAL_SIGNER;
     }
 
     private static boolean canKeystoreSignUnified(Keystore keystore) {
