@@ -1,6 +1,6 @@
 # Shrike
 
-Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) adding the BLAKE2b proof-of-work hardfork and the unified opt-in signature hash. It is not Sparrow and is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow).
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows the BLAKE2b proof-of-work hardfork of Bitcoin and signs with the unified opt-in signature hash. It is not Sparrow and is not affiliated with the Sparrow project. Upstream Sparrow follows the chain that kept SHA256d, so use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) if that is the chain you are on.
 
 > **Not audited. Use at your own risk, and no warranty of any kind, see the [Apache 2.0 license](LICENSE).** Everything below the divider is upstream's documentation and describes Sparrow rather than Shrike.
 
@@ -25,7 +25,7 @@ The schedule moved more than once before release, and each move replaced what fo
 
 A signature that does not opt in is valid under the pre-fork rules as well as the new ones, so it can be replayed against nodes that have not adopted the fork. Opting in is what prevents that.
 
-Check the send screen reads **Replay protected** before building anything. If it does not, the reason names which of the chain, the node or a keystore is refusing. Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the other side.
+Check the send screen reads **Replay protected** before building anything. If it does not, the reason names which of the chain, the node or a keystore is refusing. Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
 
 ## Building
 
