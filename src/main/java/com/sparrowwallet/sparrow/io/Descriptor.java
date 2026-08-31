@@ -8,6 +8,7 @@ import com.sparrowwallet.drongo.wallet.InvalidWalletException;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
+import com.sparrowwallet.sparrow.SparrowWallet;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -76,7 +77,7 @@ public class Descriptor implements WalletImport, WalletExport {
 
     @Override
     public String getWalletExportDescription() {
-        return "The output descriptor is a standardized description of the wallet compatible with Bitcoin Core, and can be used to create a watch-only copy using the Edit button on the Settings tab of a new Sparrow wallet.";
+        return "The output descriptor is a standardized description of the wallet compatible with Bitcoin Core, and can be used to create a watch-only copy using the Edit button on the Settings tab of a new " + SparrowWallet.APP_NAME + " wallet.";
     }
 
     @Override
