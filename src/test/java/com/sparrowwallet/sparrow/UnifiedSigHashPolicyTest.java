@@ -586,6 +586,29 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
+     * Both the chain and the keystores can now qualify an opt-in, and only one reason is shown. The chain's caveat
+     * is about whether the schedule this signed under is the right one, which decides whether the protection holds
+     * at all; the keystores' is about who can sign what was built. The first has to win, or a build running on an
+     * unverified height reports only that some cosigner is unmarked.
+     */
+    @Test
+    public void testAChainCaveatOutranksAKeystoreCaveat() {
+        Wallet quorum = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        quorum.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        quorum.getKeystores().get(1).setUnifiedSigHashSupported(true);
+
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, quorum));
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, quorum));
+
+        //A decline outranks either caveat, because nothing opted in at all
+        Wallet belowThreshold = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, belowThreshold));
+    }
+
+    /**
      * An m-of-n with a policy actually set, which walletWith deliberately leaves absent. Without one the threshold
      * cannot be read and every keystore is required, so a wallet built there exercises the fallback rather than the
      * quorum rule.
