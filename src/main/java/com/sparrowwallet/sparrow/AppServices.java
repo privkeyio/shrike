@@ -17,6 +17,7 @@ import com.sparrowwallet.sparrow.control.DialogImage;
 import com.sparrowwallet.sparrow.control.WalletPasswordDialog;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
+import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
@@ -1026,8 +1027,18 @@ public class AppServices {
             return UnifiedSigHashDecision.NO_SIGNING_KEYS;
         }
 
-        if(wallet.getKeystores().stream().allMatch(AppServices::canKeystoreSignUnified)) {
-            return UnifiedSigHashDecision.OPTED_IN;
+        long capable = wallet.getKeystores().stream().filter(AppServices::canKeystoreSignUnified).count();
+        int required = requiredSignatures(wallet);
+
+        //Enough signers to satisfy the policy is enough to opt in. Requiring every keystore would decline a 2-of-3
+        //holding one signer that cannot opt in, even though the other two are a quorum on their own, and the
+        //protocol asks for less still: the hash type is opted into per signature, so one opted-in signature makes
+        //the transaction fail the pre-fork rules whatever the rest carry.
+        if(capable >= required) {
+            //Where some keystore is left out, the PSBT it produces asks for a hash type that keystore cannot sign,
+            //so say so rather than let it be discovered when a device refuses.
+            return capable == wallet.getKeystores().size()
+                    ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM;
         }
 
         //An unmarked device has a remedy the user can act on; a keystore with no device behind it does not, and
@@ -1036,6 +1047,24 @@ public class AppServices {
         return wallet.getKeystores().stream()
                 .anyMatch(keystore -> !canKeystoreSignUnified(keystore) && !keystore.getSource().isHardware())
                 ? UnifiedSigHashDecision.NO_DEVICE_TO_MARK : UnifiedSigHashDecision.EXTERNAL_SIGNER;
+    }
+
+    /**
+     * How many signatures this wallet's policy needs, or every keystore where that cannot be determined.
+     *
+     * getNumSignaturesRequired throws on a policy it cannot parse and the policy itself may be absent on a wallet
+     * still being built, and this is called on the send path where throwing would take the screen with it. Falling
+     * back to the whole keystore set keeps the stricter answer: a threshold that cannot be read is never grounds
+     * for opting in on fewer signers than the wallet might need.
+     */
+    static int requiredSignatures(Wallet wallet) {
+        try {
+            Policy policy = wallet.getDefaultPolicy();
+            return policy == null ? wallet.getKeystores().size() : policy.getNumSignaturesRequired();
+        } catch(RuntimeException e) {
+            log.debug("Could not read the signature threshold, requiring every keystore", e);
+            return wallet.getKeystores().size();
+        }
     }
 
     private static boolean canKeystoreSignUnified(Keystore keystore) {
@@ -1067,11 +1096,16 @@ public class AppServices {
             return chainDecision;
         }
 
-        //Returning the chain's answer rather than a bare OPTED_IN, because that is what carries whether a node
-        //corroborated the schedule. The keystores know nothing about the schedule, so taking their answer here
-        //would report an uncorroborated opt-in as a confirmed one.
         UnifiedSigHashDecision keystores = keystoreDecision(wallet);
-        return keystores.isOptedIn() ? chainDecision : keystores;
+        if(!keystores.isOptedIn()) {
+            return keystores;
+        }
+
+        //Both opted in, and either may qualify it. The chain's caveat is about whether the schedule this signed
+        //under is the right one, which decides whether the protection holds at all. The keystores' is about who
+        //can sign what was built. The first is worth more, so it wins where both apply, and returning the chain's
+        //answer is also what stops an uncorroborated opt-in being reported as a confirmed one.
+        return chainDecision == UnifiedSigHashDecision.OPTED_IN ? keystores : chainDecision;
     }
 
     /**

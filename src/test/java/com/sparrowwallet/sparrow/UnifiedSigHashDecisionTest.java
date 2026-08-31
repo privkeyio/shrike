@@ -135,9 +135,13 @@ public class UnifiedSigHashDecisionTest {
      */
     @Test
     public void testOnlyTheUncorroboratedOptInCarriesACaveat() {
+        List<UnifiedSigHashDecision> qualified = List.of(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED,
+                UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM);
         for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
-            if(decision == UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED) {
+            if(qualified.contains(decision)) {
                 Assertions.assertNotNull(decision.getCaveat(), decision.toString());
+                Assertions.assertTrue(decision.isOptedIn(), decision + " qualifies an opt-in, so it is one");
+                Assertions.assertNull(decision.getReason(), decision + " did not decline");
             } else {
                 Assertions.assertNull(decision.getCaveat(), decision + " has nothing to qualify");
             }

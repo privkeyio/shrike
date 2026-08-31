@@ -37,7 +37,7 @@ Where a hardware signer is the reason, mark it in the keystore tab of the wallet
 
 ![The Replay protection field in the keystore tab, marked as supported by this device](docs/images/keystore-replay-protection.png)
 
-**In a multisig** every keystore has to be marked, not just the ones that sign, so one lagging signer declines the whole wallet. Mark all of them and sign with the capable ones: a single opted-in signature is enough to make the transaction unreplayable. The wallet then holds something false about the lagging signer, so a later transaction that needs it fails to sign rather than falling back. Upgrading its firmware is the better fix.
+**In a multisig** the wallet opts in once enough signers are marked to meet its threshold, so a 2-of-3 works with two of them marked. The transaction then has to be signed by those signers, because the unmarked ones cannot produce the hash type it asks for.
 
 Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
 

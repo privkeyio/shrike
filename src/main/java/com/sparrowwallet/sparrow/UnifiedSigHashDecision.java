@@ -12,6 +12,18 @@ public enum UnifiedSigHashDecision {
     OPTED_IN(null),
 
     /**
+     * Opted in on a quorum rather than the whole wallet.
+     *
+     * Enough keystores are marked to satisfy the policy, but at least one is not. The signature is the same one a
+     * fully marked wallet produces, and the transaction is equally unreplayable, so this is opted in. What differs
+     * is that the PSBT declares a hash type the unmarked keystores cannot sign, so the transaction has to be signed
+     * by the marked ones. Saying that here is cheaper than letting it be found when a device refuses.
+     */
+    OPTED_IN_PARTIAL_QUORUM(null, null,
+            "Enough signers are marked to meet this wallet's threshold, but not all of them are. This transaction "
+                    + "has to be signed by the marked signers: the others cannot produce the hash type it asks for."),
+
+    /**
      * Opted in on the height compiled into this build, with nothing to corroborate it.
      *
      * An Electrum server has no getdeploymentinfo to ask, so it reports no activation height and the cross check
@@ -74,7 +86,7 @@ public enum UnifiedSigHashDecision {
      *
      * The only decision here with a remedy the user can act on, which is why it carries one.
      */
-    EXTERNAL_SIGNER("a signer in this wallet is not marked as supporting it",
+    EXTERNAL_SIGNER("fewer signers are marked as supporting it than this wallet needs to sign",
             "If its firmware does support it, mark the device under Replay protection in the keystore tab of the wallet settings."),
 
     /**
@@ -108,7 +120,7 @@ public enum UnifiedSigHashDecision {
     }
 
     public boolean isOptedIn() {
-        return this == OPTED_IN || this == OPTED_IN_UNCORROBORATED;
+        return this == OPTED_IN || this == OPTED_IN_PARTIAL_QUORUM || this == OPTED_IN_UNCORROBORATED;
     }
 
     /**

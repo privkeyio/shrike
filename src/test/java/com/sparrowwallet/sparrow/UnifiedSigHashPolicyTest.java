@@ -1,15 +1,20 @@
 package com.sparrowwallet.sparrow;
 
+import com.sparrowwallet.drongo.KeyPurpose;
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
 import com.sparrowwallet.drongo.crypto.ECKey;
+import com.sparrowwallet.drongo.policy.Miniscript;
+import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.protocol.*;
 import com.sparrowwallet.drongo.psbt.PSBT;
 import com.sparrowwallet.drongo.psbt.PSBTInput;
 import com.sparrowwallet.drongo.psbt.PSBTOutput;
+import com.sparrowwallet.drongo.wallet.DeterministicSeed;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.KeystoreSource;
+import com.sparrowwallet.drongo.wallet.WalletNode;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -454,6 +459,148 @@ public class UnifiedSigHashPolicyTest {
         AppServices.clearNodeHardforkHeight();
         Assertions.assertTrue(AppServices.isUnifiedSigHashActive(Network.TESTNET4, shipped, v2Tip),
                 "Clearing must restore the shipped schedule, not leave the last node deciding");
+    }
+
+    /**
+     * The case this exists for: a 2-of-3 holding one signer that cannot opt in. Two marked signers are a quorum on
+     * their own, so the wallet opts in rather than declining on the third, and says the transaction has to be signed
+     * by the marked ones.
+     */
+    @Test
+    public void testAQuorumOfMarkedSignersOptsIn() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
+
+        Assertions.assertTrue(AppServices.canSignUnified(wallet));
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM, AppServices.keystoreDecision(wallet));
+    }
+
+    /**
+     * One short of the threshold is not a quorum, so there is no signing combination that opts in and the wallet
+     * declines rather than building something only part of it can sign.
+     */
+    @Test
+    public void testFewerMarkedThanTheThresholdDeclines() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+
+        Assertions.assertFalse(AppServices.canSignUnified(wallet));
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER, AppServices.keystoreDecision(wallet));
+    }
+
+    /**
+     * Every signer marked is not a partial quorum, and must not carry the caveat that some of them cannot sign.
+     */
+    @Test
+    public void testEveryMarkedSignerIsNotAPartialQuorum() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        wallet.getKeystores().forEach(keystore -> keystore.setUnifiedSigHashSupported(true));
+
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN, AppServices.keystoreDecision(wallet));
+        Assertions.assertNull(UnifiedSigHashDecision.OPTED_IN.getCaveat());
+    }
+
+    /**
+     * A threshold that cannot be read is not grounds for opting in on fewer signers than the wallet might need, so
+     * the fallback requires every keystore. getNumSignaturesRequired throws on a policy it cannot parse, and this
+     * is called on the send path where throwing would take the screen with it.
+     */
+    @Test
+    public void testAnUnreadableThresholdRequiresEveryKeystore() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
+        Assertions.assertTrue(AppServices.canSignUnified(wallet), "a readable threshold opts in on a quorum");
+
+        wallet.setDefaultPolicy(null);
+        Assertions.assertEquals(3, AppServices.requiredSignatures(wallet));
+        Assertions.assertFalse(AppServices.canSignUnified(wallet), "an absent policy falls back to every keystore");
+
+        wallet.setDefaultPolicy(new Policy(new Miniscript("not a parseable descriptor")));
+        Assertions.assertEquals(3, AppServices.requiredSignatures(wallet), "an unparseable policy must not throw");
+        Assertions.assertFalse(AppServices.canSignUnified(wallet));
+    }
+
+    /**
+     * The whole point of the quorum rule, carried through to a signed transaction: a 2-of-3 where the third signer
+     * holds no key at all still produces a valid spend, and every signature in it opts in.
+     *
+     * This is what the threshold rule asserts is possible. Without it the rule is an argument about consensus rather
+     * than something the wallet has been shown to do, and the difference matters because a PSBT declaring a hash
+     * type only some signers can produce is exactly the thing that could fail at finalisation.
+     */
+    @Test
+    public void testAQuorumSignsAndFinalisesAnOptedInSpend() throws Exception {
+        String[] mnemonics = {
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor",
+                "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle",
+                "vault cruise pistol trigger pilot scan hidden major fringe course fiber quiz"};
+
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(String mnemonic : mnemonics) {
+            DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+            wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, ScriptType.P2WSH.getDefaultDerivation()));
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), 2));
+        wallet.getNode(KeyPurpose.RECEIVE);
+
+        //The third signer contributes its key to the script but cannot sign, which is the lagging cosigner
+        wallet.getKeystores().get(2).setSeed(null);
+        Assertions.assertFalse(wallet.getKeystores().get(2).hasPrivateKey());
+
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script spk = wallet.getOutputScript(receiveNode);
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        transaction.addInput(Sha256Hash.wrap("0000000000000000000000000000000000000000000000000000000000000001"), 0, new Script(new byte[0]));
+        transaction.getInputs().getFirst().setSequenceNumber(0xFFFFFFFEL);
+        transaction.addOutput(90000L, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
+        psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(2, receiveNode.getPubKeys()));
+        psbtInput.setSigHash(SigHash.ALL);
+
+        AppServices.applyUnifiedSigHash(psbt, true);
+        Assertions.assertEquals(SigHash.UNIFIED_ALL, psbt.getPsbtInputs().getFirst().getSigHash());
+
+        wallet.sign(psbt);
+        wallet.finalise(psbt);
+        Transaction finalTx = psbt.extractTransaction();
+
+        TransactionWitness witness = finalTx.getInputs().getFirst().getWitness();
+        Assertions.assertNotNull(witness, "the quorum has to produce a witness");
+        List<byte[]> signatures = witness.getPushes().stream()
+                .filter(push -> push.length >= 70 && push.length <= 73)
+                .toList();
+        Assertions.assertEquals(2, signatures.size(), "a 2-of-3 finalises on two signatures, not three");
+        for(byte[] signature : signatures) {
+            Assertions.assertEquals((byte)0x21, signature[signature.length - 1],
+                    "every signature in the quorum opts in");
+        }
+    }
+
+    /**
+     * An m-of-n with a policy actually set, which walletWith deliberately leaves absent. Without one the threshold
+     * cannot be read and every keystore is required, so a wallet built there exercises the fallback rather than the
+     * quorum rule.
+     */
+    private Wallet multisigWith(int threshold, KeystoreSource... sources) {
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(KeystoreSource source : sources) {
+            Keystore keystore = new Keystore();
+            keystore.setSource(source);
+            wallet.getKeystores().add(keystore);
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), threshold));
+        return wallet;
     }
 
     private Wallet walletWith(KeystoreSource... sources) {
