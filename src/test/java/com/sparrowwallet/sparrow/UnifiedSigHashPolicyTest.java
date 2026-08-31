@@ -609,6 +609,48 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
+     * The ordinary case, carried the same distance as the multisig one: a single signature wallet builds, signs and
+     * finalises a spend whose signature opts in. Most wallets are this shape, and until now nothing in this project
+     * signed one in process; the harness that did is a main method the suite never runs.
+     */
+    @Test
+    public void testASingleSignatureWalletSignsAnOptedInSpend() throws Exception {
+        DeterministicSeed seed = new DeterministicSeed(
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor", "", 0, DeterministicSeed.Type.BIP39);
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.SINGLE_HD);
+        wallet.setScriptType(ScriptType.P2WPKH);
+        wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.SINGLE_HD, ScriptType.P2WPKH.getDefaultDerivation()));
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.SINGLE_HD, ScriptType.P2WPKH, wallet.getKeystores(), 1));
+        wallet.getNode(KeyPurpose.RECEIVE);
+
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script spk = wallet.getOutputScript(receiveNode);
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        transaction.addInput(Sha256Hash.wrap("0000000000000000000000000000000000000000000000000000000000000001"), 0, new Script(new byte[0]));
+        transaction.getInputs().getFirst().setSequenceNumber(0xFFFFFFFEL);
+        transaction.addOutput(90000L, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
+        psbtInput.setSigHash(SigHash.ALL);
+
+        Assertions.assertTrue(AppServices.canSignUnified(wallet));
+        AppServices.applyUnifiedSigHash(psbt, true);
+        wallet.sign(psbt);
+        wallet.finalise(psbt);
+
+        TransactionWitness witness = psbt.extractTransaction().getInputs().getFirst().getWitness();
+        Assertions.assertNotNull(witness);
+        byte[] signature = witness.getPushes().getFirst();
+        Assertions.assertTrue(signature.length >= 70 && signature.length <= 73, "the first push is the signature");
+        Assertions.assertEquals((byte)0x21, signature[signature.length - 1], "the signature opts in");
+    }
+
+    /**
      * An m-of-n with a policy actually set, which walletWith deliberately leaves absent. Without one the threshold
      * cannot be read and every keystore is required, so a wallet built there exercises the fallback rather than the
      * quorum rule.
