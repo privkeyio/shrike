@@ -15,6 +15,10 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
+import com.sparrowwallet.sparrow.event.UnifiedSigHashScheduleEvent;
+import com.sparrowwallet.sparrow.event.NewBlockEvent;
+import com.sparrowwallet.sparrow.wallet.SendController;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -493,6 +497,26 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertFalse(UnifiedSigHashDecision.CHAIN_UNSEEN.isOptedIn());
         Assertions.assertNull(UnifiedSigHashDecision.CHAIN_UNSEEN.getRemedy(),
                 "connecting is not something the wallet can do for the user, so no remedy is offered");
+    }
+
+    /**
+     * The send screen must re-read the decision when either input to it moves.
+     *
+     * The status is rendered from the chain tip and the node's schedule, neither of which the send screen owns.
+     * Rendered only when the transaction changed, it goes stale: a node upgraded mid-session reports a new
+     * activation height, the disagreement clears, and the screen keeps saying the two disagree while the
+     * transaction it builds is opted in. The label and the PSBT then describe the same send differently, and
+     * only the label is wrong, which is the worst way round for a user deciding whether to sign.
+     */
+    @Test
+    public void testTheSendScreenListensForWhatChangesTheDecision() {
+        for(Class<?> event : List.of(UnifiedSigHashScheduleEvent.class, NewBlockEvent.class)) {
+            boolean subscribed = Arrays.stream(SendController.class.getDeclaredMethods())
+                    .filter(method -> method.isAnnotationPresent(com.google.common.eventbus.Subscribe.class))
+                    .anyMatch(method -> method.getParameterCount() == 1 && method.getParameterTypes()[0] == event);
+            Assertions.assertTrue(subscribed,
+                    "SendController does not listen for " + event.getSimpleName() + ", so its status cannot refresh when the decision changes");
+        }
     }
 
     private Wallet markedWalletWith(KeystoreSource... sources) {
