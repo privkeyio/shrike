@@ -2913,7 +2913,7 @@ public class ElectrumServer {
                                             Matcher walletLoadingMatcher = RPC_WALLET_LOADING_PATTERN.matcher(bwtStartException.getMessage());
                                             if(bwtStartException.getMessage().contains("Wallet file not specified")) {
                                                 throw new ServerException("Bitcoin Knots requires Multi-Wallet to be enabled in the Server Settings");
-                                            } else if(bwtStartException.getMessage().contains(Bwt.TAPROOT_UNSUPPORTED)) {
+                                            } else if(bwtStartException.getMessage().contains(Bwt.TAPROOT_NEEDS_NEWER_NODE)) {
                                                 throw new ServerException(bwtStartException.getMessage());
                                             } else if(bwtStartException.getMessage().contains("Wallet file verification failed. Refusing to load database.")) {
                                                 throw new ServerException("Bitcoin Knots wallet file verification failed. Try restarting Bitcoin Knots.");

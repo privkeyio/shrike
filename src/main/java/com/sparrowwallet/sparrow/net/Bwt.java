@@ -36,8 +36,10 @@ public class Bwt {
 
     public static final String DEFAULT_CORE_WALLET = "sparrow";
     public static final String ELECTRUM_PORT = "0";
-    //Thrown here and matched by ElectrumServer to report it as-is, so it is held once rather than written twice
-    static final String TAPROOT_UNSUPPORTED = "Upgrade Bitcoin Knots to v24 or later for Taproot wallet support";
+    //Reached only as the fallback after Cormorant declines, so this is the legacy backend refusing a Taproot
+    //wallet rather than anything this build cannot do. Thrown here and matched by ElectrumServer to report it
+    //as-is, so it is held once rather than written twice.
+    static final String TAPROOT_NEEDS_NEWER_NODE = "Upgrade Bitcoin Knots to v24 or later for Taproot wallet support";
     private static final int IMPORT_BATCH_SIZE = 350;
     private static boolean initialized;
     private Long shutdownPtr;
@@ -400,7 +402,7 @@ public class Bwt {
                         Bwt.this.start(notifier);
                     } else {
                         if(AppServices.get().getOpenWallets().keySet().stream().anyMatch(wallet -> wallet.getScriptType() == ScriptType.P2TR)) {
-                            throw new IllegalStateException(TAPROOT_UNSUPPORTED);
+                            throw new IllegalStateException(TAPROOT_NEEDS_NEWER_NODE);
                         }
 
                         Bwt.this.start(AppServices.get().getOpenWallets().keySet(), notifier);
