@@ -927,8 +927,19 @@ public class AppServices {
             return UnifiedSigHashDecision.SCHEDULE_MISMATCH;
         }
 
-        return blockHeight >= walletActivationHeight
-                ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.BEFORE_ACTIVATION_HEIGHT;
+        if(blockHeight < walletActivationHeight) {
+            return UnifiedSigHashDecision.BEFORE_ACTIVATION_HEIGHT;
+        }
+
+        //A node that reports no height cannot corroborate the shipped one. Opting in regardless is right, since
+        //declining because a server cannot answer would forgo the protection on every Electrum connection, but the
+        //cross check that would catch a stale build has not run and saying so is the difference this records.
+        if(nodeActivationHeight == null) {
+            noteScheduleUncorroborated(walletActivationHeight);
+            return UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED;
+        }
+
+        return UnifiedSigHashDecision.OPTED_IN;
     }
 
     /**
@@ -944,6 +955,20 @@ public class AppServices {
             log.warn("Not opting in to the unified signature hash: this build expects activation at height "
                     + walletActivationHeight + " but the connected node reports " + nodeActivationHeight);
             EventManager.get().post(UnifiedSigHashScheduleEvent.scheduleMismatch(walletActivationHeight, nodeActivationHeight));
+        }
+    }
+
+    /**
+     * Notes an opt-in taken without a node to corroborate it, once per connection rather than once per send.
+     *
+     * Logged rather than posted as an event: the status bar indicator is for a disagreement needing attention,
+     * and an Electrum server reporting no height is the normal case rather than a fault.
+     */
+    private static void noteScheduleUncorroborated(int walletActivationHeight) {
+        if(isNewActivationHeightReport("uncorroborated/" + walletActivationHeight)) {
+            log.info("Opting in to the unified signature hash on the height compiled into this build, "
+                    + walletActivationHeight + ": the connected node reports no activation height, so the shipped "
+                    + "schedule could not be cross checked against it.");
         }
     }
 
@@ -1038,7 +1063,15 @@ public class AppServices {
      * keystore reason could quietly swap places without any test noticing.
      */
     static UnifiedSigHashDecision combinedDecision(UnifiedSigHashDecision chainDecision, Wallet wallet) {
-        return chainDecision.isOptedIn() ? keystoreDecision(wallet) : chainDecision;
+        if(!chainDecision.isOptedIn()) {
+            return chainDecision;
+        }
+
+        //Returning the chain's answer rather than a bare OPTED_IN, because that is what carries whether a node
+        //corroborated the schedule. The keystores know nothing about the schedule, so taking their answer here
+        //would report an uncorroborated opt-in as a confirmed one.
+        UnifiedSigHashDecision keystores = keystoreDecision(wallet);
+        return keystores.isOptedIn() ? chainDecision : keystores;
     }
 
     /**

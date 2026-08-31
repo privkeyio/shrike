@@ -77,8 +77,71 @@ public class UnifiedSigHashDecisionTest {
 
     @Test
     public void testAV2TipPastTheHeightOptsIn() {
+        AppServices.clearNodeHardforkHeight();
+        UnifiedSigHashDecision decision = AppServices.chainDecision(Network.TESTNET4, ACTIVATION, header(V2_HEADER_HEX));
+        Assertions.assertTrue(decision.isOptedIn());
+        //No node has reported a height here, so this is the form that says the cross check did not run
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, decision);
+    }
+
+    /**
+     * An Electrum server has no getdeploymentinfo to ask, so it reports no activation height and the cross check
+     * cannot run. Opting in is still right, since declining because a server cannot answer would forgo the
+     * protection on every Electrum connection, but it rests on the shipped height alone and says so.
+     */
+    @Test
+    public void testAnOptInWithNothingToCorroborateItSaysSo() {
+        AppServices.clearNodeHardforkHeight();
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED,
+                AppServices.heightDecision(ACTIVATION, null, ACTIVATION));
+    }
+
+    @Test
+    public void testANodeAgreeingMakesTheOptInCorroborated() {
         Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN,
-                AppServices.chainDecision(Network.TESTNET4, ACTIVATION, header(V2_HEADER_HEX)));
+                AppServices.heightDecision(ACTIVATION, ACTIVATION, ACTIVATION));
+    }
+
+    /**
+     * Both forms produce the same signature, so nothing deciding how to sign may tell them apart. Only what is
+     * reported differs, which is why the summary has to match too.
+     */
+    @Test
+    public void testBothOptedInFormsSignTheSameWay() {
+        for(UnifiedSigHashDecision decision : List.of(UnifiedSigHashDecision.OPTED_IN, UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED)) {
+            Assertions.assertTrue(decision.isOptedIn(), decision.toString());
+            Assertions.assertNull(decision.getReason(), decision + " did not decline, so it has no reason");
+            Assertions.assertEquals(UnifiedSigHashDecision.summaryFor(true), decision.getSummary(), decision.toString());
+        }
+    }
+
+    /**
+     * Corroboration is decided by the chain and the keystores know nothing about it, so combining the two must
+     * not quietly promote an uncorroborated opt-in into a confirmed one.
+     */
+    @Test
+    public void testCorroborationSurvivesTheKeystoreCombine() {
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, walletWith(KeystoreSource.SW_SEED)));
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, walletWith(KeystoreSource.SW_SEED)));
+        //A keystore that cannot opt in still decides, whatever the chain answered
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, walletWith(KeystoreSource.HW_USB)));
+    }
+
+    /**
+     * A caveat qualifies an opt-in, a reason explains a decline, and nothing carries both.
+     */
+    @Test
+    public void testOnlyTheUncorroboratedOptInCarriesACaveat() {
+        for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
+            if(decision == UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED) {
+                Assertions.assertNotNull(decision.getCaveat(), decision.toString());
+            } else {
+                Assertions.assertNull(decision.getCaveat(), decision + " has nothing to qualify");
+            }
+        }
     }
 
     @Test
@@ -147,11 +210,13 @@ public class UnifiedSigHashDecisionTest {
      */
     @Test
     public void testOnlyADeclineCarriesAReason() {
-        Assertions.assertNull(UnifiedSigHashDecision.OPTED_IN.getReason());
+        //Driven by isOptedIn rather than a named value, so another opted-in form cannot be added later without
+        //this holding it to the same rule
         for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
-            if(decision != UnifiedSigHashDecision.OPTED_IN) {
-                Assertions.assertNotNull(decision.getReason(), decision.toString());
-                Assertions.assertFalse(decision.isOptedIn(), decision.toString());
+            if(decision.isOptedIn()) {
+                Assertions.assertNull(decision.getReason(), decision + " did not decline, so it carries no reason");
+            } else {
+                Assertions.assertNotNull(decision.getReason(), decision + " declined, so it owes a reason");
             }
         }
     }

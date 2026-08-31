@@ -12,6 +12,21 @@ public enum UnifiedSigHashDecision {
     OPTED_IN(null),
 
     /**
+     * Opted in on the height compiled into this build, with nothing to corroborate it.
+     *
+     * An Electrum server has no getdeploymentinfo to ask, so it reports no activation height and the cross check
+     * that would catch a stale build cannot run. Opting in anyway is right, since declining because a server
+     * cannot answer would forgo the protection on every Electrum connection. It is a weaker position than one a
+     * node has confirmed, though, and reporting the two identically hides which of them the user has.
+     *
+     * Still opted in, so isOptedIn covers it and the signature is the same one. Only the confidence differs, which
+     * is why this carries a caveat rather than a reason: nothing declined.
+     */
+    OPTED_IN_UNCORROBORATED(null, null,
+            "The activation height could not be checked against the connected node, which reports none. This rests "
+                    + "on the height compiled into this build alone, so a build with a stale height would not be noticed here."),
+
+    /**
      * The tip is not a v2 header, so the proof of work change is not live and neither is this.
      */
     CHAIN_NOT_ACTIVATED("the chain has not activated it"),
@@ -76,18 +91,33 @@ public enum UnifiedSigHashDecision {
 
     private final String reason;
     private final String remedy;
+    private final String caveat;
 
     UnifiedSigHashDecision(String reason) {
-        this(reason, null);
+        this(reason, null, null);
     }
 
     UnifiedSigHashDecision(String reason, String remedy) {
+        this(reason, remedy, null);
+    }
+
+    UnifiedSigHashDecision(String reason, String remedy, String caveat) {
         this.reason = reason;
         this.remedy = remedy;
+        this.caveat = caveat;
     }
 
     public boolean isOptedIn() {
-        return this == OPTED_IN;
+        return this == OPTED_IN || this == OPTED_IN_UNCORROBORATED;
+    }
+
+    /**
+     * What qualifies an opt-in that was taken without confirmation, or null where nothing qualifies it.
+     *
+     * Distinct from a reason, which explains a decline. This one signed the same way a corroborated opt-in does.
+     */
+    public String getCaveat() {
+        return caveat;
     }
 
     /**
