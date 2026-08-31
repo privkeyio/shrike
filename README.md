@@ -21,7 +21,7 @@ The drongo unit tests assert every stage of the proof-of-work pipeline against t
 Building is the same as upstream, except that the drongo submodule must come from this fork, clone this repository, not upstream's:
 
 ```bash
-git clone --recursive https://github.com/privkeyio/sparrow.git shrike
+git clone --recursive https://github.com/privkeyio/shrike.git
 cd shrike
 git checkout blake2b
 git submodule update --init --recursive
@@ -29,7 +29,7 @@ git submodule update --init --recursive
 
 Java 25 or higher is required, as upstream. `--recursive` matters: the BLAKE2b work lives in the drongo submodule, and a plain clone leaves it empty. If you clone over SSH instead, make sure an ssh-agent is running with your key added, or the submodule clones fail with `Permission denied (publickey)` even though the parent clone succeeded.
 
-Builds for Linux, Windows and macOS are published under [Releases](https://github.com/privkeyio/sparrow/releases), together with a signed `SHA256SUMS` covering every file:
+Builds for Linux, Windows and macOS are published under [Releases](https://github.com/privkeyio/shrike/releases), together with a signed `SHA256SUMS` covering every file:
 
 ```bash
 gpg --import privkeyio-signing-key.asc
@@ -162,7 +162,7 @@ Specifying a home folder with the `-d` argument disables XDG resolution entirely
 
 ## Reporting Issues
 
-Please use the [Issues](https://github.com/privkeyio/sparrow/issues) tab above to report an issue with this fork. Issues that are not specific to the BLAKE2b fork should be reported [upstream](https://github.com/sparrowwallet/sparrow/issues) instead. If possible, look in the sparrow.log file in the configuration directory for information helpful in debugging. 
+Please use the [Issues](https://github.com/privkeyio/shrike/issues) tab above to report an issue with this fork. Issues that are not specific to the BLAKE2b fork should be reported [upstream](https://github.com/sparrowwallet/sparrow/issues) instead. If possible, look in the sparrow.log file in the configuration directory for information helpful in debugging. 
 
 ## License
 
