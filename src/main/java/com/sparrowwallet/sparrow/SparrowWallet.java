@@ -20,7 +20,7 @@ public class SparrowWallet {
     public static final String APP_ID = "shrike";
     public static final String APP_NAME = "Shrike";
     public static final String APP_VERSION = "2.5.5";
-    public static final String APP_VERSION_SUFFIX = "-blake2b.8";
+    public static final String APP_VERSION_SUFFIX = "-blake2b.9";
     public static final String APP_HOME_PROPERTY = ApplicationDir.getHomeProperty(APP_NAME);
     public static final String NETWORK_ENV_PROPERTY = "SPARROW_NETWORK";
     public static final String JPACKAGE_APP_PATH = "jpackage.app-path";
