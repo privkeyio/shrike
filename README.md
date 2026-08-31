@@ -25,7 +25,19 @@ Where the connected node reports a height of its own, the compiled-in one is cro
 
 A signature that does not opt in is valid under the pre-fork rules as well as the new ones, so it can be replayed against nodes that have not adopted the fork. Opting in is what prevents that.
 
-Check the send screen reads **Replay protected** before building anything. If it does not, the reason names which of the chain, the node or a keystore is refusing. Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
+Check the send screen before building anything. The opt-in is selected by default, and this is what it looks like in effect:
+
+![The send screen reporting a transaction as replay protected](docs/images/send-replay-protected.png)
+
+Where it reads this instead, hovering the status names which of the chain, the node or a keystore is refusing, and what to do about it where there is anything to do:
+
+![The send screen reporting a transaction as not replay protected](docs/images/send-not-replay-protected.png)
+
+Where a hardware signer is the reason, mark it in the keystore tab of the wallet settings. Nothing a device reports says which firmware it runs, so this is what its owner tells the wallet rather than something detected, and it is off until they say otherwise:
+
+![The Replay protection field in the keystore tab, marked as supported by this device](docs/images/keystore-replay-protection.png)
+
+Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
 
 ## Building
 
