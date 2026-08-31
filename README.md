@@ -1,35 +1,46 @@
 # Shrike
 
-> **Maintained here for testing the BLAKE2b hard fork.** This is not the Sparrow project and is not affiliated with it. Nothing in it should be used with real funds, and the code has not been audited for that purpose. No warranty of any kind, see the [Apache 2.0 licence](LICENSE).
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) adding the BLAKE2b proof-of-work hardfork and the unified opt-in signature hash. It is not Sparrow and is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow).
 
-Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow), adding support for the BLAKE2b proof-of-work hard fork proposed in [Bitcoin Knots PR #359](https://github.com/bitcoinknots/bitcoin/pull/359) ("BIP-110" / RDTS). It is not Sparrow itself, and it is not affiliated with the Sparrow project. If you are looking for a Bitcoin wallet, use [upstream Sparrow](https://github.com/sparrowwallet/sparrow), everything below this section is upstream's documentation, and describes Sparrow rather than Shrike.
+> **Not audited. Use at your own risk, and no warranty of any kind, see the [Apache 2.0 license](LICENSE).** Everything below the divider is upstream's documentation and describes Sparrow rather than Shrike.
 
-Shrike was created by [AcesHigh70](https://github.com/AcesHigh70), who wrote the v2 block header and BLAKE2b proof-of-work support, the separate application identity, and the packaging. That work is no longer maintained there. This fork continues it, and adds the unified opt-in signature hash together with the changes needed to track Bitcoin Knots release candidates.
+## What differs from Sparrow
 
-It adds support for the 164 byte v2 block header and the BLAKE2b proof of work used by the forked chain. The v2 header fork is live on testnet4, activating at height 150027. That height has moved between pre-release builds, so the wallet cross-checks the height it ships against the connected node and declines to opt in rather than follow either side of a disagreement. On mainnet the forked chain still uses SHA256d; the BLAKE2b proof-of-work change is scheduled for 1 September 2026, and the activation height is not yet announced. Shrike is therefore intended for developers and testing, not for holding funds.
+- **BLAKE2b proof of work.** Parses and validates the 164 byte v2 block header, and past activation takes the BLAKE2b hash as the block id rather than SHA256d. Implemented in the [drongo](https://github.com/privkeyio/drongo) submodule.
+- **Unified opt-in signature hash.** Signs with hash type `0x21` past activation. Such a signature is invalid under the pre-fork rules, which is what makes it unreplayable. Where it cannot opt in the wallet signs the legacy way and says so on the send screen rather than failing silently.
+- **Per-keystore opt-in for hardware signers.** Nothing a device reports tells the wallet whether its firmware implements the opt-in, so each hardware keystore is marked by hand under Replay protection. A PSBT carries one hash type for every signer, so a single unmarked keystore decides for the whole transaction.
+- **Separate application identity.** Installs and runs alongside an existing Sparrow without sharing state. Configuration, wallets and logs live in `~/.shrike`, the Linux packages are `shrike` and `shrikeserver` under their own prefix, and the two have separate desktop entries, MIME types and single instance locks.
+- **Knots as the node.** The activation schedule is read from `getdeploymentinfo`, which only Knots reports, so Bitcoin Core is not a node this build can use.
 
-> **DO NOT USE THIS ON MAINNET OR THE FORKED MAINNET CHAIN.**
->
-> **IF YOU DO, YOU HAVE NO REPLAY PROTECTION.** No build carries a mainnet activation height, so past activation the wallet declines to opt in and signs the legacy way. The same happens anywhere if even one keystore is hardware-held. A signature that does not opt in is valid under the pre-fork rules as well as the new ones, so it can be replayed against nodes that have not adopted the fork. Opting in is what prevents that. The wallet notes this in its log. It does not stop you.
+## Activation
 
-Shrike carries its own application identity, so it installs and runs alongside an existing Sparrow without sharing any state with it. Its configuration, wallets and log file live in `~/.shrike` and the corresponding XDG directories, rather than the `~/.sparrow` that upstream uses, and the two have separate single instance locks. The Linux packages are named `shrike` and `shrikeserver` and install under their own prefix, `/opt/shrike` or `/opt/shrikeserver`, registering their own desktop entry and MIME types rather than upstream's, so they should not overwrite an existing Sparrow install. That has been checked by inspecting the contents of the built deb and rpm, not by installing them on a machine alongside an upstream Sparrow. Only the Linux packaging has been renamed so far: the macOS bundle metadata and the Windows installer still carry upstream's names. The version reports as `2.5.4-blake2b.1`, being the upstream version this fork is based on with a suffix identifying it.
+| Network | Height |
+| --- | --- |
+| mainnet | 961,640 |
+| testnet4 | 150,308 |
 
-The v2 header parsing and serialisation, and the proof-of-work hash pipeline, live in the drongo submodule, which points at [privkeyio/drongo](https://github.com/privkeyio/drongo) branch `blake2b`. The lark submodule points at [privkeyio/lark](https://github.com/privkeyio/lark), pinned to the same commit as upstream's. Within the wallet itself, the bundled Cormorant now uses raw header hex from bitcoind rather than rebuilding headers from verbose JSON.
+The schedule moved more than once before release, and each move replaced what followed the old one, so the compiled-in height is not trusted on its own. It is cross checked against the connected node, and on a disagreement the wallet declines to opt in rather than following either value.
 
-The drongo unit tests assert every stage of the proof-of-work pipeline against the reference implementation's own test vectors (`block_header_v2.json` from [luke-jr/bitcoin](https://github.com/luke-jr/bitcoin), branch `pow_hf_blake2b`). The wallet has also been verified end to end against a live forked regtest node: connect, sync, send and confirm. Instructions to [reproduce that verification](docs/blake2b-regtest.md) are provided.
+## Replay protection
 
-Building is the same as upstream, except that the drongo submodule must come from this fork, clone this repository, not upstream's:
+A signature that does not opt in is valid under the pre-fork rules as well as the new ones, so it can be replayed against nodes that have not adopted the fork. Opting in is what prevents that.
+
+Check the send screen reads **Replay protected** before building anything. If it does not, the reason names which of the chain, the node or a keystore is refusing. Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the other side.
+
+## Building
+
+As upstream, except that the submodules must come from this fork, so clone this repository rather than upstream's:
 
 ```bash
 git clone --recursive https://github.com/privkeyio/shrike.git
 cd shrike
-git checkout blake2b
-git submodule update --init --recursive
 ```
 
-Java 25 or higher is required, as upstream. `--recursive` matters: the BLAKE2b work lives in the drongo submodule, and a plain clone leaves it empty. If you clone over SSH instead, make sure an ssh-agent is running with your key added, or the submodule clones fail with `Permission denied (publickey)` even though the parent clone succeeded.
+`--recursive` matters: the BLAKE2b work lives in the drongo submodule and a plain clone leaves it empty. Cloning over SSH additionally needs an ssh-agent holding your key, or the submodules fail with `Permission denied (publickey)` even though the parent clone succeeded. Java requirements and the build itself are unchanged, see [Building](#building-1) below.
 
-Builds for Linux, Windows and macOS are published under [Releases](https://github.com/privkeyio/shrike/releases), together with a signed `SHA256SUMS` covering every file:
+## Releases
+
+Builds for Linux, Windows and macOS are published under [Releases](https://github.com/privkeyio/shrike/releases) with a signed `SHA256SUMS` covering every file:
 
 ```bash
 gpg --import privkeyio-signing-key.asc
@@ -39,22 +50,27 @@ sha256sum --ignore-missing -c SHA256SUMS
 
 Signed by Kyle Santiago <kyle@privkey.io>, key `A47D99B6DB0D715D40C59A2023AE8A8EA7E24E38`.
 
-> **The macOS builds are not code signed or notarized.**
->
-> Notarization requires a paid Apple Developer account, which this project does not have. The `.dmg` files are named `-unsigned` to say so plainly. macOS will refuse to open the app on first launch, reporting that it is damaged or from an unidentified developer; that message means it is unsigned, not that anything is wrong with the download. To run it anyway, clear the quarantine attribute:
->
-> ```bash
-> xattr -dr com.apple.quarantine /Applications/Shrike.app
-> ```
->
-> **Verify `SHA256SUMS` before doing that.** Clearing quarantine removes the check that would otherwise stop a tampered download, so the signature is the only assurance left. Anyone unwilling to take that step should build from source instead.
+The macOS builds are not code signed or notarized, and the Windows installer is not Authenticode signed. On macOS the app will be reported as damaged or from an unidentified developer on first launch, which means it is unsigned rather than that anything is wrong with the download. Verify `SHA256SUMS` first, because clearing quarantine removes the check that would otherwise stop a tampered download:
 
-The Windows installer is not Authenticode signed either, and SmartScreen will warn accordingly. Upstream Sparrow does not sign its installer either; both projects rely on the signed manifest above.
+```bash
+xattr -dr com.apple.quarantine /Applications/Shrike.app
+```
 
-Builds published before the unified signature hash message changed produce signatures a current node rejects, and must be replaced rather than kept.
+Only the Linux packaging carries the fork's identity so far. The macOS bundle metadata still uses upstream's identifiers.
+
+## Verification
+
+The drongo tests check every stage of the proof-of-work pipeline against the reference implementation's own vectors, and the wallet has been verified end to end against a live forked regtest node. Both are reproducible: see [blake2b-regtest.md](docs/blake2b-regtest.md) and [unified-sighash-regtest.md](docs/unified-sighash-regtest.md).
+
+## Reporting issues
+
+Use the [Issues](https://github.com/privkeyio/shrike/issues) tab for problems specific to this fork. Anything not specific to the fork belongs [upstream](https://github.com/sparrowwallet/sparrow/issues) instead.
+
+## Credit
+
+The v2 block header, the BLAKE2b proof of work, the separate application identity and the packaging were written by [AcesHigh70](https://github.com/AcesHigh70), and are no longer maintained there. This fork continues that work and adds the unified opt-in signature hash.
 
 ---
-
 # Sparrow Bitcoin Wallet
 
 Sparrow is a modern desktop Bitcoin wallet application supporting most hardware wallets and built on common standards such as PSBT, with an emphasis on transparency and usability.
