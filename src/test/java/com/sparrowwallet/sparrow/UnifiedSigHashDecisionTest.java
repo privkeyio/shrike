@@ -65,9 +65,13 @@ public class UnifiedSigHashDecisionTest {
                 AppServices.chainDecision(Network.TESTNET4, ACTIVATION, header(V1_HEADER_HEX)));
     }
 
+    /**
+     * No tip is its own reason, as an unknown height already is. Reporting the chain as not having activated would
+     * state something about a chain this wallet has not seen, which is what an offline session always is.
+     */
     @Test
-    public void testNoTipAtAllIsReportedAsTheChainNotHavingActivated() {
-        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED,
+    public void testNoTipAtAllIsItsOwnReason() {
+        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_UNSEEN,
                 AppServices.chainDecision(Network.TESTNET4, ACTIVATION, null));
     }
 

@@ -99,6 +99,9 @@ public class AppController implements Initializable {
     private MenuItem saveTransaction;
 
     @FXML
+    private MenuItem aboutItem;
+
+    @FXML
     private MenuItem showTransaction;
 
     @FXML
@@ -292,6 +295,9 @@ public class AppController implements Initializable {
     }
 
     void initializeView() {
+        //Named from the application rather than written out, as the window title beside it already is
+        aboutItem.setText("About " + SparrowWallet.APP_NAME);
+
         Platform.runLater(this::setPlatformApplicationMenu);
 
         rootStack.getScene().getWindow().setOnHiding(windowEvent -> {

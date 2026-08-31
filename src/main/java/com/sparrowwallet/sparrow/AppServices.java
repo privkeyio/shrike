@@ -866,8 +866,14 @@ public class AppServices {
      * a reason that drifts from the decision it explains is worse than no reason at all.
      */
     static UnifiedSigHashDecision chainDecision(Network network, Integer blockHeight, BlockHeader blockHeader) {
+        //Nothing has been heard from a chain, so nothing about one can be reported. Offline, and before the first
+        //tip of a session arrives
+        if(blockHeader == null) {
+            return UnifiedSigHashDecision.CHAIN_UNSEEN;
+        }
+
         //A v2 header means the proof of work change is live, and both rule sets activate at the one block
-        if(blockHeader == null || !blockHeader.isHeaderV2()) {
+        if(!blockHeader.isHeaderV2()) {
             return UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED;
         }
 
