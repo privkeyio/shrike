@@ -19,7 +19,7 @@ Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/spar
 | mainnet | 961,640 |
 | testnet4 | 150,308 |
 
-The schedule moved more than once before release, and each move replaced what followed the old one, so the compiled-in height is not trusted on its own. It is cross checked against the connected node, and on a disagreement the wallet declines to opt in rather than following either value.
+Where the connected node reports a height of its own, the compiled-in one is cross checked against it, and on a disagreement the wallet declines to opt in rather than following either value.
 
 ## Replay protection
 
