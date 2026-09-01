@@ -23,6 +23,22 @@ def skipInstallers = "true".equals(findProperty("skipInstallers"))
 group = 'com.sparrowwallet'
 version = '2.5.5'
 
+/*
+    The Debian revision, taken from the fork release number so apt can order releases.
+
+    Every build declared revision 1, so 2.5.5-blake2b.7 and .11 both packaged as 2.5.5-1 and apt reported
+    no upgrade available while silently leaving users on an old build. Read from SparrowWallet rather than
+    restated here, because two copies of a version number are how that happened in the first place.
+ */
+ext.blake2bRelease = {
+    def source = file('src/main/java/com/sparrowwallet/sparrow/SparrowWallet.java').text
+    def matcher = source =~ /APP_VERSION_SUFFIX\s*=\s*"-blake2b\.(\d+)"/
+    if(!matcher.find()) {
+        throw new GradleException('Could not read the blake2b release number from SparrowWallet.java')
+    }
+    return matcher.group(1)
+}()
+
 repositories {
     mavenCentral()
     maven { url = uri('https://code.sparrowwallet.com/api/packages/sparrowwallet/maven') }
@@ -304,7 +320,7 @@ jlink {
                 installerName = "shrike"
                 installerOptions.addAll(['--linux-shortcut', '--linux-menu-group', 'Shrike'])
             }
-            installerOptions.addAll(['--resource-dir', layout.buildDirectory.dir('deploy/package').get().asFile.toString(), '--linux-app-category', 'utils', '--linux-app-release', '1', '--linux-rpm-license-type', 'ASL 2.0', '--linux-deb-maintainer', 'AcesHigh70 <6564423+AcesHigh70@users.noreply.github.com>'])
+            installerOptions.addAll(['--resource-dir', layout.buildDirectory.dir('deploy/package').get().asFile.toString(), '--linux-app-category', 'utils', '--linux-app-release', blake2bRelease, '--linux-rpm-license-type', 'ASL 2.0', '--linux-deb-maintainer', 'AcesHigh70 <6564423+AcesHigh70@users.noreply.github.com>'])
             imageOptions.addAll(['--icon', 'src/main/deploy/package/linux/Shrike.png', '--resource-dir', 'src/main/deploy/package/linux/'])
             //Set explicitly, as the other two platforms do. Left unset, jpackage attempts every installer
             //type the platform advertises and stops on the one whose tooling is absent, so packaging fails
@@ -359,7 +375,7 @@ tasks.register('prepareResourceDir', Copy) {
                 if(line.contains('${size}')) {
                     line = line.replace('${size}', getDirectorySize(layout.buildDirectory.dir('jpackage/Shrike').get().asFile))
                 }
-                return line.replace('${version}', "${version}").replace('${arch}', osArch == 'aarch64' ? 'arm64' : 'amd64')
+                return line.replace('${version}', "${version}").replace('${release}', blake2bRelease).replace('${arch}', osArch == 'aarch64' ? 'arm64' : 'amd64')
             }
         }
     }

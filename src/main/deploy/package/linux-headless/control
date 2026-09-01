@@ -1,5 +1,5 @@
 Package: shrikeserver
-Version: ${version}-1
+Version: ${version}-${release}
 Section: utils
 Maintainer: AcesHigh70 <6564423+AcesHigh70@users.noreply.github.com>
 Priority: optional

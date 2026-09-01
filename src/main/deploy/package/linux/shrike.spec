@@ -1,7 +1,7 @@
 Summary: Shrike
 Name: shrike
 Version: ${version}
-Release: 1
+Release: ${release}
 License: ASL 2.0
 Vendor: Unknown
 

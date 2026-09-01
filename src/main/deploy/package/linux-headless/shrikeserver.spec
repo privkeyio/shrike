@@ -1,7 +1,7 @@
 Summary: Shrike Server
 Name: shrikeserver
 Version: ${version}
-Release: 1
+Release: ${release}
 License: ASL 2.0
 Vendor: Unknown
 
