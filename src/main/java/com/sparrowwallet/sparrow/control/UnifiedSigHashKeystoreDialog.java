@@ -3,6 +3,7 @@ package com.sparrowwallet.sparrow.control;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
@@ -34,19 +35,19 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
 
         setTitle("Replay Protection");
         dialogPane.setHeaderText("""
-                A signature that opts in cannot be replayed against nodes that have not adopted the fork. \
-                Opting in needs enough devices in this wallet to meet its signing threshold, and a device reports its model but not \
-                its firmware, so only you can say.
+                A device reports its model but not its firmware, so only you can say which of these support the \
+                opt-in.
 
-                Leave a device unmarked if you are unsure. Marking one that does not support it does not fall \
-                back: it signs nothing and reports a failure of its own.
-
-                This applies to transactions created from now on. A transaction already created keeps the hash \
-                type it was built with, so create it again to use the new setting.""");
+                Leave one unmarked if you are unsure. A device marked that does not support it signs nothing rather \
+                than falling back. This applies to transactions created from now on.""");
         dialogPane.getStylesheets().add(AppServices.class.getResource("general.css").toExternalForm());
         dialogPane.getButtonTypes().addAll(ButtonType.CANCEL);
         dialogPane.setPrefWidth(560);
-        dialogPane.setPrefHeight(400);
+        //Sized for the header, a line per keystore and the line counting them. A fixed height clipped the counting
+        //line once it was added, and clipped further the more keystores a wallet holds.
+        //Sized for the header, a line per keystore and the line counting them, so nothing is clipped and nothing
+        //is left as empty space below the buttons
+        dialogPane.setPrefHeight(255 + (wallet.getKeystores().size() * 30));
         AppServices.moveToActiveWindowScreen(this);
 
         Glyph lock = new Glyph(FontAwesome5.FONT_NAME, FontAwesome5.Glyph.LOCK);
@@ -54,7 +55,8 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
         dialogPane.setGraphic(lock);
 
         final VBox content = new VBox(10);
-        content.setPadding(new Insets(10, 0, 0, 0));
+        //Indented to line up with the header text above it, rather than sitting against the edge of the pane
+        content.setPadding(new Insets(4, 20, 0, 20));
         for(Keystore keystore : wallet.getKeystores()) {
             if(keystore.getSource().isHardware()) {
                 CheckBox mark = new CheckBox(keystore.getLabel() + " (" + keystore.getWalletModel().toDisplayString() + ")");
@@ -67,16 +69,20 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
         //be guessed. Said here, and kept current as they are ticked, so the target and the progress toward it are both visible.
         if(!marks.isEmpty()) {
             Label progress = new Label();
-            progress.setPadding(new Insets(6, 0, 0, 0));
+            progress.setWrapText(true);
+            progress.setPadding(new Insets(12, 0, 6, 0));
             Runnable update = () -> {
                 long marked = marks.values().stream().filter(CheckBox::isSelected).count();
                 long unmarked = wallet.getKeystores().size() - marked;
                 int required = AppServices.requiredSignatures(wallet);
-                progress.setText(unmarked < required
-                        ? "Marked " + marked + " of " + wallet.getKeystores().size() + ". This wallet needs " + required
-                                + " to sign, so a transaction it builds will opt in."
-                        : "Marked " + marked + " of " + wallet.getKeystores().size() + ". This wallet needs " + required
-                                + " to sign, and too few are marked for that, so it will not opt in yet.");
+                boolean enough = unmarked < required;
+
+                //Carries the same glyph and colour the send screen uses for the same answer, so the two agree on sight
+                progress.setGraphic(enough ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+                progress.getStyleClass().removeAll("success", "failure");
+                progress.getStyleClass().add(enough ? "success" : "failure");
+                progress.setText((enough ? "Transactions will opt in. " : "Transactions will not opt in. ")
+                        + marked + " of " + wallet.getKeystores().size() + " marked, " + required + " needed to sign.");
             };
             marks.values().forEach(mark -> mark.selectedProperty().addListener((observable, was, is) -> update.run()));
             update.run();
