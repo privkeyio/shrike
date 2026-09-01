@@ -8,7 +8,7 @@ Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/spar
 
 - **BLAKE2b proof of work.** Parses and validates the 164 byte v2 block header, and past activation takes the BLAKE2b hash as the block id rather than SHA256d. Implemented in the [drongo](https://github.com/privkeyio/drongo) submodule.
 - **Unified opt-in signature hash.** Signs with hash type `0x21` past activation. Such a signature is invalid under the pre-fork rules, which is what makes it unreplayable. Where it cannot opt in the wallet signs the legacy way and says so on the send screen rather than failing silently.
-- **Per-keystore opt-in for hardware signers.** Nothing a device reports tells the wallet whether its firmware implements the opt-in, so each hardware keystore is marked by hand under Replay protection. A PSBT carries one hash type for every signer, so a single unmarked keystore decides for the whole transaction.
+- **Per-keystore opt-in for hardware signers.** Nothing a device reports tells the wallet whether its firmware implements the opt-in, so each hardware keystore is marked by hand under Replay protection. A PSBT carries one hash type for every signer, so the wallet opts in once enough are marked to meet its threshold, and those are the signers that can sign it.
 - **Separate application identity.** Installs and runs alongside an existing Sparrow without sharing state. Configuration, wallets and logs live in `~/.shrike`, the Linux packages are `shrike` and `shrikeserver` under their own prefix, and the two have separate desktop entries, MIME types and single instance locks.
 - **Knots as the node.** The activation schedule is read from `getdeploymentinfo`, which only Knots reports, so Bitcoin Core is not a node this build can use.
 
