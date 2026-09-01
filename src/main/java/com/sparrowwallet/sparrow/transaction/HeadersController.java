@@ -991,7 +991,8 @@ public class HeadersController extends TransactionFormController implements Init
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
             label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
             label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
-            label.setTooltip(new Tooltip(optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures)));
+            label.setTooltip(new Tooltip(optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures,
+                    AppServices.liftableSignatureCount(headersForm.getPsbt()))));
         }
     }
 
@@ -1000,7 +1001,7 @@ public class HeadersController extends TransactionFormController implements Init
      * to the transaction and takes one opted-in signature anywhere in it. The second belongs to each signature. Saying
      * only "protected" over a mixed witness would claim the second for signers that did not opt in.
      */
-    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures) {
+    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures, int liftable) {
         if(!optedIn) {
             return "These signatures are made the way they always have been. They carry no replay protection.";
         }
@@ -1009,10 +1010,22 @@ public class HeadersController extends TransactionFormController implements Init
             return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.";
         }
 
-        return "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
+        String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
                 + optedInSignatures + " of " + signatures + " do."
                 + System.lineSeparator() + System.lineSeparator()
                 + "The other " + (signatures - optedInSignatures) + " were made the way they always have been, so those signers were shown the amounts by this computer rather than committing to them.";
+
+        //A legacy ANYONECANPAY signature commits only to its own input and to the outputs, so unlike the other legacy
+        //types it survives being lifted into a transaction that drops the inputs which opted in. The transaction is
+        //protected either way, so this is the one case where the headline is true and still not the whole answer.
+        if(liftable > 0) {
+            detail += System.lineSeparator() + System.lineSeparator()
+                    + (liftable == 1 ? "One of those signs Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent on the chain that kept SHA256d, paying these same outputs."
+                                     : liftable + " of those sign Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent on the chain that kept SHA256d, paying these same outputs.")
+                    + " Have those signers opt in too, or sign the whole transaction with All, to close that.";
+        }
+
+        return detail;
     }
 
     private static class BlockHeightContextMenu extends ContextMenu {

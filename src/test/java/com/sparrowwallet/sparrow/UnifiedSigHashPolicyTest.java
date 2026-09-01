@@ -741,6 +741,100 @@ public class UnifiedSigHashPolicyTest {
      * alongside the marked ones. One opted-in signature in the transaction is what makes it unreplayable, which is
      * why the unmarked signature costs nothing.
      */
+    /**
+     * Selecting Anyone Can Pay and handing an unmarked device the base type produces a 0x81 signature. That is the one
+     * legacy type which commits only to its own input and to the outputs, so unlike a legacy ALL it survives being
+     * lifted into another transaction. Reachable rather than hypothetical, which is what this pins.
+     */
+    @Test
+    public void testAnUnmarkedDeviceIsHandedTheLiftableTypeForAnyonecanpay() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        String[] fingerprints = {"aaaaaaaa", "bbbbbbbb", "cccccccc"};
+        for(int i = 0; i < 3; i++) {
+            wallet.getKeystores().get(i).setKeyDerivation(new KeyDerivation(fingerprints[i], "m/48'/0'/0'/2'"));
+        }
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
+
+        PSBT psbt = twoInputPsbt();
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            psbtInput.setSigHash(SigHash.ANYONECANPAY_ALL);
+        }
+        AppServices.applyUnifiedSigHash(psbt, true);
+        Assertions.assertEquals(SigHash.UNIFIED_ANYONECANPAY_ALL, psbt.getPsbtInputs().get(0).getSigHash(),
+                "the opt-in bit rides on the type the user chose");
+
+        PSBT forUnmarked = AppServices.psbtForDevice(wallet, psbt, "cccccccc");
+        Assertions.assertEquals(SigHash.ANYONECANPAY_ALL, forUnmarked.getPsbtInputs().get(0).getSigHash(),
+                "which for ANYONECANPAY is the signature that can be lifted out");
+    }
+
+    /**
+     * Counted off the signatures, and only the ones that can actually be lifted. An opted-in ANYONECANPAY signature is
+     * invalid under the pre-fork rules to begin with, and a legacy ALL commits to every input, so neither counts.
+     * Proven against a node in anyonecanpay_lift.py, where the lifted signature was mined on the pre-fork chain.
+     */
+    @Test
+    public void testOnlyALegacyAnyonecanpaySignatureIsCountedAsLiftable() throws Exception {
+        Assertions.assertEquals(0, AppServices.liftableSignatureCount(null), "no transaction, nothing to count");
+
+        Assertions.assertEquals(1, liftableCountForMixedWitness(SigHash.UNIFIED_ANYONECANPAY_ALL, SigHash.ANYONECANPAY_ALL),
+                "the legacy ANYONECANPAY signature can be lifted, the opted-in one cannot");
+        Assertions.assertEquals(0, liftableCountForMixedWitness(SigHash.UNIFIED_ALL, SigHash.ALL),
+                "a legacy ALL commits to every input, so it is useless in another transaction");
+        Assertions.assertEquals(0, liftableCountForMixedWitness(SigHash.UNIFIED_ANYONECANPAY_ALL, SigHash.UNIFIED_ANYONECANPAY_ALL),
+                "an opted-in ANYONECANPAY is refused under the pre-fork rules anyway");
+        Assertions.assertEquals(2, liftableCountForMixedWitness(SigHash.ANYONECANPAY_ALL, SigHash.ANYONECANPAY_ALL),
+                "both legacy, both liftable");
+    }
+
+    /** A real 2-of-2 P2WSH signed once per hash type, the way per-device PSBTs combine. */
+    private int liftableCountForMixedWitness(SigHash firstType, SigHash secondType) throws Exception {
+        String[] mnemonics = {
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor",
+                "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle"};
+
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(String mnemonic : mnemonics) {
+            DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+            wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, ScriptType.P2WSH.getDefaultDerivation()));
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), 2));
+        wallet.getNode(KeyPurpose.RECEIVE);
+
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script spk = wallet.getOutputScript(receiveNode);
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        transaction.addInput(Sha256Hash.wrap("0000000000000000000000000000000000000000000000000000000000000001"), 0, new Script(new byte[0]));
+        transaction.getInputs().getFirst().setSequenceNumber(0xFFFFFFFEL);
+        transaction.addOutput(90000L, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
+        psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(2, receiveNode.getPubKeys()));
+
+        //One key at a time, each asked for its own hash type, which is what per-device PSBTs produce
+        DeterministicSeed second = wallet.getKeystores().get(1).getSeed();
+        wallet.getKeystores().get(1).setSeed(null);
+        psbtInput.setSigHash(firstType);
+        wallet.sign(psbt);
+
+        wallet.getKeystores().get(1).setSeed(second);
+        DeterministicSeed first = wallet.getKeystores().getFirst().getSeed();
+        wallet.getKeystores().getFirst().setSeed(null);
+        psbtInput.setSigHash(secondType);
+        wallet.sign(psbt);
+        wallet.getKeystores().getFirst().setSeed(first);
+
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt)[1], "both keys must have signed");
+        return AppServices.liftableSignatureCount(psbt);
+    }
+
     @Test
     public void testAnUnmarkedDeviceIsHandedTheTypeItCanSign() {
         Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);

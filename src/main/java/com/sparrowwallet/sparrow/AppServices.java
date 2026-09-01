@@ -1108,6 +1108,33 @@ public class AppServices {
     }
 
     /**
+     * How many signatures in this transaction can be lifted out of it and spent on the pre-fork chain.
+     *
+     * One opted-in signature makes the whole transaction invalid under the pre-fork rules, but the legacy signatures
+     * inside it stay individually valid there. A legacy ALL or SINGLE signature commits to every input, so it is
+     * useless in any other transaction. A legacy ANYONECANPAY one commits only to its own input and to the outputs,
+     * so it can be copied into a transaction that drops the opted-in inputs and spent against a node that never
+     * adopted the fork. The transaction is protected; that input is not, and saying only "protected" would hide it.
+     */
+    public static int liftableSignatureCount(PSBT psbt) {
+        if(psbt == null) {
+            return 0;
+        }
+
+        int liftable = 0;
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            for(TransactionSignature signature : psbtInput.getSignatures()) {
+                if((signature.sighashFlags & SigHash.UNIFIED_FLAG) == 0
+                        && (signature.sighashFlags & SigHash.ANYONECANPAY.value) != 0) {
+                    liftable++;
+                }
+            }
+        }
+
+        return liftable;
+    }
+
+    /**
      * The PSBT to hand this device: the one given, or a copy asking only for what the device can produce.
      *
      * The hash type is opted into per signature, so a transaction carrying one opted-in signature cannot be replayed
