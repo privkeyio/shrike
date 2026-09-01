@@ -978,14 +978,41 @@ public class HeadersController extends TransactionFormController implements Init
      * one the transaction is being asked, and would put a second copy of that decision in the view.
      */
     private void updateOptInStatus(SigHash psbtSigHash) {
-        boolean optedIn = psbtSigHash != null && psbtSigHash.isUnified();
+        //Counted off the signatures rather than taken from the declared hash type, because a transaction assembled
+        //from per-device PSBTs carries signatures the declaration does not describe
+        int[] counts = AppServices.signatureOptInCounts(headersForm.getPsbt());
+        int optedInSignatures = counts[0];
+        int signatures = counts[1];
+
+        //Before anything is signed there is nothing to count, so the declared type is what the transaction will be
+        boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
+        boolean everySignature = signatures > 0 && optedInSignatures == signatures;
+
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
             label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
             label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
-            label.setTooltip(new Tooltip(optedIn
-                    ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend."
-                    : "These signatures are made the way they always have been. They carry no replay protection."));
+            label.setTooltip(new Tooltip(optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures)));
         }
+    }
+
+    /**
+     * Replay protection and the commitment to spent amounts are two properties with two thresholds. The first belongs
+     * to the transaction and takes one opted-in signature anywhere in it. The second belongs to each signature. Saying
+     * only "protected" over a mixed witness would claim the second for signers that did not opt in.
+     */
+    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures) {
+        if(!optedIn) {
+            return "These signatures are made the way they always have been. They carry no replay protection.";
+        }
+
+        if(everySignature || signatures == 0) {
+            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.";
+        }
+
+        return "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
+                + optedInSignatures + " of " + signatures + " do."
+                + System.lineSeparator() + System.lineSeparator()
+                + "The other " + (signatures - optedInSignatures) + " were made the way they always have been, so those signers were shown the amounts by this computer rather than committing to them.";
     }
 
     private static class BlockHeightContextMenu extends ContextMenu {

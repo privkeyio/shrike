@@ -74,15 +74,22 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
             Runnable update = () -> {
                 long marked = marks.values().stream().filter(CheckBox::isSelected).count();
                 long unmarked = wallet.getKeystores().size() - marked;
-                int required = AppServices.requiredSignatures(wallet);
-                boolean enough = unmarked < required;
+                Integer threshold = AppServices.readThreshold(wallet);
+                int required = threshold == null ? 1 : threshold;
+
+                //Three answers, not two: nothing marked cannot opt in at all, a marked signer in every possible quorum
+                //is a guarantee, and anything between opts in but only protects where one of them signs
+                boolean any = marked > 0;
+                boolean guaranteed = any && unmarked < required;
 
                 //Carries the same glyph and colour the send screen uses for the same answer, so the two agree on sight
-                progress.setGraphic(enough ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+                progress.setGraphic(any ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
                 progress.getStyleClass().removeAll("success", "failure");
-                progress.getStyleClass().add(enough ? "success" : "failure");
-                progress.setText((enough ? "Transactions will opt in. " : "Transactions will not opt in. ")
-                        + marked + " of " + wallet.getKeystores().size() + " marked, " + required + " needed to sign.");
+                progress.getStyleClass().add(any ? "success" : "failure");
+                progress.setText((guaranteed ? "Transactions will opt in. "
+                        : any ? "Transactions opt in when a marked signer signs. " : "Transactions will not opt in. ")
+                        + marked + " of " + wallet.getKeystores().size() + " marked"
+                        + (threshold == null ? "." : ", " + threshold + " needed to sign."));
             };
             marks.values().forEach(mark -> mark.selectedProperty().addListener((observable, was, is) -> update.run()));
             update.run();

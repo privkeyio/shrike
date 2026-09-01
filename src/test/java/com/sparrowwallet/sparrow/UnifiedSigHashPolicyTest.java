@@ -774,6 +774,61 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
+     * A mixed witness is counted off the signatures, not the declared hash type. The transaction is protected, since
+     * one opted-in signature is enough, but only that signature commits to the amounts it spends. Reporting a single
+     * answer for both would claim the second property for a signer that never had it.
+     */
+    @Test
+    public void testAMixedWitnessIsCountedBySignature() throws Exception {
+        String[] mnemonics = {
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor",
+                "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle"};
+
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(String mnemonic : mnemonics) {
+            DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+            wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, ScriptType.P2WSH.getDefaultDerivation()));
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), 2));
+        wallet.getNode(KeyPurpose.RECEIVE);
+
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script spk = wallet.getOutputScript(receiveNode);
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        transaction.addInput(Sha256Hash.wrap("0000000000000000000000000000000000000000000000000000000000000001"), 0, new Script(new byte[0]));
+        transaction.getInputs().getFirst().setSequenceNumber(0xFFFFFFFEL);
+        transaction.addOutput(90000L, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
+        psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(2, receiveNode.getPubKeys()));
+
+        Assertions.assertArrayEquals(new int[] {0, 0}, AppServices.signatureOptInCounts(psbt), "nothing signed yet");
+
+        //One key signs the opted-in message, the other the legacy one, which is what per-device PSBTs produce
+        DeterministicSeed second = wallet.getKeystores().get(1).getSeed();
+        wallet.getKeystores().get(1).setSeed(null);
+        psbtInput.setSigHash(SigHash.UNIFIED_ALL);
+        wallet.sign(psbt);
+
+        wallet.getKeystores().get(1).setSeed(second);
+        DeterministicSeed first = wallet.getKeystores().getFirst().getSeed();
+        wallet.getKeystores().getFirst().setSeed(null);
+        psbtInput.setSigHash(SigHash.ALL);
+        wallet.sign(psbt);
+        wallet.getKeystores().getFirst().setSeed(first);
+
+        int[] counts = AppServices.signatureOptInCounts(psbt);
+        Assertions.assertEquals(2, counts[1], "both keys signed");
+        Assertions.assertEquals(1, counts[0], "exactly one of them opted in");
+    }
+
+    /**
      * An m-of-n with a policy actually set, which walletWith deliberately leaves absent. Without one the threshold
      * cannot be read and every keystore is required, so a wallet built there exercises the fallback rather than the
      * quorum rule.

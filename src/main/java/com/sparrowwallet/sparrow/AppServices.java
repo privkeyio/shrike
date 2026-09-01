@@ -23,6 +23,7 @@ import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
 import com.sparrowwallet.drongo.protocol.SigHash;
 import com.sparrowwallet.drongo.protocol.Transaction;
+import com.sparrowwallet.drongo.protocol.TransactionSignature;
 import com.sparrowwallet.drongo.psbt.PSBT;
 import com.sparrowwallet.drongo.psbt.PSBTInput;
 import com.sparrowwallet.drongo.uri.BitcoinURI;
@@ -1077,6 +1078,36 @@ public class AppServices {
     }
 
     /**
+     * How many of the signatures already on this PSBT opt in, against how many there are.
+     *
+     * Two different properties hang off this, with different thresholds, and reporting one number for both hides the
+     * difference. Replay protection belongs to the whole transaction and takes one opted-in signature anywhere in it.
+     * Committing to every spent amount, which is what closes CVE-2020-14199, belongs to each signature and takes that
+     * signature opting in. A mixed witness has the first in full and the second only for the signers that opted in.
+     *
+     * Read off the signatures rather than the declared hash type, because a transaction assembled from per-device
+     * PSBTs carries signatures the declaration does not describe.
+     */
+    public static int[] signatureOptInCounts(PSBT psbt) {
+        if(psbt == null) {
+            return new int[] {0, 0};
+        }
+
+        int optedIn = 0;
+        int total = 0;
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            for(TransactionSignature signature : psbtInput.getSignatures()) {
+                total++;
+                if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
+                    optedIn++;
+                }
+            }
+        }
+
+        return new int[] {optedIn, total};
+    }
+
+    /**
      * The PSBT to hand this device: the one given, or a copy asking only for what the device can produce.
      *
      * The hash type is opted into per signature, so a transaction carrying one opted-in signature cannot be replayed
@@ -1150,7 +1181,7 @@ public class AppServices {
      * getNumSignaturesRequired throws on a policy it cannot parse and the policy itself may be absent on a wallet
      * still being built, and this is reached from the send path where throwing would take the screen with it.
      */
-    static Integer readThreshold(Wallet wallet) {
+    public static Integer readThreshold(Wallet wallet) {
         try {
             Policy policy = wallet.getDefaultPolicy();
             return policy == null ? null : policy.getNumSignaturesRequired();
