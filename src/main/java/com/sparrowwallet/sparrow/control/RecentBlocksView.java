@@ -51,7 +51,7 @@ public class RecentBlocksView extends Pane {
         }));
 
         FeeRatesSource feeRatesSource = Config.get().getFeeRatesSource();
-        feeRatesSource = (feeRatesSource == null ? FeeRatesSource.MEMPOOL_SPACE : feeRatesSource);
+        feeRatesSource = (feeRatesSource == null ? FeeRatesSource.getDefault() : feeRatesSource);
         updateFeeRatesSource(feeRatesSource);
         Tooltip.install(this, tooltip);
     }
