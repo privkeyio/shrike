@@ -884,6 +884,50 @@ public class UnifiedSigHashPolicyTest {
                 "both legacy, both liftable");
     }
 
+    /**
+     * A mark that turns out to be wrong must not be believed.
+     *
+     * Marking says what the owner thinks the signer does, and nothing verifies it. A signer that returns a legacy
+     * signature against a PSBT declaring the opt-in leaves a transaction with no replay protection, and the send
+     * screen has to say so rather than repeat the declaration back. This is why the status is counted off the
+     * signatures rather than read from the hash type the PSBT asks for, and it matters more now that a watch only
+     * keystore can be marked, since there the signer is entirely outside the wallet.
+     */
+    @Test
+    public void testADeclarationTheSignerIgnoredIsNotReportedAsProtection() throws Exception {
+        String mnemonic = "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor";
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.SINGLE_HD);
+        wallet.setScriptType(ScriptType.P2WPKH);
+        DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+        wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.SINGLE_HD, ScriptType.P2WPKH.getDefaultDerivation()));
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.SINGLE_HD, ScriptType.P2WPKH, wallet.getKeystores(), 1));
+        wallet.getNode(KeyPurpose.RECEIVE);
+
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script spk = wallet.getOutputScript(receiveNode);
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        transaction.addInput(Sha256Hash.wrap("0000000000000000000000000000000000000000000000000000000000000001"), 0, new Script(new byte[0]));
+        transaction.getInputs().getFirst().setSequenceNumber(0xFFFFFFFEL);
+        transaction.addOutput(90000L, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
+
+        //The signer produced the legacy message, whatever the PSBT asked for
+        psbtInput.setSigHash(SigHash.ALL);
+        wallet.sign(psbt);
+        //and the declaration still says it opted in, which is what a wrong mark leaves behind
+        psbtInput.setSigHash(SigHash.UNIFIED_ALL);
+
+        Assertions.assertTrue(psbtInput.getSigHash().isUnified(), "the declaration claims the opt-in");
+        Assertions.assertArrayEquals(new int[] {0, 1}, AppServices.signatureOptInCounts(psbt),
+                "but nothing signed opted in, so no protection may be reported");
+    }
+
     /** A real 2-of-2 P2WSH signed once per hash type, the way per-device PSBTs combine. */
     private int liftableCountForMixedWitness(SigHash firstType, SigHash secondType) throws Exception {
         String[] mnemonics = {
