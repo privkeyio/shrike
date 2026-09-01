@@ -124,4 +124,22 @@ public class UnifiedSigHashItemsTest {
                     "The offered types must be exactly the six the fork defines");
         }
     }
+
+    /**
+     * The wallet may produce ANYONECANPAY, because that is the type the user picked and refusing it would just be a
+     * device that mysteriously will not sign. What it must never do is reach for it on its own account: a signature
+     * that stands alone is the one legacy type that survives being lifted onto the chain that kept SHA256d, so the
+     * user has to have chosen it. This pins the one type the send screen puts forward by itself.
+     */
+    @Test
+    public void testTheRecommendedTypeIsNeverAnyoneCanPay() {
+        for(SigHash required : List.of(SigHash.ALL, SigHash.DEFAULT)) {
+            for(SigHash declared : List.of(SigHash.ALL, SigHash.DEFAULT, SigHash.UNIFIED_ALL,
+                    SigHash.ANYONECANPAY_ALL, SigHash.UNIFIED_ANYONECANPAY_ALL)) {
+                SigHash recommended = HeadersController.recommendedSigHashFor(required, declared);
+                Assertions.assertFalse(recommended.anyoneCanPay(),
+                        "recommended " + recommended + " where the PSBT declared " + declared);
+            }
+        }
+    }
 }

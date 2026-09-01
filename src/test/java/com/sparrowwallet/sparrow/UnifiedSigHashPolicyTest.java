@@ -742,6 +742,46 @@ public class UnifiedSigHashPolicyTest {
      * why the unmarked signature costs nothing.
      */
     /**
+     * The line is initiative, not capability. ANYONECANPAY exists to make a signature stand alone, and standing alone
+     * is what makes it liftable, so a wallet that refused to produce it would simply not be implementing the type the
+     * user picked, and would fail as a device that mysteriously will not sign. Produce it where it was asked for.
+     *
+     * What the wallet must never do is reach for it on its own account. Every path that picks a hash type with nothing
+     * to copy from is pinned here, so no future default can introduce one behind the user's back.
+     */
+    @Test
+    public void testTheWalletNeverSelectsAnyonecanpayOnItsOwnAccount() {
+        //Nothing declared, so applyUnifiedSigHash is choosing for itself
+        PSBT undeclared = twoInputPsbt();
+        for(PSBTInput psbtInput : undeclared.getPsbtInputs()) {
+            Assertions.assertNull(psbtInput.getSigHash(), "the fixture must leave the choice open");
+        }
+        AppServices.applyUnifiedSigHash(undeclared, true);
+        for(PSBTInput psbtInput : undeclared.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash());
+            Assertions.assertFalse(psbtInput.getSigHash().anyoneCanPay(), "chosen by the wallet, so never ANYONECANPAY");
+        }
+
+        //The same, declining to opt in
+        PSBT legacy = twoInputPsbt();
+        AppServices.applyUnifiedSigHash(legacy, false);
+        for(PSBTInput psbtInput : legacy.getPsbtInputs()) {
+            Assertions.assertFalse(psbtInput.getSigHash() != null && psbtInput.getSigHash().anyoneCanPay());
+        }
+
+        //And where the user did pick it, it is carried through rather than quietly dropped
+        PSBT chosen = twoInputPsbt();
+        for(PSBTInput psbtInput : chosen.getPsbtInputs()) {
+            psbtInput.setSigHash(SigHash.ANYONECANPAY_ALL);
+        }
+        AppServices.applyUnifiedSigHash(chosen, true);
+        for(PSBTInput psbtInput : chosen.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.UNIFIED_ANYONECANPAY_ALL, psbtInput.getSigHash(),
+                    "asked for by the user, so produced, with the opt-in bit added");
+        }
+    }
+
+    /**
      * Selecting Anyone Can Pay and handing an unmarked device the base type produces a 0x81 signature. That is the one
      * legacy type which commits only to its own input and to the outputs, so unlike a legacy ALL it survives being
      * lifted into another transaction. Reachable rather than hypothetical, which is what this pins.
