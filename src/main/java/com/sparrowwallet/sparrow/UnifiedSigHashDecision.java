@@ -80,14 +80,14 @@ public enum UnifiedSigHashDecision {
     NO_SIGNING_KEYS("this wallet holds no keys of its own"),
 
     /**
-     * At least one device in this wallet is not marked as supporting the opt-in. Nothing a device sends says
-     * which firmware it runs, so this is what its owner told the wallet rather than something detected, and it
-     * is off until they say otherwise. A PSBT carries one hash type for every signer, so the wallet opts in once
-     * enough are marked to meet its threshold, and those are the signers that can sign what it builds.
+     * No device in this wallet is marked as supporting the opt-in. Nothing a device sends says which firmware it
+     * runs, so this is what its owner told the wallet rather than something detected, and it is off until they
+     * say otherwise. One marked signer would be enough, since a transaction carrying a single opted-in signature
+     * cannot be replayed whatever the rest carry, so this is reached only where none of them is.
      *
      * The only decision here with a remedy the user can act on, which is why it carries one.
      */
-    EXTERNAL_SIGNER("fewer signers are marked as supporting it than this wallet needs to sign",
+    EXTERNAL_SIGNER("no signer is marked as supporting it",
             "If its firmware does support it, mark the device under Replay protection in the keystore tab of the wallet settings."),
 
     /**

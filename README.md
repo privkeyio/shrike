@@ -8,7 +8,7 @@ Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/spar
 
 - **BLAKE2b proof of work.** Parses and validates the 164 byte v2 block header, and past activation takes the BLAKE2b hash as the block id rather than SHA256d. Implemented in the [drongo](https://github.com/privkeyio/drongo) submodule.
 - **Unified opt-in signature hash.** Signs with hash type `0x21` past activation. Such a signature is invalid under the pre-fork rules, which is what makes it unreplayable. Where it cannot opt in the wallet signs the legacy way and says so on the send screen rather than failing silently.
-- **Per-keystore opt-in for hardware signers.** Nothing a device reports tells the wallet whether its firmware implements the opt-in, so each hardware keystore is marked by hand under Replay protection. A PSBT carries one hash type for every signer, so the wallet opts in once enough are marked to meet its threshold, and those are the signers that can sign it.
+- **Per-keystore opt-in for hardware signers.** Nothing a device reports tells the wallet whether its firmware implements the opt-in, so each hardware keystore is marked by hand under Replay protection. One marked signer is enough to opt in, because a transaction carrying a single opted-in signature cannot be replayed whatever the rest carry. Unmarked signers are not turned away: each is handed the hash type it can produce, and its signature combines with the opted-in ones.
 - **Separate application identity.** Installs and runs alongside an existing Sparrow without sharing state. Configuration, wallets and logs live in `~/.shrike`, the Linux packages are `shrike` and `shrikeserver` under their own prefix, and the two have separate desktop entries, MIME types and single instance locks.
 - **Knots as the node.** The activation schedule is read from `getdeploymentinfo`, which only Knots reports, so Bitcoin Core is not a node this build can use.
 
@@ -37,7 +37,7 @@ Where a hardware signer is the reason, mark it in the keystore tab of the wallet
 
 ![The Replay protection field in the keystore tab, marked as supported by this device](docs/images/keystore-replay-protection.png)
 
-**In a multisig** the wallet opts in once enough signers are marked to meet its threshold, so a 2-of-3 works with two of them marked. The transaction then has to be signed by those signers, because the unmarked ones cannot produce the hash type it asks for.
+**In a multisig** one marked signer is enough, and every signer can still sign. Mark two of a 2-of-3 and no quorum exists without a marked signer, so every transaction the wallet can make opts in. Mark one and the other two could meet the threshold between them, so the opt-in depends on the marked signer taking part; the wallet says that rather than claiming the protection in advance.
 
 Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
 
