@@ -1050,6 +1050,26 @@ public class AppServices {
     }
 
     /**
+     * The signers that can produce the opt-in, as a readable list, or null where naming them adds nothing.
+     *
+     * The caveat on a partial quorum says the transaction has to be signed by the marked signers without saying
+     * which, leaving the reader to go and look. Null where every signer qualifies, since there is no subset to name.
+     */
+    public static String markedSignerNames(Wallet wallet) {
+        if(wallet == null || wallet.getKeystores().isEmpty()) {
+            return null;
+        }
+
+        List<String> names = wallet.getKeystores().stream()
+                .filter(AppServices::canKeystoreSignUnified)
+                .map(Keystore::getLabel)
+                .filter(label -> label != null && !label.isBlank())
+                .toList();
+
+        return names.isEmpty() || names.size() == wallet.getKeystores().size() ? null : String.join(", ", names);
+    }
+
+    /**
      * Whether handing this PSBT to the device behind the given fingerprint would ask it for a hash type it has not
      * been marked as producing.
      *

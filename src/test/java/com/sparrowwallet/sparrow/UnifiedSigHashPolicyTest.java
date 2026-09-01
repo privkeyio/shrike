@@ -690,6 +690,34 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
+     * The caveat says the transaction has to be signed by the marked signers without saying which, which leaves the
+     * reader to go and look them up. Named only where naming adds something: a wallet where every signer qualifies
+     * has no subset to distinguish.
+     */
+    @Test
+    public void testTheSignersThatCanOptInAreNamed() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        String[] labels = {"Coldcard", "SeedSigner", "Old Jade"};
+        for(int i = 0; i < 3; i++) {
+            wallet.getKeystores().get(i).setLabel(labels[i]);
+        }
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
+
+        Assertions.assertEquals("Coldcard, SeedSigner", AppServices.markedSignerNames(wallet));
+
+        //Every signer marked leaves no subset worth naming
+        wallet.getKeystores().get(2).setUnifiedSigHashSupported(true);
+        Assertions.assertNull(AppServices.markedSignerNames(wallet));
+
+        //Nor does none of them
+        wallet.getKeystores().forEach(keystore -> keystore.setUnifiedSigHashSupported(false));
+        Assertions.assertNull(AppServices.markedSignerNames(wallet));
+
+        Assertions.assertNull(AppServices.markedSignerNames(null));
+    }
+
+    /**
      * An m-of-n with a policy actually set, which walletWith deliberately leaves absent. Without one the threshold
      * cannot be read and every keystore is required, so a wallet built there exercises the fallback rather than the
      * quorum rule.

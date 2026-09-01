@@ -1128,11 +1128,21 @@ public class SendController extends WalletFormController implements Initializabl
 
         Tooltip tooltip = new Tooltip(decision.isOptedIn()
                 ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend."
-                    + (decision.getCaveat() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getCaveat())
+                    + (decision.getCaveat() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getCaveat()
+                        + namedSigners(walletTransaction))
                 : "Signing the way it always has been, because " + decision.getReason() + "."
                     + (decision.getRemedy() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getRemedy()));
         tooltip.setShowDuration(Duration.INDEFINITE);
         optInStatus.setTooltip(tooltip);
+    }
+
+    /**
+     * The signers that can produce the opt-in, appended to a caveat that would otherwise leave the reader to go
+     * and find out which ones those are.
+     */
+    private static String namedSigners(WalletTransaction walletTransaction) {
+        String names = walletTransaction == null ? null : AppServices.markedSignerNames(walletTransaction.getWallet());
+        return names == null ? "" : " Those are: " + names + ".";
     }
 
     /**
