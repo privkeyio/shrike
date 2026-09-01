@@ -301,15 +301,16 @@ public class UnifiedSigHashPolicyTest {
      * qualify, not just one.
      */
     @Test
-    public void testAMixedMultisigDoesNotOptIn() {
-        Assertions.assertFalse(AppServices.canSignUnified(walletWith(KeystoreSource.SW_SEED, KeystoreSource.HW_USB)));
+    public void testAMixedMultisigOptsIn() {
+        //The seed opts in and the unmarked device signs the base type alongside it, which is protection either way
+        Assertions.assertTrue(AppServices.canSignUnified(walletWith(KeystoreSource.SW_SEED, KeystoreSource.HW_USB)));
         Assertions.assertTrue(AppServices.canSignUnified(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_SEED)));
         Assertions.assertFalse(AppServices.canSignUnified(walletWith()), "A wallet with no keystores cannot sign");
         Assertions.assertFalse(AppServices.canSignUnified(null));
 
         //One unmarked device is enough to decide for the whole wallet, and marking it is enough to change that
         Wallet mixed = walletWith(KeystoreSource.SW_SEED, KeystoreSource.HW_AIRGAPPED);
-        Assertions.assertFalse(AppServices.canSignUnified(mixed));
+        Assertions.assertTrue(AppServices.canSignUnified(mixed));
         mixed.getKeystores().getLast().setUnifiedSigHashSupported(true);
         Assertions.assertTrue(AppServices.canSignUnified(mixed));
     }
@@ -474,18 +475,29 @@ public class UnifiedSigHashPolicyTest {
         wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
 
         Assertions.assertTrue(AppServices.canSignUnified(wallet));
-        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM, AppServices.keystoreDecision(wallet));
+        //Guaranteed: the single unmarked signer cannot reach the threshold alone, so every quorum carries an opt-in
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN, AppServices.keystoreDecision(wallet));
     }
 
     /**
      * One short of the threshold is not a quorum, so there is no signing combination that opts in and the wallet
      * declines rather than building something only part of it can sign.
      */
+    /**
+     * One marked signer of three, needing two. The protocol protects any transaction carrying one opted-in signature,
+     * so this opts in and the unmarked signers are handed the base type. It is not a guarantee: those two could form a
+     * quorum between them and that transaction would carry no opt-in at all, which is what the caveat says.
+     */
     @Test
-    public void testFewerMarkedThanTheThresholdDeclines() {
+    public void testOneMarkedSignerOptsInConditionally() {
         Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
         wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
 
+        Assertions.assertTrue(AppServices.canSignUnified(wallet));
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS, AppServices.keystoreDecision(wallet));
+
+        //None marked is the only decline left: nothing in the transaction could opt in
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(false);
         Assertions.assertFalse(AppServices.canSignUnified(wallet));
         Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER, AppServices.keystoreDecision(wallet));
     }
@@ -514,13 +526,20 @@ public class UnifiedSigHashPolicyTest {
         wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
         Assertions.assertTrue(AppServices.canSignUnified(wallet), "a readable threshold opts in on a quorum");
 
+        //A threshold that cannot be read is taken as one, so only an entirely marked wallet is called guaranteed.
+        //Erring high would claim a guarantee that a smaller real quorum could break.
         wallet.setDefaultPolicy(null);
-        Assertions.assertEquals(3, AppServices.requiredSignatures(wallet));
-        Assertions.assertFalse(AppServices.canSignUnified(wallet), "an absent policy falls back to every keystore");
+        Assertions.assertNull(AppServices.readThreshold(wallet), "an absent policy reads as no threshold");
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS, AppServices.keystoreDecision(wallet),
+                "unreadable means conditional, not guaranteed");
 
         wallet.setDefaultPolicy(new Policy(new Miniscript("not a parseable descriptor")));
-        Assertions.assertEquals(3, AppServices.requiredSignatures(wallet), "an unparseable policy must not throw");
-        Assertions.assertFalse(AppServices.canSignUnified(wallet));
+        Assertions.assertNull(AppServices.readThreshold(wallet), "an unparseable policy must not throw");
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS, AppServices.keystoreDecision(wallet));
+
+        wallet.getKeystores().get(2).setUnifiedSigHashSupported(true);
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN, AppServices.keystoreDecision(wallet),
+                "every signer marked is guaranteed whatever the threshold");
     }
 
     /**
@@ -598,7 +617,7 @@ public class UnifiedSigHashPolicyTest {
         quorum.getKeystores().get(0).setUnifiedSigHashSupported(true);
         quorum.getKeystores().get(1).setUnifiedSigHashSupported(true);
 
-        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM,
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN,
                 AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, quorum));
         Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED,
                 AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, quorum));
@@ -715,6 +734,43 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertNull(AppServices.markedSignerNames(wallet));
 
         Assertions.assertNull(AppServices.markedSignerNames(null));
+    }
+
+    /**
+     * A device that has not been marked is handed the base hash type rather than turned away, so it can sign
+     * alongside the marked ones. One opted-in signature in the transaction is what makes it unreplayable, which is
+     * why the unmarked signature costs nothing.
+     */
+    @Test
+    public void testAnUnmarkedDeviceIsHandedTheTypeItCanSign() {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        String[] fingerprints = {"aaaaaaaa", "bbbbbbbb", "cccccccc"};
+        for(int i = 0; i < 3; i++) {
+            wallet.getKeystores().get(i).setKeyDerivation(new KeyDerivation(fingerprints[i], "m/48'/0'/0'/2'"));
+        }
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
+
+        PSBT psbt = twoInputPsbt();
+        AppServices.applyUnifiedSigHash(psbt, true);
+
+        //A marked device gets the transaction itself, untouched
+        Assertions.assertSame(psbt, AppServices.psbtForDevice(wallet, psbt, "aaaaaaaa"));
+
+        //An unmarked one gets a copy asking for the base type, leaving the original alone
+        PSBT forUnmarked = AppServices.psbtForDevice(wallet, psbt, "cccccccc");
+        Assertions.assertNotSame(psbt, forUnmarked);
+        for(PSBTInput psbtInput : forUnmarked.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.ALL, psbtInput.getSigHash(), "the device is asked for what it can produce");
+        }
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash(), "the original still opts in");
+        }
+
+        //Nothing to downgrade when the transaction never opted in
+        PSBT legacy = twoInputPsbt();
+        AppServices.applyUnifiedSigHash(legacy, false);
+        Assertions.assertSame(legacy, AppServices.psbtForDevice(wallet, legacy, "cccccccc"));
     }
 
     /**

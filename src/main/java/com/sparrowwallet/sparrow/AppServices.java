@@ -1028,17 +1028,24 @@ public class AppServices {
         }
 
         long capable = wallet.getKeystores().stream().filter(AppServices::canKeystoreSignUnified).count();
-        int required = requiredSignatures(wallet);
 
-        //Enough signers to satisfy the policy is enough to opt in. Requiring every keystore would decline a 2-of-3
-        //holding one signer that cannot opt in, even though the other two are a quorum on their own, and the
-        //protocol asks for less still: the hash type is opted into per signature, so one opted-in signature makes
-        //the transaction fail the pre-fork rules whatever the rest carry.
-        if(capable >= required) {
-            //Where some keystore is left out, the PSBT it produces asks for a hash type that keystore cannot sign,
-            //so say so rather than let it be discovered when a device refuses.
-            return capable == wallet.getKeystores().size()
-                    ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM;
+        long unmarked = wallet.getKeystores().size() - capable;
+
+        //A threshold that cannot be read is taken as one, the weakest quorum a wallet could have. Guaranteed means no
+        //quorum of unmarked signers exists, so assuming a larger threshold than the wallet really has would claim that
+        //guarantee where a smaller quorum could still be formed. Erring low means only an entirely marked wallet
+        //qualifies, which is the answer that cannot be wrong.
+        Integer threshold = readThreshold(wallet);
+        int required = threshold == null ? 1 : threshold;
+
+        //One signer that can opt in is enough to opt in at all, because the hash type is opted into per signature and
+        //a transaction carrying one opted-in signature cannot be replayed whatever the rest carry. Signers that
+        //cannot are handed the base type rather than locked out.
+        if(capable > 0) {
+            //Guaranteed only where the signers that cannot opt in could not meet the threshold between them. Otherwise
+            //they could form a quorum on their own, and that transaction would carry no opted-in signature at all.
+            return unmarked < required
+                    ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS;
         }
 
         //An unmarked device has a remedy the user can act on; a keystore with no device behind it does not, and
@@ -1067,6 +1074,32 @@ public class AppServices {
                 .toList();
 
         return names.isEmpty() || names.size() == wallet.getKeystores().size() ? null : String.join(", ", names);
+    }
+
+    /**
+     * The PSBT to hand this device: the one given, or a copy asking only for what the device can produce.
+     *
+     * The hash type is opted into per signature, so a transaction carrying one opted-in signature cannot be replayed
+     * whatever the rest carry. A PSBT declares one hash type an input, though, so a device that has not been marked
+     * cannot be handed the opted-in one. Giving it a copy asking for the base type lets it sign alongside the others
+     * rather than being locked out, and the signatures merge: combine keeps every partial signature, an opted-in type
+     * scores as the type it is built on so the severity guard does not fire, and each signature is verified against
+     * the type it carries.
+     */
+    public static PSBT psbtForDevice(Wallet wallet, PSBT psbt, String fingerprint) {
+        if(!deviceCannotSignDeclaredSigHash(wallet, psbt, fingerprint)) {
+            return psbt;
+        }
+
+        PSBT devicePsbt = psbt.copy();
+        for(PSBTInput psbtInput : devicePsbt.getPsbtInputs()) {
+            SigHash sigHash = psbtInput.getSigHash();
+            if(sigHash != null && sigHash.isUnified()) {
+                psbtInput.setSigHash(sigHash.withoutUnified());
+            }
+        }
+
+        return devicePsbt;
     }
 
     /**
@@ -1107,12 +1140,23 @@ public class AppServices {
      * for opting in on fewer signers than the wallet might need.
      */
     public static int requiredSignatures(Wallet wallet) {
+        Integer threshold = readThreshold(wallet);
+        return threshold == null ? wallet.getKeystores().size() : threshold;
+    }
+
+    /**
+     * The threshold this wallet's policy declares, or null where it cannot be read.
+     *
+     * getNumSignaturesRequired throws on a policy it cannot parse and the policy itself may be absent on a wallet
+     * still being built, and this is reached from the send path where throwing would take the screen with it.
+     */
+    static Integer readThreshold(Wallet wallet) {
         try {
             Policy policy = wallet.getDefaultPolicy();
-            return policy == null ? wallet.getKeystores().size() : policy.getNumSignaturesRequired();
+            return policy == null ? null : policy.getNumSignaturesRequired();
         } catch(RuntimeException e) {
-            log.debug("Could not read the signature threshold, requiring every keystore", e);
-            return wallet.getKeystores().size();
+            log.debug("Could not read the signature threshold", e);
+            return null;
         }
     }
 

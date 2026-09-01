@@ -858,18 +858,14 @@ public class DevicePane extends TitledDescriptionPane {
     }
 
     private void sign() {
-        //Said here rather than left to the device, whose refusal names no reason a user could act on
-        if(AppServices.deviceCannotSignDeclaredSigHash(wallet, psbt, device.getFingerprint())) {
-            setError("Replay Protection", "This transaction opts in to replay protection, which this device is not marked as supporting. "
-                    + "Mark it under Replay protection in the keystore tab if its firmware supports it, or sign with the signers that are marked.");
-            signButton.setDisable(false);
-            return;
-        }
+        //A device that has not been marked is asked for the base hash type rather than turned away: its signature
+        //merges with the opted-in ones, and one of those is enough to make the transaction unreplayable
+        PSBT devicePsbt = AppServices.psbtForDevice(wallet, psbt, device.getFingerprint());
 
         if(device.isCard()) {
             try {
                 CardApi cardApi = CardApi.getCardApi(device.getModel(), pin.get());
-                Service<PSBT> signService = cardApi.getSignService(wallet, psbt, messageProperty);
+                Service<PSBT> signService = cardApi.getSignService(wallet, devicePsbt, messageProperty);
                 handleCardOperation(signService, signButton, "Signing", true, event -> {
                     EventManager.get().post(new PSBTSignedEvent(psbt, signService.getValue()));
                 });
@@ -879,7 +875,7 @@ public class DevicePane extends TitledDescriptionPane {
                 signButton.setDisable(false);
             }
         } else {
-            Hwi.SignPSBTService signPSBTService = new Hwi.SignPSBTService(device, passphrase.get(), psbt,
+            Hwi.SignPSBTService signPSBTService = new Hwi.SignPSBTService(device, passphrase.get(), devicePsbt,
                     OutputDescriptor.getOutputDescriptor(wallet), wallet.getFullName(), getDeviceRegistration());
             signPSBTService.setOnSucceeded(workerStateEvent -> {
                 PSBT signedPsbt = signPSBTService.getValue();

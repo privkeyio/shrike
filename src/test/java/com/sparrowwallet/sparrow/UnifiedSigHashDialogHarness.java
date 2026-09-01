@@ -8,7 +8,10 @@ import com.sparrowwallet.drongo.wallet.KeystoreSource;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
 import com.sparrowwallet.sparrow.control.UnifiedSigHashKeystoreDialog;
+import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
+import com.sparrowwallet.sparrow.glyphfont.FontAwesome5Brands;
 import javafx.application.Platform;
+import org.controlsfx.glyphfont.GlyphFontRegistry;
 
 /**
  * Shows the Replay protection dialog against a synthetic 2-of-3 so the rendered strings can be read, which no unit
@@ -17,6 +20,10 @@ import javafx.application.Platform;
 public class UnifiedSigHashDialogHarness {
     public static void main(String[] args) throws Exception {
         Platform.startup(() -> {
+            //Registered the way SparrowDesktop does at startup, so the status glyph renders here as it does in the app
+            GlyphFontRegistry.register(new FontAwesome5());
+            GlyphFontRegistry.register(new FontAwesome5Brands());
+
             Wallet wallet = new Wallet();
             wallet.setPolicyType(PolicyType.MULTI_HD);
             wallet.setScriptType(ScriptType.P2WSH);

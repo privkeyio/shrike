@@ -136,7 +136,7 @@ public class UnifiedSigHashDecisionTest {
     @Test
     public void testOnlyTheUncorroboratedOptInCarriesACaveat() {
         List<UnifiedSigHashDecision> qualified = List.of(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED,
-                UnifiedSigHashDecision.OPTED_IN_PARTIAL_QUORUM);
+                UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS);
         for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
             if(qualified.contains(decision)) {
                 Assertions.assertNotNull(decision.getCaveat(), decision.toString());
@@ -189,14 +189,22 @@ public class UnifiedSigHashDecisionTest {
      */
     @Test
     public void testAnySourceOtherThanASoftwareSeedDeclines() {
+        //An unmarked device no longer stops the wallet opting in: the seed's signature opts in and the device is
+        //handed the base type. Without a readable threshold it cannot be called guaranteed, so it is conditional.
         for(KeystoreSource source : List.of(KeystoreSource.HW_USB, KeystoreSource.HW_AIRGAPPED)) {
-            Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+            Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
                     AppServices.keystoreDecision(walletWith(KeystoreSource.SW_SEED, source)), source.toString());
         }
 
-        //Watch only declines too, but for a reason marking cannot fix
-        Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
+        //A watch only keystore alongside a seed still opts in: the seed's signature is enough to protect the
+        //transaction. Its own signature comes from outside, and the PSBT it is handed asks for the opted-in type,
+        //so an external signer that cannot produce one leaves the transaction to be rebuilt rather than unprotected.
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
                 AppServices.keystoreDecision(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_WATCH)));
+
+        //Nothing that can opt in is what reaches the reason marking cannot fix
+        Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
+                AppServices.keystoreDecision(walletWith(KeystoreSource.SW_WATCH, KeystoreSource.SW_WATCH)));
     }
 
     /**
@@ -204,8 +212,13 @@ public class UnifiedSigHashDecisionTest {
      */
     @Test
     public void testOneExternalKeystoreDecidesForTheWholeWallet() {
-        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+        //No longer decides for the wallet: the two seeds opt in, and the device signs the base type alongside them
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
                 AppServices.keystoreDecision(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_SEED, KeystoreSource.HW_USB)));
+
+        //Nothing marked at all is the decline that remains
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+                AppServices.keystoreDecision(walletWith(KeystoreSource.HW_USB, KeystoreSource.HW_USB)));
     }
 
     /**
@@ -271,7 +284,7 @@ public class UnifiedSigHashDecisionTest {
                 AppServices.combinedDecision(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED, hardware));
         Assertions.assertEquals(UnifiedSigHashDecision.SCHEDULE_MISMATCH,
                 AppServices.combinedDecision(UnifiedSigHashDecision.SCHEDULE_MISMATCH, hardware));
-        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
                 AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, hardware));
         Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN,
                 AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, software));

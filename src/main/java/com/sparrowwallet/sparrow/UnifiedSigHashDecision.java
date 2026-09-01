@@ -12,16 +12,17 @@ public enum UnifiedSigHashDecision {
     OPTED_IN(null),
 
     /**
-     * Opted in on a quorum rather than the whole wallet.
+     * Opted in, and protected only where one of the marked signers is among those that sign.
      *
-     * Enough keystores are marked to satisfy the policy, but at least one is not. The signature is the same one a
-     * fully marked wallet produces, and the transaction is equally unreplayable, so this is opted in. What differs
-     * is that the PSBT declares a hash type the unmarked keystores cannot sign, so the transaction has to be signed
-     * by the marked ones. Saying that here is cheaper than letting it be found when a device refuses.
+     * The hash type is opted into per signature, so a transaction carrying one opted-in signature cannot be replayed
+     * whatever the rest carry, and a device that has not been marked is handed the base type rather than turned away.
+     * Where the signers that have not been marked are numerous enough to meet the threshold between them, they could
+     * form a quorum on their own and nothing in that transaction would opt in. Saying so is the difference between a
+     * guarantee and a likelihood, and the user is the one choosing who signs.
      */
-    OPTED_IN_PARTIAL_QUORUM(null, null,
-            "Enough signers are marked to meet this wallet's threshold, but not all of them are. This transaction "
-                    + "has to be signed by the marked signers: the others cannot produce the hash type it asks for."),
+    OPTED_IN_IF_MARKED_SIGNS(null, null,
+            "Protected only if one of the marked signers is among those that sign. The unmarked ones can sign this "
+                    + "transaction, but a quorum made up entirely of them would not opt in."),
 
     /**
      * Opted in on the height compiled into this build, with nothing to corroborate it.
@@ -120,7 +121,7 @@ public enum UnifiedSigHashDecision {
     }
 
     public boolean isOptedIn() {
-        return this == OPTED_IN || this == OPTED_IN_PARTIAL_QUORUM || this == OPTED_IN_UNCORROBORATED;
+        return this == OPTED_IN || this == OPTED_IN_IF_MARKED_SIGNS || this == OPTED_IN_UNCORROBORATED;
     }
 
     /**
