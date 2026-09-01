@@ -7,6 +7,7 @@ import com.sparrowwallet.drongo.pgp.PGPUtils;
 import com.sparrowwallet.drongo.pgp.PGPVerificationException;
 import com.sparrowwallet.drongo.pgp.PGPVerificationResult;
 import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.SparrowWallet;
 import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.net.VersionCheckService;
 import javafx.beans.property.BooleanProperty;
@@ -64,10 +65,17 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
     private static final List<String> DISK_IMAGE_EXTENSIONS = List.of("img", "bin", "dfu");
     private static final List<String> ARCHIVE_EXTENSIONS = List.of("zip", "tar.gz", "tar.bz2", "tar.xz", "rar", "7z");
 
-    private static final String SPARROW_RELEASE_PREFIX = "sparrow-";
-    private static final String[] SPARROW_RELEASE_ALT_PREFIXES = { "sparrowwallet-", "sparrowwallet_", "sparrowserver-", "sparrowserver_" };
+    /*
+        The names this fork publishes under, so that picking a downloaded release finds its signature beside it.
+        Left as upstream's, none of this matched: releases here are shrike- and shrikeserver-, and the manifest is
+        SHA256SUMS rather than a per-version -manifest.txt. Verification never depended on any of it, but every
+        convenience built on it was dead, which is worse than not offering the convenience.
+     */
+    private static final String SPARROW_RELEASE_PREFIX = "shrike-";
+    private static final String[] SPARROW_RELEASE_ALT_PREFIXES = { "Shrike-", "shrike_", "shrikeserver-", "shrikeserver_" };
+    private static final String SPARROW_MANIFEST_NAME = "SHA256SUMS";
     private static final String SPARROW_MANIFEST_SUFFIX = "-manifest.txt";
-    private static final String SPARROW_SIGNATURE_SUFFIX = SPARROW_MANIFEST_SUFFIX + ".asc";
+    private static final String SPARROW_SIGNATURE_SUFFIX = ".asc";
     private static final Pattern SPARROW_RELEASE_VERSION = Pattern.compile("[0-9]+(\\.[0-9]+)*");
     private static final long MIN_VALID_SPARROW_RELEASE_SIZE = 10 * 1024 * 1024;
 
@@ -108,10 +116,12 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
         filesFieldset.setText("Files");
         filesFieldset.setSpacing(10);
 
-        String version = VersionCheckService.getVersion() != null ? VersionCheckService.getVersion() : "x.x.x";
+        //This build's own version rather than the update check's, which is disabled here and would leave every
+        //example filename reading x.x.x
+        String version = SparrowWallet.APP_VERSION;
 
-        Field signatureField = setupField(signature, "Signature", SIGNATURE_EXTENSIONS, false, "sparrow-" + version + "-manifest.txt", null);
-        Field manifestField = setupField(manifest, "Manifest", MANIFEST_EXTENSIONS, false, "sparrow-" + version + "-manifest", manifestDisabled);
+        Field signatureField = setupField(signature, "Signature", SIGNATURE_EXTENSIONS, false, SPARROW_MANIFEST_NAME + SPARROW_SIGNATURE_SUFFIX, null);
+        Field manifestField = setupField(manifest, "Manifest", MANIFEST_EXTENSIONS, false, SPARROW_MANIFEST_NAME, manifestDisabled);
         Field publicKeyField = setupField(publicKey, "Public Key", PUBLIC_KEY_EXTENSIONS, true, "pgp_keys", publicKeyDisabled);
         Field releaseFileField = setupField(release, "Release File", getReleaseFileExtensions(), false, getReleaseFileExample(version), null);
 
@@ -533,7 +543,7 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
             Matcher matcher = SPARROW_RELEASE_VERSION.matcher(providedFile.getName());
             if(matcher.find()) {
                 String version = matcher.group();
-                File signatureFile = new File(providedFile.getParentFile(), SPARROW_RELEASE_PREFIX + version + SPARROW_SIGNATURE_SUFFIX);
+                File signatureFile = new File(providedFile.getParentFile(), SPARROW_MANIFEST_NAME + SPARROW_SIGNATURE_SUFFIX);
                 if(signatureFile.exists()) {
                     return signatureFile;
                 }
@@ -604,18 +614,27 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
         }
     }
 
+    /** The fork release number, which is the Debian revision. Stripping non-digits would take the 2 in blake2b. */
+    private static String releaseNumber() {
+        String suffix = SparrowWallet.APP_VERSION_SUFFIX;
+        int dot = suffix.lastIndexOf('.');
+        return dot >= 0 ? suffix.substring(dot + 1) : suffix;
+    }
+
     private String getReleaseFileExample(String version) {
         OsType osType = OsType.getCurrent();
         String arch = System.getProperty("os.arch");
         switch(osType) {
             case MACOS -> {
-                return "Sparrow-" + version + "-" + arch;
+                return "Shrike-" + version + "-" + arch;
             }
             case WINDOWS -> {
-                return "Sparrow-" + version;
+                return "Shrike-" + version;
             }
             default ->  {
-                return "sparrow_" + version + "-1_" + (arch.equals("aarch64") ? "arm64" : arch);
+                //The Debian revision is this fork's release number, not 1, which is what lets apt order releases
+                return "shrike_" + version + "-" + releaseNumber()
+                        + "_" + (arch.equals("aarch64") ? "arm64" : arch);
             }
         }
     }
@@ -666,7 +685,9 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
     }
 
     public static boolean isSparrowManifest(File manifestFile) {
-        return manifestFile.getName().startsWith(SPARROW_RELEASE_PREFIX) && manifestFile.getName().endsWith(SPARROW_MANIFEST_SUFFIX);
+        String name = manifestFile.getName();
+        return name.equals(SPARROW_MANIFEST_NAME)
+                || (name.startsWith(SPARROW_RELEASE_PREFIX) && name.endsWith(SPARROW_MANIFEST_SUFFIX));
     }
 
     public void setSignatureFile(File signatureFile) {
