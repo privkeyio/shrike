@@ -39,7 +39,7 @@ Where a hardware signer is the reason, mark it in the keystore tab of the wallet
 
 **In a multisig** one marked signer is enough, and every signer can still sign. Mark two of a 2-of-3 and no quorum exists without a marked signer, so every transaction the wallet can make opts in. Mark one and the other two could meet the threshold between them, so the opt-in depends on the marked signer taking part; the wallet says that rather than claiming the protection in advance.
 
-The one exception is a signature that signs Anyone Can Pay, which commits only to its own input and to the outputs rather than to the whole transaction. That input can be lifted out and spent on the chain that kept SHA256d even though the transaction it came from cannot, so where a transaction carries any, the send screen names them. Shrike never chooses Anyone Can Pay on its own account.
+The one exception is a signature that signs Anyone Can Pay, which commits only to its own input and to the outputs rather than to the whole transaction. That input can be lifted out and spent on the chain that kept SHA256d even though the transaction it came from cannot, so where a transaction carries any, the send screen names them. Shrike never chooses Anyone Can Pay by itself, which is upstream Sparrow's behavior and not a restriction added here: select it and Shrike signs it, opted in where the wallet is opting in.
 
 Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
 
