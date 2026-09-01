@@ -27,50 +27,6 @@ public enum FeeRatesSource {
             return true;
         }
     },
-    MEMPOOL_SPACE("mempool.space", true) {
-        @Override
-        public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
-            String url = getApiUrl() + "v1/fees/precise";
-            return getThreeTierFeeRates(this, defaultblockTargetFeeRates, url);
-        }
-
-        @Override
-        public Double getNextBlockMedianFeeRate() throws Exception {
-            String url = getApiUrl() + "v1/fees/mempool-blocks";
-            return requestNextBlockMedianFeeRate(this, url);
-        }
-
-        @Override
-        public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = blockSummaryUrl(getApiUrl(), blockId);
-            return requestBlockSummary(this, url);
-        }
-
-        @Override
-        public Map<Integer, BlockSummary> getRecentBlockSummaries() throws Exception {
-            String url = getApiUrl() + "v1/blocks";
-            return requestBlockSummaries(this, url);
-        }
-
-        @Override
-        public List<BlockTransactionHash> getRecentMempoolTransactions() throws Exception {
-            String url = getApiUrl() + "mempool/recent";
-            return requestRecentMempoolTransactions(this, url);
-        }
-
-        private String getApiUrl() {
-            String url = AppServices.isUsingProxy() ? "http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion/api/" : "https://mempool.space/api/";
-            if(Network.get() != Network.MAINNET && supportsNetwork(Network.get())) {
-                url = url.replace("/api/", "/" + Network.get().getName() + "/api/");
-            }
-            return url;
-        }
-
-        @Override
-        public boolean supportsNetwork(Network network) {
-            return network == Network.MAINNET || network == Network.TESTNET || network == Network.TESTNET4 || network == Network.SIGNET;
-        }
-    },
     /*
         A mempool.space instance that follows the BLAKE2b fork, which is the reason for its presence here and
         is not apparent from the name. It runs the same API, so the methods below differ from MEMPOOL_SPACE
@@ -125,82 +81,6 @@ public enum FeeRatesSource {
             return network == Network.MAINNET || network == Network.TESTNET4 || network == Network.SIGNET;
         }
     },
-    BITVIEW_SPACE("bitview.space", true) {
-        @Override
-        public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
-            String url = getApiUrl() + "v1/fees/precise";
-            return getThreeTierFeeRates(this, defaultblockTargetFeeRates, url);
-        }
-
-        @Override
-        public Double getNextBlockMedianFeeRate() throws Exception {
-            String url = getApiUrl() + "v1/fees/mempool-blocks";
-            return requestNextBlockMedianFeeRate(this, url);
-        }
-
-        @Override
-        public BlockSummary getBlockSummary(Sha256Hash blockId) throws Exception {
-            String url = blockSummaryUrl(getApiUrl(), blockId);
-            return requestBlockSummary(this, url);
-        }
-
-        @Override
-        public Map<Integer, BlockSummary> getRecentBlockSummaries() throws Exception {
-            String url = getApiUrl() + "v1/blocks";
-            return requestBlockSummaries(this, url);
-        }
-
-        @Override
-        public List<BlockTransactionHash> getRecentMempoolTransactions() throws Exception {
-            String url = getApiUrl() + "mempool/recent";
-            return requestRecentMempoolTransactions(this, url);
-        }
-
-        private String getApiUrl() {
-            return "https://bitview.space/api/";
-        }
-
-        @Override
-        public boolean supportsNetwork(Network network) {
-            return network == Network.MAINNET;
-        }
-    },
-    BLOCK_XYZ("block.xyz", true) {
-        /*
-            https://engineering.block.xyz/blog/augur-an-open-source-bitcoin-fee-estimation-library
-         */
-        @Override
-        public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
-            String url = "https://pricing.bitcoin.block.xyz/fees";
-            return getThreeTierFeeRates(this, defaultblockTargetFeeRates, url);
-        }
-
-        @Override
-        public boolean supportsNetwork(Network network) {
-            return network == Network.MAINNET;
-        }
-
-        @Override
-        protected ThreeTierRates getThreeTierRates(String url, HttpClientService httpClientService) throws Exception {
-            BlockXyzRates rates = httpClientService.requestJson(url, BlockXyzRates.class, null);
-            if(rates.estimates == null) {
-                throw new Exception("Invalid response from " + url);
-            }
-            return rates.getThreeTierRates();
-        }
-    },
-    BITCOINFEES_EARN_COM("bitcoinfees.earn.com", true) {
-        @Override
-        public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
-            String url = "https://bitcoinfees.earn.com/api/v1/fees/recommended";
-            return getThreeTierFeeRates(this, defaultblockTargetFeeRates, url);
-        }
-
-        @Override
-        public boolean supportsNetwork(Network network) {
-            return network == Network.MAINNET;
-        }
-    },
     MINIMUM("Minimum (1 sat/vB)", false) {
         @Override
         public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
@@ -215,27 +95,6 @@ public enum FeeRatesSource {
         @Override
         public boolean supportsNetwork(Network network) {
             return true;
-        }
-    },
-    OXT_ME("oxt.me", true) {
-        @Override
-        public Map<Integer, Double> getBlockTargetFeeRates(Map<Integer, Double> defaultblockTargetFeeRates) {
-            String url = AppServices.isUsingProxy() ? "http://oxtwshnfyktikbflierkwcxxksbonl6v73l5so5zky7ur72w52tktkid.onion/stats/global/mempool" : "https://api.oxt.me/stats/global/mempool";
-            return getThreeTierFeeRates(this, defaultblockTargetFeeRates, url);
-        }
-
-        @Override
-        public boolean supportsNetwork(Network network) {
-            return network == Network.MAINNET;
-        }
-
-        @Override
-        protected ThreeTierRates getThreeTierRates(String url, HttpClientService httpClientService) throws Exception {
-            OxtRates oxtRates = httpClientService.requestJson(url, OxtRates.class, null);
-            if(oxtRates.data == null || oxtRates.data.length < 1) {
-                throw new Exception("Invalid response from " + url);
-            }
-            return oxtRates.data[0].getThreeTierRates();
         }
     };
 
@@ -481,45 +340,6 @@ public enum FeeRatesSource {
     }
 
     protected record ThreeTierRates(Double fastestFee, Double halfHourFee, Double hourFee, Double minimumFee) {}
-
-    private record OxtRates(OxtRatesData[] data) {}
-
-    private record OxtRatesData(Double recommended_fee_099, Double recommended_fee_090, Double recommended_fee_050) {
-        public ThreeTierRates getThreeTierRates() {
-            return new ThreeTierRates(recommended_fee_099/1000, recommended_fee_090/1000, recommended_fee_050/1000, null);
-        }
-    }
-
-    private record BlockXyzRates(Map<String, BlockXyzEstimate> estimates) {
-        public ThreeTierRates getThreeTierRates() {
-            // see https://engineering.block.xyz/blog/augur-an-open-source-bitcoin-fee-estimation-library
-            //
-            // fastestFee: 95% confidence at 3 blocks
-            // halfHourFee: 80% confidence at 3 blocks
-            // hourFee: 80% confidence at 6 blocks
-            // minimumFee: 80% confidence at 144 blocks
-            Double fastestFee = getFeeRate("3", "0.95");
-            Double halfHourFee = getFeeRate("3", "0.80");
-            Double hourFee = getFeeRate("6", "0.80");
-            Double minimumFee = getFeeRate("144", "0.80");
-            return new ThreeTierRates(fastestFee, halfHourFee, hourFee, minimumFee);
-        }
-
-        private Double getFeeRate(String blocks, String probability) {
-            BlockXyzEstimate estimate = estimates.get(blocks);
-            if(estimate != null && estimate.probabilities != null) {
-                BlockXyzFeeRate feeRate = estimate.probabilities.get(probability);
-                if(feeRate != null) {
-                    return feeRate.fee_rate;
-                }
-            }
-            return Transaction.DEFAULT_MIN_RELAY_FEE;
-        }
-    }
-
-    private record BlockXyzEstimate(Map<String, BlockXyzFeeRate> probabilities) {}
-
-    private record BlockXyzFeeRate(Double fee_rate) {}
 
     protected record MempoolBlock(Integer nTx, Double medianFee) {}
 

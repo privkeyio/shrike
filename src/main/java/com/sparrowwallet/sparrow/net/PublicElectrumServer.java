@@ -34,7 +34,15 @@ public enum PublicElectrumServer {
         this.supportedPolicyTypes = supportedPolicyTypes;
     }
 
-    public static final List<Network> SUPPORTED_NETWORKS = List.of(Network.MAINNET, Network.TESTNET, Network.SIGNET, Network.TESTNET4);
+    /*
+        Empty, so the public server option is never offered. Every server listed above follows the chain that kept
+        SHA256d, and connecting to one would show this wallet a different chain's blocks and balances entirely,
+        which is the worst of the wrong-chain failures rather than the mildest. No public Electrum server follows
+        this chain, so the honest answer is to have none rather than to offer one that misleads. Connect a Knots
+        node, or a private Electrum server indexing it. The entries are left in place rather than deleted so that
+        upstream changes to this file continue to merge.
+     */
+    public static final List<Network> SUPPORTED_NETWORKS = List.of();
 
     private final Server server;
     private final Network network;
@@ -61,6 +69,12 @@ public enum PublicElectrumServer {
     }
 
     public static List<PublicElectrumServer> getServers() {
+        //SUPPORTED_NETWORKS is the single gate. Filtering only by network would still hand back servers on a
+        //network where the option is withdrawn, and one caller divides by the size of this list.
+        if(!supportedNetwork()) {
+            return List.of();
+        }
+
         return Arrays.stream(values()).filter(server -> server.network == Network.get()).collect(Collectors.toList());
     }
 

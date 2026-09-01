@@ -12,13 +12,12 @@ import java.util.Locale;
 
 public enum BlockExplorer {
     /*
-        mempool.guide is a mempool instance following the BLAKE2b fork, and is first here because it is the
-        only one of these that holds this chain's blocks. The other two follow the chain that kept SHA256d,
-        so a link to them for anything mined past the activation height names a block they do not have.
+        mempool.guide is a mempool instance following the BLAKE2b fork. mempool.space and blockstream.info
+        were here and are gone: both follow the chain that kept SHA256d, so a link to either for anything
+        mined past the activation height names a block they do not have. A custom URL can still be entered
+        in the settings for anyone who wants one.
      */
     MEMPOOL_GUIDE("https://mempool.guide"),
-    MEMPOOL_SPACE("https://mempool.space"),
-    BLOCKSTREAM_INFO("https://blockstream.info"),
     NONE("http://none");
 
     /**

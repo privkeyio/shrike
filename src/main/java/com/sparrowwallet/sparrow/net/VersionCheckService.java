@@ -24,10 +24,24 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
 
     private static String version;
 
+    /**
+     * Never reports an update, because there is nothing here it could truthfully report.
+     *
+     * VERSION_CHECK_URL is Sparrow's, and the file it serves is signed with Sparrow's key, so it cannot be
+     * repointed at this fork without a feed and a signature of its own. Left as it was, it would announce a
+     * release of the wallet that follows the chain that kept SHA256d and invite the user to install it, which
+     * is the last thing this build should be nudging anyone towards.
+     */
+    private static final boolean CHECKS_FOR_UPDATES = false;
+
     @Override
     protected Task<VersionUpdatedEvent> createTask() {
         return new Task<>() {
             protected VersionUpdatedEvent call() {
+                if(!CHECKS_FOR_UPDATES) {
+                    return null;
+                }
+
                 try {
                     VersionCheck versionCheck = getVersionCheck();
                     if(verifySignature(versionCheck)) {

@@ -60,7 +60,7 @@ public class SparrowDesktop extends Application {
                     SettingsDialog settingsDialog = new SettingsDialog(SettingsGroup.SERVER, true);
                     Optional<Boolean> optNewWallet = settingsDialog.showAndWait();
                     createNewWallet = optNewWallet.isPresent() && optNewWallet.get();
-                } else if(Network.get() == Network.MAINNET) {
+                } else if(Network.get() == Network.MAINNET && PublicElectrumServer.supportedNetwork()) {
                     Config.get().setServerType(ServerType.PUBLIC_ELECTRUM_SERVER);
                     List<PublicElectrumServer> servers = PublicElectrumServer.getServers();
                     Config.get().setPublicElectrumServer(servers.get(new Random().nextInt(servers.size())).getServer());

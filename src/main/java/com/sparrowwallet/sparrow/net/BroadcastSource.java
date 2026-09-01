@@ -17,8 +17,14 @@ import java.net.URL;
 import java.util.List;
 
 public enum BroadcastSource {
-    BLOCKSTREAM_INFO("blockstream.info", "https://blockstream.info", "http://explorerzydxu5ecjrkwceayqybizmpjjznk5izmitf2modhcusuqlid.onion") {
-        @Override
+    /*
+        Every source that was here, blockstream.info, mempool.space and mempool.emzy.de alike, follows the chain
+        that kept SHA256d. This path replaces the connected node rather than supplementing it when a Tor proxy is
+        configured, so broadcasting through one of those put the user's transaction onto the other chain: an
+        opted-in transaction is refused there, but a legacy one relays, which is the replay this wallet exists to
+        avoid. mempool.guide follows this chain and is the only source left.
+     */
+    MEMPOOL_GUIDE("mempool.guide", "https://mempool.guide", "http://mempool5nxspkxjk3n5afqh7zswbv4i324z76ltmw3cvfmniw45mnhad.onion") {
         public Sha256Hash broadcastTransaction(Transaction transaction) throws BroadcastException {
             String data = Utils.bytesToHex(transaction.bitcoinSerialize());
             return postTransactionData(data);
@@ -26,62 +32,16 @@ public enum BroadcastSource {
 
         @Override
         public List<Network> getSupportedNetworks() {
-            return List.of(Network.MAINNET, Network.TESTNET);
+            return List.of(Network.MAINNET, Network.SIGNET, Network.TESTNET4);
         }
 
         protected URL getURL(HostAndPort proxy) throws MalformedURLException, URISyntaxException {
             if(Network.get() == Network.MAINNET) {
                 return new URI(getBaseUrl(proxy) + "/api/tx").toURL();
-            } else if(Network.get() == Network.TESTNET) {
-                return new URI(getBaseUrl(proxy) + "/testnet/api/tx").toURL();
-            } else {
-                throw new IllegalStateException("Cannot broadcast transaction to " + getName() + " on network " + Network.get());
-            }
-        }
-    },
-    MEMPOOL_SPACE("mempool.space", "https://mempool.space", "http://mempoolhqx4isw62xs7abwphsq7ldayuidyx2v2oethdhhj6mlo2r6ad.onion") {
-        public Sha256Hash broadcastTransaction(Transaction transaction) throws BroadcastException {
-            String data = Utils.bytesToHex(transaction.bitcoinSerialize());
-            return postTransactionData(data);
-        }
-
-        @Override
-        public List<Network> getSupportedNetworks() {
-            return List.of(Network.MAINNET, Network.TESTNET, Network.SIGNET, Network.TESTNET4);
-        }
-
-        protected URL getURL(HostAndPort proxy) throws MalformedURLException, URISyntaxException {
-            if(Network.get() == Network.MAINNET) {
-                return new URI(getBaseUrl(proxy) + "/api/tx").toURL();
-            } else if(Network.get() == Network.TESTNET) {
-                return new URI(getBaseUrl(proxy) + "/testnet/api/tx").toURL();
             } else if(Network.get() == Network.SIGNET) {
                 return new URI(getBaseUrl(proxy) + "/signet/api/tx").toURL();
             } else if(Network.get() == Network.TESTNET4) {
                 return new URI(getBaseUrl(proxy) + "/testnet4/api/tx").toURL();
-            } else {
-                throw new IllegalStateException("Cannot broadcast transaction to " + getName() + " on network " + Network.get());
-            }
-        }
-    },
-    MEMPOOL_EMZY_DE("mempool.emzy.de", "https://mempool.emzy.de", "http://mempool4t6mypeemozyterviq3i5de4kpoua65r3qkn5i3kknu5l2cad.onion") {
-        public Sha256Hash broadcastTransaction(Transaction transaction) throws BroadcastException {
-            String data = Utils.bytesToHex(transaction.bitcoinSerialize());
-            return postTransactionData(data);
-        }
-
-        @Override
-        public List<Network> getSupportedNetworks() {
-            return List.of(Network.MAINNET);
-        }
-
-        protected URL getURL(HostAndPort proxy) throws MalformedURLException, URISyntaxException {
-            if(Network.get() == Network.MAINNET) {
-                return new URI(getBaseUrl(proxy) + "/api/tx").toURL();
-            } else if(Network.get() == Network.TESTNET) {
-                return new URI(getBaseUrl(proxy) + "/testnet/api/tx").toURL();
-            } else if(Network.get() == Network.SIGNET) {
-                return new URI(getBaseUrl(proxy) + "/signet/api/tx").toURL();
             } else {
                 throw new IllegalStateException("Cannot broadcast transaction to " + getName() + " on network " + Network.get());
             }

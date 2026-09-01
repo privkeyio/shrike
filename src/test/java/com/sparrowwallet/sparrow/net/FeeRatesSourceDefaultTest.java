@@ -78,4 +78,75 @@ public class FeeRatesSourceDefaultTest {
         }
         Assertions.assertEquals(0, hardcoded, "a call site naming mempool.space directly bypasses getDefault()");
     }
+
+    /**
+     * An existing config naming a source that has been removed must land on the default, not throw and not stay.
+     *
+     * Every config that had ever had the settings screen opened held "MEMPOOL_SPACE", because the screen selected
+     * it by index and persisted it. Those configs outlive the enum value, so what they deserialize to is what
+     * those users actually get.
+     */
+    @Test
+    public void testAConfigNamingARemovedSourceFallsBackToTheDefault() {
+        FeeRatesSource stored = new com.google.gson.Gson()
+                .fromJson("\"MEMPOOL_SPACE\"", FeeRatesSource.class);
+        Assertions.assertNull(stored, "a source no longer in the enum must read back as absent");
+
+        FeeRatesSource effective = stored == null ? FeeRatesSource.getDefault() : stored;
+        Assertions.assertEquals(FeeRatesSource.MEMPOOL_GUIDE, effective,
+                "so the wallet uses the default rather than a source that follows the other chain");
+    }
+
+    /**
+     * No source that reads the chain may be offered unless it follows this one. ELECTRUM_SERVER is the node the
+     * user connected, and MINIMUM is a constant, so neither queries a third party.
+     */
+    @Test
+    public void testEveryOfferedSourceFollowsThisChain() {
+        for(FeeRatesSource source : FeeRatesSource.values()) {
+            Assertions.assertTrue(
+                    source == FeeRatesSource.ELECTRUM_SERVER || source == FeeRatesSource.MINIMUM
+                            || source == FeeRatesSource.MEMPOOL_GUIDE,
+                    source + " queries a third party, so it must be one that follows the BLAKE2b chain");
+        }
+    }
+
+    /**
+     * Broadcasting is the one that moves value. With a Tor proxy configured this path replaces the connected node
+     * rather than supplementing it, so a source on the other chain does not merely mislead: an opted-in
+     * transaction is refused there, but a legacy one relays, which is the replay this wallet exists to prevent.
+     */
+    @Test
+    public void testEveryBroadcastSourceFollowsThisChain() {
+        for(BroadcastSource source : BroadcastSource.values()) {
+            Assertions.assertEquals(BroadcastSource.MEMPOOL_GUIDE, source,
+                    source + " would put a transaction on the chain that kept SHA256d");
+        }
+    }
+
+    /**
+     * An explorer that does not have this chain's blocks shows nothing for a transaction mined past activation.
+     * A custom URL can still be set in the settings, which is where anyone wanting the other chain should go.
+     */
+    @Test
+    public void testEveryOfferedExplorerFollowsThisChainOrIsNone() {
+        for(BlockExplorer explorer : BlockExplorer.values()) {
+            Assertions.assertTrue(explorer == BlockExplorer.MEMPOOL_GUIDE || explorer == BlockExplorer.NONE,
+                    explorer + " points at an explorer without this chain's blocks");
+        }
+    }
+
+    /**
+     * No public Electrum server follows this chain, and connecting to one that does not would show the wallet a
+     * different chain's blocks and balances entirely. The option is withdrawn rather than filled with servers
+     * that mislead; the entries stay in the enum only so upstream changes to that file keep merging.
+     */
+    @Test
+    public void testThePublicServerOptionIsWithdrawn() {
+        Assertions.assertTrue(PublicElectrumServer.SUPPORTED_NETWORKS.isEmpty(),
+                "no public Electrum server indexes the BLAKE2b chain");
+        Assertions.assertFalse(PublicElectrumServer.supportedNetwork());
+        Assertions.assertTrue(PublicElectrumServer.getServers().isEmpty(),
+                "and the list one caller divides by must be empty rather than full of other-chain servers");
+    }
 }
