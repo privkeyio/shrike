@@ -81,8 +81,8 @@ public enum UnifiedSigHashDecision {
     /**
      * At least one device in this wallet is not marked as supporting the opt-in. Nothing a device sends says
      * which firmware it runs, so this is what its owner told the wallet rather than something detected, and it
-     * is off until they say otherwise. A PSBT carries one hash type for every signer, so one unmarked device
-     * decides for the whole wallet.
+     * is off until they say otherwise. A PSBT carries one hash type for every signer, so the wallet opts in once
+     * enough are marked to meet its threshold, and those are the signers that can sign what it builds.
      *
      * The only decision here with a remedy the user can act on, which is why it carries one.
      */

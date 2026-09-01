@@ -35,7 +35,7 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
         setTitle("Replay Protection");
         dialogPane.setHeaderText("""
                 A signature that opts in cannot be replayed against nodes that have not adopted the fork. \
-                Opting in needs every device in this wallet to sign it, and a device reports its model but not \
+                Opting in needs enough devices in this wallet to meet its signing threshold, and a device reports its model but not \
                 its firmware, so only you can say.
 
                 Leave a device unmarked if you are unsure. Marking one that does not support it does not fall \

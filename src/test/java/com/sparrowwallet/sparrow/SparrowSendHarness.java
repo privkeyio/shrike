@@ -70,8 +70,10 @@ public class SparrowSendHarness {
     }
 
     public static void main(String[] args) throws Exception {
-        boolean multisig = args[0].endsWith("-multi");
-        String mode = multisig ? args[0].substring(0, args[0].length() - "-multi".length()) : args[0];
+        boolean mixed = args[0].startsWith("mixed-");
+        String mode0 = mixed ? args[0].substring("mixed-".length()) : args[0];
+        boolean multisig = mode0.endsWith("-multi");
+        String mode = multisig ? mode0.substring(0, mode0.length() - "-multi".length()) : mode0;
         Wallet wallet = multisig ? multisigWallet() : wallet();
 
         if("scriptpubkey".equals(mode)) {
@@ -118,7 +120,24 @@ public class SparrowSendHarness {
         AppServices.applyUnifiedSigHash(psbt, optIn);
         System.out.println("DECLARED=" + psbt.getPsbtInputs().getFirst().getSigHash());
 
-        wallet.sign(psbt);
+        if(mixed) {
+            //Not something this wallet builds: it declares one hash type an input. Hand assembled here to test the
+            //consensus claim that one opted-in signature is enough, by signing each key under a different type.
+            //Nulling a seed leaves the keystore's key in the script while stopping it signing this pass.
+            DeterministicSeed keep = wallet.getKeystores().get(1).getSeed();
+            wallet.getKeystores().get(1).setSeed(null);
+            psbt.getPsbtInputs().getFirst().setSigHash(SigHash.UNIFIED_ALL);
+            wallet.sign(psbt);
+
+            wallet.getKeystores().get(1).setSeed(keep);
+            DeterministicSeed first = wallet.getKeystores().getFirst().getSeed();
+            wallet.getKeystores().getFirst().setSeed(null);
+            psbt.getPsbtInputs().getFirst().setSigHash(SigHash.ALL);
+            wallet.sign(psbt);
+            wallet.getKeystores().getFirst().setSeed(first);
+        } else {
+            wallet.sign(psbt);
+        }
         wallet.finalise(psbt);
         Transaction finalTx = psbt.extractTransaction();
 

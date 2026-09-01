@@ -1020,7 +1020,7 @@ public class AppServices {
      * SW_WATCH is neither: it produces no signature at all, so the wallet is in no position to opt in whatever it
      * has been marked as.
      *
-     * A PSBT carries one hash type for every signer, so one keystore that cannot opt in decides for the wallet.
+     * A PSBT carries one hash type for every signer, so opting in needs enough of them marked to meet the threshold.
      */
     static UnifiedSigHashDecision keystoreDecision(Wallet wallet) {
         if(wallet == null || wallet.getKeystores().isEmpty()) {
