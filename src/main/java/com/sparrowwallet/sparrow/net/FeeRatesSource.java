@@ -2,7 +2,6 @@ package com.sparrowwallet.sparrow.net;
 
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
-import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.wallet.BlockTransaction;
 import com.sparrowwallet.drongo.wallet.BlockTransactionHash;
 import com.sparrowwallet.sparrow.AppServices;
@@ -28,9 +27,9 @@ public enum FeeRatesSource {
         }
     },
     /*
-        A mempool.space instance that follows the BLAKE2b fork, which is the reason for its presence here and
-        is not apparent from the name. It runs the same API, so the methods below differ from MEMPOOL_SPACE
-        only in the two host strings.
+        A mempool instance that follows the BLAKE2b fork, which is the reason for its presence here and is not
+        apparent from the name. It runs the same API as the instances that follow the chain that kept SHA256d,
+        so it differs from those only in the host it asks.
      */
     MEMPOOL_GUIDE("mempool.guide", true) {
         @Override

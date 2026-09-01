@@ -35,9 +35,7 @@
                     <items>
                         <FXCollections fx:factory="observableArrayList">
                             <FeeRatesSource fx:constant="ELECTRUM_SERVER" />
-                            <FeeRatesSource fx:constant="MEMPOOL_SPACE" />
-                            <FeeRatesSource fx:constant="BITVIEW_SPACE" />
-                            <FeeRatesSource fx:constant="BLOCK_XYZ" />
+                            <FeeRatesSource fx:constant="MEMPOOL_GUIDE" />
                             <FeeRatesSource fx:constant="MINIMUM" />
                         </FXCollections>
                     </items>
@@ -95,10 +93,6 @@
             <Field text="New transactions:">
                 <UnlabeledToggleSwitch fx:id="notifyNewTransactions" />
                 <HelpLabel helpText="Show system notifications on new wallet transactions?"/>
-            </Field>
-            <Field fx:id="softwareUpdatesField" text="Software updates:">
-                <UnlabeledToggleSwitch fx:id="checkNewVersions" />
-                <HelpLabel helpText="Check for updates?"/>
             </Field>
         </Fieldset>
     </Form>

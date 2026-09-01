@@ -9,7 +9,6 @@ import com.sparrowwallet.drongo.pgp.PGPVerificationResult;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.SparrowWallet;
 import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
-import com.sparrowwallet.sparrow.net.VersionCheckService;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -72,9 +71,8 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
         convenience built on it was dead, which is worse than not offering the convenience.
      */
     private static final String SPARROW_RELEASE_PREFIX = "shrike-";
-    private static final String[] SPARROW_RELEASE_ALT_PREFIXES = { "Shrike-", "shrike_", "shrikeserver-", "shrikeserver_" };
+    private static final String[] SPARROW_RELEASE_ALT_PREFIXES = { "shrike_", "shrikeserver-", "shrikeserver_" };
     private static final String SPARROW_MANIFEST_NAME = "SHA256SUMS";
-    private static final String SPARROW_MANIFEST_SUFFIX = "-manifest.txt";
     private static final String SPARROW_SIGNATURE_SUFFIX = ".asc";
     private static final Pattern SPARROW_RELEASE_VERSION = Pattern.compile("[0-9]+(\\.[0-9]+)*");
     private static final long MIN_VALID_SPARROW_RELEASE_SIZE = 10 * 1024 * 1024;
@@ -120,7 +118,7 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
         //example filename reading x.x.x
         String version = SparrowWallet.APP_VERSION;
 
-        Field signatureField = setupField(signature, "Signature", SIGNATURE_EXTENSIONS, false, SPARROW_MANIFEST_NAME + SPARROW_SIGNATURE_SUFFIX, null);
+        Field signatureField = setupField(signature, "Signature", SIGNATURE_EXTENSIONS, false, SPARROW_MANIFEST_NAME, null);
         Field manifestField = setupField(manifest, "Manifest", MANIFEST_EXTENSIONS, false, SPARROW_MANIFEST_NAME, manifestDisabled);
         Field publicKeyField = setupField(publicKey, "Public Key", PUBLIC_KEY_EXTENSIONS, true, "pgp_keys", publicKeyDisabled);
         Field releaseFileField = setupField(release, "Release File", getReleaseFileExtensions(), false, getReleaseFileExample(version), null);
@@ -540,13 +538,11 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
 
         String providedName = providedFile.getName().toLowerCase(Locale.ROOT);
         if(providedName.startsWith(SPARROW_RELEASE_PREFIX) || Arrays.stream(SPARROW_RELEASE_ALT_PREFIXES).anyMatch(providedName::startsWith)) {
-            Matcher matcher = SPARROW_RELEASE_VERSION.matcher(providedFile.getName());
-            if(matcher.find()) {
-                String version = matcher.group();
-                File signatureFile = new File(providedFile.getParentFile(), SPARROW_MANIFEST_NAME + SPARROW_SIGNATURE_SUFFIX);
-                if(signatureFile.exists()) {
-                    return signatureFile;
-                }
+            //One manifest under one fixed name covers every file in the release, so there is no version to read
+            //out of the release filename to find it by
+            File signatureFile = new File(providedFile.getParentFile(), SPARROW_MANIFEST_NAME + SPARROW_SIGNATURE_SUFFIX);
+            if(signatureFile.exists()) {
+                return signatureFile;
             }
         }
 
@@ -685,9 +681,7 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
     }
 
     public static boolean isSparrowManifest(File manifestFile) {
-        String name = manifestFile.getName();
-        return name.equals(SPARROW_MANIFEST_NAME)
-                || (name.startsWith(SPARROW_RELEASE_PREFIX) && name.endsWith(SPARROW_MANIFEST_SUFFIX));
+        return manifestFile.getName().equalsIgnoreCase(SPARROW_MANIFEST_NAME);
     }
 
     public void setSignatureFile(File signatureFile) {

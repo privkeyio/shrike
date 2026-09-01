@@ -44,7 +44,6 @@ public class Config {
     private boolean groupByAddress = true;
     private boolean includeMempoolOutputs = true;
     private boolean notifyNewTransactions = true;
-    private boolean checkNewVersions = true;
     private Theme theme;
     private boolean openWalletsInNewWindows = false;
     private boolean chunkAddresses = true;
@@ -122,6 +121,7 @@ public class Config {
                 reader.close();
 
                 if(config != null) {
+                    config.migrateServerType();
                     return config;
                 }
             } catch(Exception e) {
@@ -131,6 +131,21 @@ public class Config {
         }
 
         return new Config();
+    }
+
+    /**
+     * Corrects a stored server type that names an option this build no longer has.
+     *
+     * No public Electrum server indexes this chain. Left alone, a config written before the option was
+     * withdrawn connects to one at startup, from AppServices.start, well before any settings screen could
+     * correct it, and shows a different set of blocks and balances than this wallet's. Done once here rather
+     * than in the accessor so that reading the type still returns what was set.
+     */
+    private void migrateServerType() {
+        if(serverType == ServerType.PUBLIC_ELECTRUM_SERVER && !PublicElectrumServer.supportedNetwork()) {
+            serverType = coreServer != null ? ServerType.BITCOIN_CORE
+                    : (electrumServer != null ? ServerType.ELECTRUM_SERVER : null);
+        }
     }
 
     public static synchronized Config get() {
@@ -272,15 +287,6 @@ public class Config {
 
     public void setNotifyNewTransactions(boolean notifyNewTransactions) {
         this.notifyNewTransactions = notifyNewTransactions;
-        flush();
-    }
-
-    public boolean isCheckNewVersions() {
-        return checkNewVersions;
-    }
-
-    public void setCheckNewVersions(boolean checkNewVersions) {
-        this.checkNewVersions = checkNewVersions;
         flush();
     }
 

@@ -8,7 +8,6 @@ import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5Brands;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.io.Storage;
-import com.sparrowwallet.sparrow.net.PublicElectrumServer;
 import com.sparrowwallet.sparrow.net.ServerType;
 import com.sparrowwallet.sparrow.settings.SettingsGroup;
 import com.sparrowwallet.sparrow.settings.SettingsDialog;
@@ -60,10 +59,6 @@ public class SparrowDesktop extends Application {
                     SettingsDialog settingsDialog = new SettingsDialog(SettingsGroup.SERVER, true);
                     Optional<Boolean> optNewWallet = settingsDialog.showAndWait();
                     createNewWallet = optNewWallet.isPresent() && optNewWallet.get();
-                } else if(Network.get() == Network.MAINNET && PublicElectrumServer.supportedNetwork()) {
-                    Config.get().setServerType(ServerType.PUBLIC_ELECTRUM_SERVER);
-                    List<PublicElectrumServer> servers = PublicElectrumServer.getServers();
-                    Config.get().setPublicElectrumServer(servers.get(new Random().nextInt(servers.size())).getServer());
                 }
             }
         }

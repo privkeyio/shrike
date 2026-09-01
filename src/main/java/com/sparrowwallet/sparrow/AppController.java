@@ -2939,28 +2939,6 @@ public class AppController implements Initializable {
         wait.play();
     }
 
-    @Subscribe
-    public void versionUpdated(VersionUpdatedEvent event) {
-        Hyperlink versionUpdateLabel = new Hyperlink("Sparrow " + event.getVersion() + " available");
-        versionUpdateLabel.getStyleClass().add("version-hyperlink");
-        versionUpdateLabel.setOnAction(event1 -> {
-            AppServices.get().getApplication().getHostServices().showDocument("https://www.sparrowwallet.com/download");
-        });
-
-        Hyperlink existingUpdateLabel = null;
-        for(Node node : statusBar.getRightItems()) {
-            if(node instanceof Hyperlink) {
-                existingUpdateLabel = (Hyperlink)node;
-            }
-        }
-
-        if(existingUpdateLabel != null) {
-            statusBar.getRightItems().remove(existingUpdateLabel);
-        }
-
-        statusBar.getRightItems().add(0, versionUpdateLabel);
-    }
-
     /**
      * Shows a schedule disagreement for as long as it stands, and takes the indicator down when it does not.
      *

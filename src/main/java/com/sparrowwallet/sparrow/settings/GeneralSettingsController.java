@@ -66,12 +66,6 @@ public class GeneralSettingsController extends SettingsDetailController {
     @FXML
     private UnlabeledToggleSwitch notifyNewTransactions;
 
-    @FXML
-    private UnlabeledToggleSwitch checkNewVersions;
-
-    @FXML
-    private Field softwareUpdatesField;
-
     private final ChangeListener<Currency> fiatCurrencyListener = new ChangeListener<Currency>() {
         @Override
         public void changed(ObservableValue<? extends Currency> observable, Currency oldValue, Currency newValue) {
@@ -189,16 +183,6 @@ public class GeneralSettingsController extends SettingsDetailController {
             config.setNotifyNewTransactions(newValue);
         });
 
-        //The update check has nothing to report: the only feed is Sparrow's, signed with Sparrow's key, and it
-        //describes the wallet that follows the chain that kept SHA256d. A toggle that changes nothing is worse
-        //than no toggle, so the row is hidden rather than left to look operative.
-        softwareUpdatesField.managedProperty().bind(softwareUpdatesField.visibleProperty());
-        softwareUpdatesField.setVisible(false);
-        checkNewVersions.setSelected(config.isCheckNewVersions());
-        checkNewVersions.selectedProperty().addListener((observableValue, oldValue, newValue) -> {
-            config.setCheckNewVersions(newValue);
-            EventManager.get().post(new VersionCheckStatusEvent(newValue));
-        });
     }
 
     private static Server getBlockExplorer(String serverUrl) {

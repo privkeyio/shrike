@@ -70,7 +70,7 @@ public enum PublicElectrumServer {
 
     public static List<PublicElectrumServer> getServers() {
         //SUPPORTED_NETWORKS is the single gate. Filtering only by network would still hand back servers on a
-        //network where the option is withdrawn, and one caller divides by the size of this list.
+        //network where the option is withdrawn.
         if(!supportedNetwork()) {
             return List.of();
         }
