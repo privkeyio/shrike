@@ -31,9 +31,6 @@ public class WelcomeController {
     private VBox step3;
 
     @FXML
-    private VBox step4;
-
-    @FXML
     private StatusBar serverStatus;
 
     @FXML
@@ -43,11 +40,9 @@ public class WelcomeController {
         step1.managedProperty().bind(step1.visibleProperty());
         step2.managedProperty().bind(step2.visibleProperty());
         step3.managedProperty().bind(step3.visibleProperty());
-        step4.managedProperty().bind(step4.visibleProperty());
 
         step2.setVisible(false);
         step3.setVisible(false);
-        step4.setVisible(false);
 
         welcomeBox.getStyleClass().add("offline");
         serverStatus.setText("Offline");
@@ -65,29 +60,15 @@ public class WelcomeController {
             step1.setVisible(false);
             step2.setVisible(true);
             welcomeBox.getStyleClass().clear();
-            welcomeBox.getStyleClass().add("public-electrum");
-            PauseTransition wait = new PauseTransition(Duration.millis(200));
-            wait.setOnFinished((e) -> {
-                serverToggle.setSelected(true);
-                serverStatus.setText("Connected to a Public Server (demonstration only)");
-            });
-            wait.play();
-            return true;
-        }
-
-        if(step2.isVisible()) {
-            step2.setVisible(false);
-            step3.setVisible(true);
-            welcomeBox.getStyleClass().clear();
             welcomeBox.getStyleClass().add("bitcoin-core");
             serverToggle.setSelected(true);
             serverStatus.setText("Connected to Bitcoin Knots (demonstration only)");
             return true;
         }
 
-        if(step3.isVisible()) {
-            step3.setVisible(false);
-            step4.setVisible(true);
+        if(step2.isVisible()) {
+            step2.setVisible(false);
+            step3.setVisible(true);
             welcomeBox.getStyleClass().clear();
             welcomeBox.getStyleClass().add("private-electrum");
             serverToggle.setSelected(true);
@@ -115,16 +96,6 @@ public class WelcomeController {
         if(step3.isVisible()) {
             step3.setVisible(false);
             step2.setVisible(true);
-            welcomeBox.getStyleClass().clear();
-            welcomeBox.getStyleClass().add("public-electrum");
-            serverToggle.setSelected(true);
-            serverStatus.setText("Connected to a Public Server (demonstration only)");
-            return true;
-        }
-
-        if(step4.isVisible()) {
-            step4.setVisible(false);
-            step3.setVisible(true);
             welcomeBox.getStyleClass().clear();
             welcomeBox.getStyleClass().add("bitcoin-core");
             serverToggle.setSelected(true);
