@@ -1050,6 +1050,35 @@ public class AppServices {
     }
 
     /**
+     * Whether handing this PSBT to the device behind the given fingerprint would ask it for a hash type it has not
+     * been marked as producing.
+     *
+     * Reachable only since the wallet began opting in on a quorum: before that it never declared the opt-in while an
+     * unmarked keystore was present, so no device could be handed a transaction it could not sign. Now a 2-of-3 with
+     * two marked signers declares it, and reaching for the third gets whatever that firmware says on refusal, which
+     * knows nothing about replay protection. Answering here lets the caller say something useful instead.
+     *
+     * Null fingerprint, absent PSBT or a keystore this device does not match all read as no objection: this exists to
+     * explain a refusal that is going to happen, not to add one.
+     */
+    public static boolean deviceCannotSignDeclaredSigHash(Wallet wallet, PSBT psbt, String fingerprint) {
+        if(wallet == null || psbt == null || fingerprint == null) {
+            return false;
+        }
+
+        boolean declaresUnified = psbt.getPsbtInputs().stream()
+                .anyMatch(psbtInput -> psbtInput.getSigHash() != null && psbtInput.getSigHash().isUnified());
+        if(!declaresUnified) {
+            return false;
+        }
+
+        return wallet.getKeystores().stream()
+                .filter(keystore -> keystore.getKeyDerivation() != null
+                        && fingerprint.equalsIgnoreCase(keystore.getKeyDerivation().getMasterFingerprint()))
+                .anyMatch(keystore -> keystore.getSource().isHardware() && !keystore.isUnifiedSigHashSupported());
+    }
+
+    /**
      * How many signatures this wallet's policy needs, or every keystore where that cannot be determined.
      *
      * getNumSignaturesRequired throws on a policy it cannot parse and the policy itself may be absent on a wallet

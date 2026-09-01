@@ -858,6 +858,14 @@ public class DevicePane extends TitledDescriptionPane {
     }
 
     private void sign() {
+        //Said here rather than left to the device, whose refusal names no reason a user could act on
+        if(AppServices.deviceCannotSignDeclaredSigHash(wallet, psbt, device.getFingerprint())) {
+            setError("Replay Protection", "This transaction opts in to replay protection, which this device is not marked as supporting. "
+                    + "Mark it under Replay protection in the keystore tab if its firmware supports it, or sign with the signers that are marked.");
+            signButton.setDisable(false);
+            return;
+        }
+
         if(device.isCard()) {
             try {
                 CardApi cardApi = CardApi.getCardApi(device.getModel(), pin.get());

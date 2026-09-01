@@ -1,5 +1,6 @@
 package com.sparrowwallet.sparrow;
 
+import com.sparrowwallet.drongo.KeyDerivation;
 import com.sparrowwallet.drongo.KeyPurpose;
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
@@ -648,6 +649,44 @@ public class UnifiedSigHashPolicyTest {
         byte[] signature = witness.getPushes().getFirst();
         Assertions.assertTrue(signature.length >= 70 && signature.length <= 73, "the first push is the signature");
         Assertions.assertEquals((byte)0x21, signature[signature.length - 1], "the signature opts in");
+    }
+
+    /**
+     * The quorum rule made it possible to hand a device a transaction it cannot sign: a 2-of-3 with two marked
+     * signers declares the opt-in, and the third device is then asked for a hash type it never claimed. Left alone
+     * that surfaces as whatever the firmware says, which names no reason anyone can act on.
+     */
+    @Test
+    public void testAnUnmarkedDeviceIsToldWhyBeforeItRefuses() throws Exception {
+        Wallet wallet = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        String[] fingerprints = {"aaaaaaaa", "bbbbbbbb", "cccccccc"};
+        for(int i = 0; i < 3; i++) {
+            wallet.getKeystores().get(i).setKeyDerivation(new KeyDerivation(fingerprints[i], "m/48'/0'/0'/2'"));
+        }
+        wallet.getKeystores().get(0).setUnifiedSigHashSupported(true);
+        wallet.getKeystores().get(1).setUnifiedSigHashSupported(true);
+
+        PSBT optedIn = twoInputPsbt();
+        AppServices.applyUnifiedSigHash(optedIn, true);
+
+        Assertions.assertTrue(AppServices.deviceCannotSignDeclaredSigHash(wallet, optedIn, "cccccccc"),
+                "the unmarked device is asked for a hash type it never claimed");
+        for(String marked : new String[] {"aaaaaaaa", "bbbbbbbb"}) {
+            Assertions.assertFalse(AppServices.deviceCannotSignDeclaredSigHash(wallet, optedIn, marked),
+                    marked + " is marked, so there is nothing to warn about");
+        }
+
+        //A transaction that did not opt in asks nothing unusual of anyone
+        PSBT legacy = twoInputPsbt();
+        AppServices.applyUnifiedSigHash(legacy, false);
+        Assertions.assertFalse(AppServices.deviceCannotSignDeclaredSigHash(wallet, legacy, "cccccccc"));
+
+        //Absent inputs are no grounds for inventing an objection
+        Assertions.assertFalse(AppServices.deviceCannotSignDeclaredSigHash(wallet, optedIn, null));
+        Assertions.assertFalse(AppServices.deviceCannotSignDeclaredSigHash(wallet, null, "cccccccc"));
+        Assertions.assertFalse(AppServices.deviceCannotSignDeclaredSigHash(null, optedIn, "cccccccc"));
+        Assertions.assertFalse(AppServices.deviceCannotSignDeclaredSigHash(wallet, optedIn, "dddddddd"),
+                "a fingerprint this wallet does not hold is not this wallet's business");
     }
 
     /**
