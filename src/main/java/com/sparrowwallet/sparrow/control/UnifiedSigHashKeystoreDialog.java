@@ -63,6 +63,26 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
                 content.getChildren().add(mark);
             }
         }
+        //The header says marking enough of them is what matters without saying how many, which leaves the count to
+        //be guessed. Said here, and kept current as they are ticked, so the target and the progress toward it are both visible.
+        if(!marks.isEmpty()) {
+            Label progress = new Label();
+            progress.setPadding(new Insets(6, 0, 0, 0));
+            Runnable update = () -> {
+                long marked = marks.values().stream().filter(CheckBox::isSelected).count();
+                long unmarked = wallet.getKeystores().size() - marked;
+                int required = AppServices.requiredSignatures(wallet);
+                progress.setText(unmarked < required
+                        ? "Marked " + marked + " of " + wallet.getKeystores().size() + ". This wallet needs " + required
+                                + " to sign, so a transaction it builds will opt in."
+                        : "Marked " + marked + " of " + wallet.getKeystores().size() + ". This wallet needs " + required
+                                + " to sign, and too few are marked for that, so it will not opt in yet.");
+            };
+            marks.values().forEach(mark -> mark.selectedProperty().addListener((observable, was, is) -> update.run()));
+            update.run();
+            content.getChildren().add(progress);
+        }
+
         dialogPane.setContent(content);
 
         final ButtonType okButtonType = new ButtonType("Apply", ButtonBar.ButtonData.OK_DONE);

@@ -1086,7 +1086,7 @@ public class AppServices {
      * back to the whole keystore set keeps the stricter answer: a threshold that cannot be read is never grounds
      * for opting in on fewer signers than the wallet might need.
      */
-    static int requiredSignatures(Wallet wallet) {
+    public static int requiredSignatures(Wallet wallet) {
         try {
             Policy policy = wallet.getDefaultPolicy();
             return policy == null ? wallet.getKeystores().size() : policy.getNumSignaturesRequired();
