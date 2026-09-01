@@ -1049,11 +1049,13 @@ public class AppServices {
                     ? UnifiedSigHashDecision.OPTED_IN : UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS;
         }
 
-        //An unmarked device has a remedy the user can act on; a keystore with no device behind it does not, and
-        //reporting the markable reason for one points at a control the keystore tab does not show for it. Where
-        //both are present the one that cannot be fixed by marking is the one worth naming.
+        //A keystore the user can speak for has a remedy they can act on; one that neither signs here nor has a
+        //signer to declare for does not, and reporting the markable reason for it points at a control the
+        //keystore tab does not show. Every source today is one or the other, so the second branch is unreachable
+        //and testEverySourceEitherSignsHereOrCanBeMarked pins that. It is kept rather than removed because a
+        //source added later would otherwise fall into the markable reason and name a control it has no access to.
         return wallet.getKeystores().stream()
-                .anyMatch(keystore -> !canKeystoreSignUnified(keystore) && !keystore.getSource().isHardware())
+                .anyMatch(keystore -> !canKeystoreSignUnified(keystore) && !canBeMarked(keystore))
                 ? UnifiedSigHashDecision.NO_DEVICE_TO_MARK : UnifiedSigHashDecision.EXTERNAL_SIGNER;
     }
 
@@ -1218,9 +1220,33 @@ public class AppServices {
         }
     }
 
+    /**
+     * Whether this keystore signs from a key the wallet holds, rather than handing a PSBT to something else.
+     *
+     * A payment code keystore is one of these: checkKeystore refuses one without a BIP47 extended private key,
+     * and getKey returns a private key for it, so it signs in process exactly as a software seed does. It is
+     * grouped with SW_SEED on the sign button upstream for the same reason.
+     */
+    static boolean signsInProcess(Keystore keystore) {
+        KeystoreSource source = keystore.getSource();
+        return source == KeystoreSource.SW_SEED || source == KeystoreSource.SW_PAYMENT_CODE;
+    }
+
+    /**
+     * Whether the user can state what the signer behind this keystore does.
+     *
+     * The wallet is not deciding what it signs here, it is deciding which hash type to declare in a PSBT it
+     * hands to something else. A watch only keystore is in exactly the position an airgapped one is: the
+     * wallet cannot verify the claim either way, and the owner is the only one who knows. Refusing the claim
+     * for one and taking it for the other made the remedy "rebuild this wallet to change one boolean".
+     */
+    public static boolean canBeMarked(Keystore keystore) {
+        KeystoreSource source = keystore.getSource();
+        return source.isHardware() || source == KeystoreSource.SW_WATCH;
+    }
+
     private static boolean canKeystoreSignUnified(Keystore keystore) {
-        return keystore.getSource() == KeystoreSource.SW_SEED
-                || (keystore.getSource().isHardware() && keystore.isUnifiedSigHashSupported());
+        return signsInProcess(keystore) || (canBeMarked(keystore) && keystore.isUnifiedSigHashSupported());
     }
 
     /**

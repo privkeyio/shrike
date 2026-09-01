@@ -185,7 +185,8 @@ public class UnifiedSigHashDecisionTest {
     }
 
     /**
-     * Watch only counts alongside the hardware sources, since it produces no signature either.
+     * Watch only counts alongside the hardware sources: neither signs here, so for both the wallet is only
+     * choosing what to declare in a PSBT it hands out, and its owner is the one who knows what will sign it.
      */
     @Test
     public void testAnySourceOtherThanASoftwareSeedDeclines() {
@@ -202,8 +203,10 @@ public class UnifiedSigHashDecisionTest {
         Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
                 AppServices.keystoreDecision(walletWith(KeystoreSource.SW_SEED, KeystoreSource.SW_WATCH)));
 
-        //Nothing that can opt in is what reaches the reason marking cannot fix
-        Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
+        //Nothing marked is a reason marking can fix, now that the keystore tab draws the control for a watch
+        //only keystore too. It used to report the reason whose remedy was to rebuild the wallet as an airgapped
+        //import, which is a poor answer to a question the owner can just answer.
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
                 AppServices.keystoreDecision(walletWith(KeystoreSource.SW_WATCH, KeystoreSource.SW_WATCH)));
     }
 

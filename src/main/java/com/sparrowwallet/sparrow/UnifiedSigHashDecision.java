@@ -88,19 +88,19 @@ public enum UnifiedSigHashDecision {
      * The only decision here with a remedy the user can act on, which is why it carries one.
      */
     EXTERNAL_SIGNER("no signer is marked as supporting it",
-            "If its firmware does support it, mark the device under Replay protection in the keystore tab of the wallet settings."),
+            "If the signer for it does support it, mark it under Replay protection in the keystore tab of the wallet settings."),
 
     /**
-     * A keystore holding neither a key of this wallet's own nor a device, so there is nothing to mark and marking
-     * it changes nothing.
+     * A keystore that neither signs from a key this wallet holds nor has a signer its owner can speak for.
      *
-     * Separate from EXTERNAL_SIGNER because that remedy sends the user to a control the keystore tab only shows
-     * for hardware sources. Reporting it for a watch only keystore describes a checkbox that is not there, which
-     * leaves the user hunting for it rather than changing the thing that actually decides this.
+     * No source reaches this today: a software seed and a payment code sign here, and a device or a watch only
+     * keystore can be marked. testEverySourceEitherSignsHereOrCanBeMarked pins that. It is kept rather than
+     * removed because a source added later would otherwise fall into EXTERNAL_SIGNER, whose remedy names a
+     * control the keystore tab would not show for it, leaving the user hunting for a checkbox that is not there.
      */
-    NO_DEVICE_TO_MARK("a keystore in this wallet has no device to mark",
-            "A watch only keystore cannot opt in whatever it is marked as. If a device signs for this wallet, "
-                    + "re-import it with that device as an airgapped hardware wallet, so it can be marked under Replay protection.");
+    NO_DEVICE_TO_MARK("a keystore in this wallet has no signer to speak for",
+            "This keystore neither signs here nor has a signer that can be marked, so nothing in the wallet "
+                    + "settings will change this.");
 
     private final String reason;
     private final String remedy;

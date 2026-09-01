@@ -9,6 +9,7 @@ import com.sparrowwallet.drongo.psbt.PSBT;
 import com.sparrowwallet.drongo.psbt.PSBTInput;
 import com.sparrowwallet.drongo.wallet.DeterministicSeed;
 import com.sparrowwallet.drongo.wallet.Keystore;
+import com.sparrowwallet.drongo.wallet.KeystoreSource;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletNode;
 
@@ -49,6 +50,22 @@ public class SparrowSendHarness {
         return wallet;
     }
 
+    /**
+     * The same single sig wallet with the key removed and the keystore marked, which is what a watch only
+     * import backed by a signer the owner speaks for looks like.
+     *
+     * The wallet holds no private key, so it never signs here. It only decides which hash type to declare in
+     * the PSBT it exports, which is the whole point: the signing happens somewhere this wallet cannot see.
+     */
+    private static Wallet watchOnlyWallet(boolean marked) throws Exception {
+        Wallet wallet = wallet();
+        Keystore keystore = wallet.getKeystores().getFirst();
+        keystore.setSeed(null);
+        keystore.setSource(KeystoreSource.SW_WATCH);
+        keystore.setUnifiedSigHashSupported(marked);
+        return wallet;
+    }
+
     private static Wallet wallet() throws Exception {
         Wallet wallet = new Wallet();
         wallet.setPolicyType(PolicyType.SINGLE_HD);
@@ -71,10 +88,16 @@ public class SparrowSendHarness {
 
     public static void main(String[] args) throws Exception {
         boolean mixed = args[0].startsWith("mixed-");
-        String mode0 = mixed ? args[0].substring("mixed-".length()) : args[0];
+        //watchonly- decides with a marked watch only wallet and signs with a separate one holding the key,
+        //which is the wallet-plus-external-signer split this mode exists to prove
+        boolean watchOnly = args[0].startsWith("watchonly-") || args[0].startsWith("watchonlyunmarked-");
+        boolean watchOnlyMarked = args[0].startsWith("watchonly-");
+        String mode0 = mixed ? args[0].substring("mixed-".length())
+                : (watchOnlyMarked ? args[0].substring("watchonly-".length())
+                : (watchOnly ? args[0].substring("watchonlyunmarked-".length()) : args[0]));
         boolean multisig = mode0.endsWith("-multi");
         String mode = multisig ? mode0.substring(0, mode0.length() - "-multi".length()) : mode0;
-        Wallet wallet = multisig ? multisigWallet() : wallet();
+        Wallet wallet = multisig ? multisigWallet() : (watchOnly ? watchOnlyWallet(watchOnlyMarked) : wallet());
 
         if("scriptpubkey".equals(mode)) {
             System.out.println("SPK=" + Utils.bytesToHex(wallet.getOutputScript(firstReceiveNode(wallet)).getProgram()));
@@ -135,10 +158,19 @@ public class SparrowSendHarness {
             psbt.getPsbtInputs().getFirst().setSigHash(SigHash.ALL);
             wallet.sign(psbt);
             wallet.getKeystores().getFirst().setSeed(first);
+        } else if(watchOnly) {
+            //The watch only wallet decided and built this; it holds no key and cannot sign it. A separate
+            //wallet holding the key signs the PSBT as it stands, which is what an external signer does with
+            //the hash type the PSBT declares.
+            Wallet signer = wallet();
+            signer.sign(psbt);
+            signer.finalise(psbt);
         } else {
             wallet.sign(psbt);
         }
-        wallet.finalise(psbt);
+        if(!watchOnly) {
+            wallet.finalise(psbt);
+        }
         Transaction finalTx = psbt.extractTransaction();
 
         TransactionWitness witness = finalTx.getInputs().getFirst().getWitness();

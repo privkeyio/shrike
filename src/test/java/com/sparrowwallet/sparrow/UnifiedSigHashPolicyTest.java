@@ -250,13 +250,66 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
-     * A watch only keystore produces no signature whatever it has been marked as, so marking one cannot
-     * put the wallet in a position to opt in. Worth pinning, since the flag is stored on every keystore.
+     * A watch only keystore can be marked, and marking it opts in.
+     *
+     * This reverses the earlier rule, which reasoned that such a keystore "produces no signature" so marking it
+     * could change nothing. True of this wallet signing, and beside the point: the wallet is choosing which hash
+     * type to declare in a PSBT it hands to something else, which is what a marked airgapped keystore does too.
+     * The wallet cannot verify either claim, and its owner is the only one who knows. The old rule's remedy was
+     * to rebuild the wallet as an airgapped import to flip one boolean.
      */
     @Test
-    public void testMarkingAWatchOnlyKeystoreChangesNothing() {
-        Assertions.assertFalse(AppServices.canSignUnified(markedWalletWith(KeystoreSource.SW_WATCH)));
-        Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK, AppServices.keystoreDecision(markedWalletWith(KeystoreSource.SW_WATCH)));
+    public void testAMarkedWatchOnlyKeystoreOptsIn() {
+        Assertions.assertTrue(AppServices.canSignUnified(markedWalletWith(KeystoreSource.SW_WATCH)),
+                "the owner can say what signs for a watch only keystore, as they can for a device");
+        Assertions.assertFalse(AppServices.canSignUnified(walletWith(KeystoreSource.SW_WATCH)),
+                "and it stays off until they do, because a signer that does not understand the type may sign "
+                        + "the legacy message against a PSBT declaring the new one");
+        Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+                AppServices.keystoreDecision(walletWith(KeystoreSource.SW_WATCH)),
+                "unmarked, it reports the reason that has something to act on");
+    }
+
+    /**
+     * A payment code keystore signs from a key this wallet holds, so it has nothing to declare and nothing to mark.
+     * checkKeystore refuses one without a BIP47 extended private key and getKey returns a private key for it, which
+     * is why it belongs with SW_SEED rather than with the sources that hand a PSBT out.
+     */
+    @Test
+    public void testAPaymentCodeKeystoreSignsHereAndNeedsNoMark() {
+        Assertions.assertTrue(AppServices.canSignUnified(walletWith(KeystoreSource.SW_PAYMENT_CODE)),
+                "it signs in process, so it opts in without being marked");
+        Assertions.assertTrue(AppServices.signsInProcess(walletWith(KeystoreSource.SW_PAYMENT_CODE).getKeystores().getFirst()));
+        Assertions.assertFalse(AppServices.canBeMarked(walletWith(KeystoreSource.SW_PAYMENT_CODE).getKeystores().getFirst()),
+                "and offers no mark, because there is no separate signer to speak for");
+    }
+
+    /**
+     * The guard that keeps NO_DEVICE_TO_MARK honest. Every source is either signed here or markable, so that
+     * decision is unreachable today. It stays in the enum because a source added later would otherwise land on
+     * EXTERNAL_SIGNER, whose remedy names a control the keystore tab would not show for it.
+     */
+    @Test
+    public void testEverySourceEitherSignsHereOrCanBeMarked() {
+        for(KeystoreSource source : KeystoreSource.values()) {
+            Keystore keystore = new Keystore();
+            keystore.setSource(source);
+            Assertions.assertTrue(AppServices.signsInProcess(keystore) || AppServices.canBeMarked(keystore),
+                    source + " reaches NO_DEVICE_TO_MARK, so it needs copy naming it rather than the generic reason");
+        }
+    }
+
+    /**
+     * Marking still does nothing for a source that signs here. The flag is stored on every keystore, so a source
+     * that has no signer to speak for must not be moved by it.
+     */
+    @Test
+    public void testMarkingAKeystoreThatSignsHereChangesNothing() {
+        for(KeystoreSource source : List.of(KeystoreSource.SW_SEED, KeystoreSource.SW_PAYMENT_CODE)) {
+            Assertions.assertEquals(AppServices.canSignUnified(walletWith(source)),
+                    AppServices.canSignUnified(markedWalletWith(source)),
+                    source + " signs from a key this wallet holds, so the mark must not move the answer");
+        }
     }
 
     /**
@@ -277,22 +330,25 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
-     * The remedy on EXTERNAL_SIGNER names the Replay protection control, which KeystoreController only shows for
-     * hardware sources. So that reason must only be reachable for a wallet that has one, or it describes a
-     * checkbox that is not there.
+     * The remedy on EXTERNAL_SIGNER names the Replay protection control, which KeystoreController draws exactly
+     * where canBeMarked is true. So wherever that reason is reported the wallet must hold a keystore the control
+     * is actually shown for, or it describes a checkbox that is not there.
      *
-     * That was the bug: a watch only wallet reported EXTERNAL_SIGNER and sent its owner hunting for a control the
-     * keystore tab never draws for it.
+     * That was the bug, and it was fixed by drawing the control rather than by withholding the reason: a watch
+     * only wallet reported a reason whose remedy pointed at a control the keystore tab never drew for it, and
+     * told its owner to rebuild the wallet as an airgapped import to flip one boolean.
      */
     @Test
     public void testTheMarkableReasonIsOnlyGivenWhereThereIsSomethingToMark() {
-        for(KeystoreSource blocking : List.of(KeystoreSource.SW_WATCH, KeystoreSource.SW_PAYMENT_CODE)) {
-            Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
-                    AppServices.keystoreDecision(walletWith(blocking)),
-                    blocking + " has no device to mark, so must not be told to mark one");
-            Assertions.assertEquals(UnifiedSigHashDecision.NO_DEVICE_TO_MARK,
-                    AppServices.keystoreDecision(walletWith(KeystoreSource.HW_USB, blocking)),
-                    blocking + " alongside a device still cannot be fixed by marking");
+        for(KeystoreSource source : KeystoreSource.values()) {
+            for(KeystoreSource other : KeystoreSource.values()) {
+                Wallet wallet = walletWith(source, other);
+                if(AppServices.keystoreDecision(wallet) == UnifiedSigHashDecision.EXTERNAL_SIGNER) {
+                    Assertions.assertTrue(wallet.getKeystores().stream().anyMatch(AppServices::canBeMarked),
+                            source + " with " + other + " is told to mark something, so the keystore tab must "
+                                    + "draw the control for at least one of them");
+                }
+            }
         }
     }
 

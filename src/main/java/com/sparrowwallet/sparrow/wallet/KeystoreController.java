@@ -402,10 +402,14 @@ public class KeystoreController extends WalletFormController implements Initiali
 
         xpubField.setVisible(getWalletForm().getWallet().getPolicyType() != PolicyType.SINGLE_SP);
 
-        //Only a device is taken at its owner's word: a software seed signs from a key this wallet holds, and a watch
-        //only keystore signs nothing at all, so neither has anything to declare here. Refreshed here rather than at
-        //setup so that replacing the keystore with another source shows the right thing
-        unifiedSigHashField.setVisible(keystore.getSource().isHardware());
+        //Shown wherever the signing happens somewhere this wallet cannot see, which is a device or a watch only
+        //keystore alike: in both the wallet is choosing what to declare in a PSBT it hands out, and only the owner
+        //knows what will sign it. A software seed and a payment code sign from a key this wallet holds, so there is
+        //nothing to declare for those. Refreshed here rather than at setup so that replacing the keystore with
+        //another source shows the right thing
+        unifiedSigHashField.setVisible(AppServices.canBeMarked(keystore));
+        unifiedSigHash.setText(keystore.getSource().isHardware()
+                ? "Supported by this device" : "Supported by the signer for this keystore");
         refreshingUnifiedSigHash = true;
         try {
             unifiedSigHash.setSelected(keystore.isUnifiedSigHashSupported());
