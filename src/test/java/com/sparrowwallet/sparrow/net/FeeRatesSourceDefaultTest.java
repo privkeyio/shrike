@@ -149,4 +149,21 @@ public class FeeRatesSourceDefaultTest {
         Assertions.assertTrue(PublicElectrumServer.getServers().isEmpty(),
                 "and the list one caller divides by must be empty rather than full of other-chain servers");
     }
+
+    /**
+     * The terminal has its own settings screens and its own copy of this decision.
+     *
+     * Withdrawing public servers guarded the graphical screen through supportedNetwork, which the terminal did
+     * not consult. It would have gone on offering the type, and its dialog reads the server list by index, so
+     * choosing from an empty one throws rather than saying there is nothing to choose.
+     */
+    @Test
+    public void testTheTerminalDoesNotOfferAServerTypeItCannotConfigure() {
+        java.util.List<ServerType> offered = java.util.List.of(
+                com.sparrowwallet.sparrow.terminal.settings.ServerTypeDialog.getServerTypes());
+        Assertions.assertFalse(offered.contains(ServerType.PUBLIC_ELECTRUM_SERVER),
+                "no public server indexes this chain, so the terminal must not offer the type");
+        Assertions.assertTrue(offered.contains(ServerType.BITCOIN_CORE) && offered.contains(ServerType.ELECTRUM_SERVER),
+                "the two that can be configured must remain");
+    }
 }

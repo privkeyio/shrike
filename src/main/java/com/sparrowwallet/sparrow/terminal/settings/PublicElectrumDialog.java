@@ -29,18 +29,24 @@ public class PublicElectrumDialog extends ServerProxyDialog {
 
         mainPanel.addComponent(new Label("URL"));
         url = new ComboBox<>();
-        for(PublicElectrumServer server : PublicElectrumServer.getServers()) {
+        //No public server indexes this chain, so this list is empty and the dialog is not offered. Reachable
+        //only from a stored config naming the type from before it was withdrawn, and indexing an empty list
+        //here would throw rather than say so.
+        List<PublicElectrumServer> servers = PublicElectrumServer.getServers();
+        for(PublicElectrumServer server : servers) {
             url.addItem(server);
         }
-        if(Config.get().getPublicElectrumServer() == null) {
-            AppServices.get().changePublicServer();
-        }
-        url.setSelectedItem(PublicElectrumServer.fromServer(Config.get().getPublicElectrumServer()));
-        url.addListener((selectedIndex, previousSelection, changedByUserInteraction) -> {
-            if(selectedIndex != previousSelection) {
-                Config.get().setPublicElectrumServer(PublicElectrumServer.getServers().get(selectedIndex).getServer());
+        if(!servers.isEmpty()) {
+            if(Config.get().getPublicElectrumServer() == null) {
+                AppServices.get().changePublicServer();
             }
-        });
+            url.setSelectedItem(PublicElectrumServer.fromServer(Config.get().getPublicElectrumServer()));
+            url.addListener((selectedIndex, previousSelection, changedByUserInteraction) -> {
+                if(selectedIndex != previousSelection) {
+                    Config.get().setPublicElectrumServer(servers.get(selectedIndex).getServer());
+                }
+            });
+        }
         mainPanel.addComponent(url);
         mainPanel.addComponent(new EmptySpace(TerminalSize.ONE));
 

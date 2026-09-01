@@ -4,6 +4,7 @@ import com.googlecode.lanterna.TerminalSize;
 import com.googlecode.lanterna.gui2.*;
 import com.googlecode.lanterna.gui2.dialogs.DialogWindow;
 import com.sparrowwallet.sparrow.io.Config;
+import com.sparrowwallet.sparrow.net.PublicElectrumServer;
 import com.sparrowwallet.sparrow.net.ServerType;
 import com.sparrowwallet.sparrow.terminal.SparrowTerminal;
 
@@ -20,7 +21,7 @@ public class ServerTypeDialog extends DialogWindow {
         Panel mainPanel = new Panel();
         mainPanel.setLayoutManager(new GridLayout(2).setHorizontalSpacing(5));
 
-        ServerType[] serverTypes = new ServerType[] { ServerType.PUBLIC_ELECTRUM_SERVER, ServerType.BITCOIN_CORE, ServerType.ELECTRUM_SERVER };
+        ServerType[] serverTypes = getServerTypes();
 
         mainPanel.addComponent(new Label("Connect using"));
         type = new RadioBoxList<>();
@@ -28,8 +29,9 @@ public class ServerTypeDialog extends DialogWindow {
             type.addItem(serverType.getName());
         }
 
-        if(Config.get().getServerType() == null) {
-            Config.get().setServerType(ServerType.PUBLIC_ELECTRUM_SERVER);
+        if(Config.get().getServerType() == null || (Config.get().getServerType() == ServerType.PUBLIC_ELECTRUM_SERVER
+                && !PublicElectrumServer.supportedNetwork())) {
+            Config.get().setServerType(serverTypes[0]);
         }
         type.setCheckedItem(Config.get().getServerType().getName());
         type.addListener((selectedIndex, previousSelection) -> {
@@ -49,6 +51,19 @@ public class ServerTypeDialog extends DialogWindow {
 
         buttonPanel.setLayoutData(GridLayout.createLayoutData(GridLayout.Alignment.END, GridLayout.Alignment.CENTER,false,false)).addTo(mainPanel);
         setComponent(mainPanel);
+    }
+
+    /**
+     * The connection types this build can offer.
+     *
+     * Public servers are included only where there are servers to offer. The graphical settings screen already
+     * checks this; without the same check the terminal lists a type whose own dialog is then empty, and
+     * selecting from it indexes a list with nothing in it.
+     */
+    public static ServerType[] getServerTypes() {
+        return PublicElectrumServer.supportedNetwork()
+                ? new ServerType[] { ServerType.PUBLIC_ELECTRUM_SERVER, ServerType.BITCOIN_CORE, ServerType.ELECTRUM_SERVER }
+                : new ServerType[] { ServerType.BITCOIN_CORE, ServerType.ELECTRUM_SERVER };
     }
 
     private void onContinue() {
