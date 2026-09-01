@@ -49,4 +49,33 @@ public class FeeRatesSourceDefaultTest {
         Assertions.assertEquals(0, hardcoded,
                 "a call site defaulting to mempool.space directly bypasses getDefault()");
     }
+
+    /**
+     * The explorer a transaction link opens has the same requirement. mempool.space and blockstream.info both
+     * follow the chain that kept SHA256d, so a link to either names a block they do not have once the
+     * transaction is mined past the activation height.
+     */
+    @Test
+    public void testTheDefaultBlockExplorerFollowsThisChain() {
+        Assertions.assertEquals(BlockExplorer.MEMPOOL_GUIDE, BlockExplorer.getDefault());
+        Assertions.assertTrue(BlockExplorer.getDefault().getServer().getUrl().contains("mempool.guide"));
+    }
+
+    @Test
+    public void testNoCallSiteDefaultsToAnExplorerOnTheOtherChain() throws Exception {
+        java.nio.file.Path main = java.nio.file.Path.of("src/main/java/com/sparrowwallet/sparrow");
+        long hardcoded;
+        try(var paths = java.nio.file.Files.walk(main)) {
+            hardcoded = paths.filter(p -> p.toString().endsWith(".java"))
+                    .filter(p -> !p.toString().endsWith("BlockExplorer.java"))
+                    .filter(p -> {
+                        try {
+                            return java.nio.file.Files.readString(p).contains("BlockExplorer.MEMPOOL_SPACE");
+                        } catch(Exception e) {
+                            return false;
+                        }
+                    }).count();
+        }
+        Assertions.assertEquals(0, hardcoded, "a call site naming mempool.space directly bypasses getDefault()");
+    }
 }

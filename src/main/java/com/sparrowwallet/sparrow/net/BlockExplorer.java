@@ -11,9 +11,22 @@ import java.net.URL;
 import java.util.Locale;
 
 public enum BlockExplorer {
+    /*
+        mempool.guide is a mempool instance following the BLAKE2b fork, and is first here because it is the
+        only one of these that holds this chain's blocks. The other two follow the chain that kept SHA256d,
+        so a link to them for anything mined past the activation height names a block they do not have.
+     */
+    MEMPOOL_GUIDE("https://mempool.guide"),
     MEMPOOL_SPACE("https://mempool.space"),
     BLOCKSTREAM_INFO("https://blockstream.info"),
     NONE("http://none");
+
+    /**
+     * The explorer to open when the user has not chosen one. See the note above for why it is not mempool.space.
+     */
+    public static BlockExplorer getDefault() {
+        return MEMPOOL_GUIDE;
+    }
 
     private static final Logger log = LoggerFactory.getLogger(BlockExplorer.class);
 

@@ -1534,7 +1534,7 @@ public class AppServices {
             return;
         }
 
-        Server blockExplorer = Config.get().getBlockExplorer() == null ? BlockExplorer.MEMPOOL_SPACE.getServer() : Config.get().getBlockExplorer();
+        Server blockExplorer = Config.get().getBlockExplorer() == null ? BlockExplorer.getDefault().getServer() : Config.get().getBlockExplorer();
         String url = blockExplorer.getUrl();
         if(url.contains("{0}")) {
             url = url.replace("{0}", txid);
