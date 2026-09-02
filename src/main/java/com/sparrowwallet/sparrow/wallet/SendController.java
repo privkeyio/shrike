@@ -1108,7 +1108,8 @@ public class SendController extends WalletFormController implements Initializabl
             return;
         }
 
-        UnifiedSigHashDecision decision = AppServices.getUnifiedSigHashDecision(walletTransaction.getWallet());
+        AppServices.UnifiedSigHashStatus status = AppServices.getUnifiedSigHashStatus(walletTransaction.getWallet());
+        UnifiedSigHashDecision decision = status.decision();
         optInStatus.setVisible(true);
         optInStatus.setText(decision.getSummary());
         //The success mark is for an answer that is settled. A conditional opt-in is not one, so it takes the warning
@@ -1133,7 +1134,7 @@ public class SendController extends WalletFormController implements Initializabl
             detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.");
             //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
             //partially marked multisig has two, and the one the headline dropped is the actionable one
-            for(String caveat : AppServices.getUnifiedSigHashCaveats(walletTransaction.getWallet())) {
+            for(String caveat : status.caveats()) {
                 detail.append(System.lineSeparator()).append(System.lineSeparator()).append(caveat);
             }
         } else {

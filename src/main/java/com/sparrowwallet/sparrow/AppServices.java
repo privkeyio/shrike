@@ -1265,26 +1265,27 @@ public class AppServices {
     }
 
     /**
-     * Every caveat that applies, in the order they qualify the opt-in.
+     * The decision, with every caveat that applies rather than only the one the headline came from.
      *
-     * The decision above can only carry one, and on an Electrum connection both apply at once: no server reports an
-     * activation height, so an opt-in there is always uncorroborated, and a partially marked multisig adds its own.
-     * Reporting only the headline's caveat left the common configuration never told that a quorum of signers which
-     * cannot opt in would produce no protection.
+     * The decision can carry one, and on an Electrum connection both apply at once: no server reports an activation
+     * height, so an opt-in there is always uncorroborated, and a partially marked multisig adds its own. Reporting
+     * only the headline's caveat left the common configuration never told that a quorum of signers which cannot opt
+     * in would produce no protection.
      */
-    public static List<String> getUnifiedSigHashCaveats(Wallet wallet) {
+    public static UnifiedSigHashStatus getUnifiedSigHashStatus(Wallet wallet) {
+        //One read of the tip for both answers. Reading it again for the caveats would let the headline describe one
+        //tip and the caveats another, which is the same class of split reading the ChainTip record exists to prevent.
         ChainTip tip = announcedTip;
         UnifiedSigHashDecision chain = chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header());
-        if(!chain.isOptedIn()) {
-            return List.of();
+        UnifiedSigHashDecision decision = combinedDecision(chain, wallet);
+
+        if(!decision.isOptedIn()) {
+            return new UnifiedSigHashStatus(decision, List.of());
         }
 
-        UnifiedSigHashDecision keystores = keystoreDecision(wallet);
-        if(!keystores.isOptedIn()) {
-            return List.of();
-        }
-
+        //Both may qualify the same opt-in, and only one of them could be the headline
         List<String> caveats = new ArrayList<>();
+        UnifiedSigHashDecision keystores = keystoreDecision(wallet);
         if(keystores.getCaveat() != null) {
             caveats.add(keystores.getCaveat() + markedSignerSuffix(wallet));
         }
@@ -1292,7 +1293,13 @@ public class AppServices {
             caveats.add(chain.getCaveat());
         }
 
-        return caveats;
+        return new UnifiedSigHashStatus(decision, List.copyOf(caveats));
+    }
+
+    /**
+     * The decision and everything qualifying it, taken from one reading of the chain tip so the two agree.
+     */
+    public record UnifiedSigHashStatus(UnifiedSigHashDecision decision, List<String> caveats) {
     }
 
     /**
