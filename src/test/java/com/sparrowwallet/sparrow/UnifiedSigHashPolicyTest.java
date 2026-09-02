@@ -685,6 +685,35 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
+     * The case the test above does not reach: both caveats apply at once.
+     *
+     * Its quorum wallet marks two of three, so unmarked (1) is below the threshold (2) and the keystores return a
+     * plain OPTED_IN with no caveat to lose. Marking one of three is what produces a keystore caveat, and that is the
+     * common Electrum configuration, since no Electrum server reports an activation height.
+     */
+    @Test
+    public void testTheWeakerOfTwoCaveatsIsTheHeadline() {
+        Wallet conditional = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        conditional.getKeystores().get(0).setUnifiedSigHashSupported(true);
+
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS, AppServices.keystoreDecision(conditional),
+                "one marked of three, needing two, is conditional");
+
+        //A conditional opt-in can end in no protection at all, so it is the weaker claim and has to be the headline
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, conditional));
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, conditional));
+
+        //And it does not read as a settled answer
+        Assertions.assertTrue(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS.isOptedIn());
+        Assertions.assertFalse(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS.isGuaranteed());
+        Assertions.assertNotEquals(UnifiedSigHashDecision.OPTED_IN.getSummary(),
+                UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS.getSummary(),
+                "a condition must not read the same as a guarantee");
+    }
+
+    /**
      * The ordinary case, carried the same distance as the multisig one: a single signature wallet builds, signs and
      * finalises a spend whose signature opts in. Most wallets are this shape, and until now nothing in this project
      * signed one in process; the harness that did is a main method the suite never runs.

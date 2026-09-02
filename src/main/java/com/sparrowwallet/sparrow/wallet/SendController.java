@@ -1111,7 +1111,9 @@ public class SendController extends WalletFormController implements Initializabl
         UnifiedSigHashDecision decision = AppServices.getUnifiedSigHashDecision(walletTransaction.getWallet());
         optInStatus.setVisible(true);
         optInStatus.setText(decision.getSummary());
-        optInStatus.setGraphic(decision.isOptedIn() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+        //The success mark is for an answer that is settled. A conditional opt-in is not one, so it takes the warning
+        //glyph even though it did opt in.
+        optInStatus.setGraphic(decision.isGuaranteed() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
 
         //The one decision the user can act on is offered here rather than only described: the send screen is where
         //they find out, and a setting reached by leaving the send and hunting through a tab is a setting nobody uses
@@ -1126,23 +1128,24 @@ public class SendController extends WalletFormController implements Initializabl
             optInStatus.setOnMouseClicked(null);
         }
 
-        Tooltip tooltip = new Tooltip(decision.isOptedIn()
-                ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend."
-                    + (decision.getCaveat() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getCaveat()
-                        + namedSigners(walletTransaction))
-                : "Signing the way it always has been, because " + decision.getReason() + "."
-                    + (decision.getRemedy() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getRemedy()));
+        StringBuilder detail = new StringBuilder();
+        if(decision.isOptedIn()) {
+            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.");
+            //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
+            //partially marked multisig has two, and the one the headline dropped is the actionable one
+            for(String caveat : AppServices.getUnifiedSigHashCaveats(walletTransaction.getWallet())) {
+                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(caveat);
+            }
+        } else {
+            detail.append("These signatures will be made the way they always have been, because ").append(decision.getReason()).append(".");
+            if(decision.getRemedy() != null) {
+                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(decision.getRemedy());
+            }
+        }
+
+        Tooltip tooltip = new Tooltip(detail.toString());
         tooltip.setShowDuration(Duration.INDEFINITE);
         optInStatus.setTooltip(tooltip);
-    }
-
-    /**
-     * The signers that can produce the opt-in, appended to a caveat that would otherwise leave the reader to go
-     * and find out which ones those are.
-     */
-    private static String namedSigners(WalletTransaction walletTransaction) {
-        String names = walletTransaction == null ? null : AppServices.markedSignerNames(walletTransaction.getWallet());
-        return names == null ? "" : " Those are: " + names + ".";
     }
 
     /**
@@ -1584,6 +1587,13 @@ public class SendController extends WalletFormController implements Initializabl
      */
     @Subscribe
     public void unifiedSigHashSchedule(UnifiedSigHashScheduleEvent event) {
+        //EventBus dispatches on the thread that posted, which here is whichever thread dropped a connection or read
+        //a schedule off a node, so the scene graph work is marshalled rather than assumed
+        if(!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> unifiedSigHashSchedule(event));
+            return;
+        }
+
         updateOptInStatus(walletTransactionProperty.get());
     }
 

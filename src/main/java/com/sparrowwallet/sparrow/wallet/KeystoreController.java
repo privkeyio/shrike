@@ -811,6 +811,31 @@ public class KeystoreController extends WalletFormController implements Initiali
         }
     }
 
+    /**
+     * The settings tab edits a copy of the wallet, taken once when the tab was built. The mark can also be set from
+     * the send screen, which writes and persists it on the real wallet, and the copy does not hear about it. Applying
+     * any later change from this tab would then diff a stale value against the new one and write the old mark back,
+     * silently unmarking a keystore the user had just marked. Kept in step here, the way the label is.
+     */
+    @Subscribe
+    public void keystoreUnifiedSigHashChanged(KeystoreUnifiedSigHashChangedEvent event) {
+        if(event.getWalletId().equals(walletForm.getWalletId())) {
+            for(Keystore changedKeystore : event.getChangedKeystores()) {
+                if(changedKeystore.getExtendedPublicKey() != null && keystore.getExtendedPublicKey() != null
+                        && changedKeystore.getExtendedPublicKey().equals(keystore.getExtendedPublicKey())
+                        && keystore.isUnifiedSigHashSupported() != changedKeystore.isUnifiedSigHashSupported()) {
+                    keystore.setUnifiedSigHashSupported(changedKeystore.isUnifiedSigHashSupported());
+                    refreshingUnifiedSigHash = true;
+                    try {
+                        unifiedSigHash.setSelected(changedKeystore.isUnifiedSigHashSupported());
+                    } finally {
+                        refreshingUnifiedSigHash = false;
+                    }
+                }
+            }
+        }
+    }
+
     @Subscribe
     public void keystoreLabelsChanged(KeystoreLabelsChangedEvent event) {
         if(event.getWalletId().equals(walletForm.getWalletId())) {

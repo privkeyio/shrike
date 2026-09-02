@@ -977,6 +977,18 @@ public class HeadersController extends TransactionFormController implements Init
      * begin with. Recomputing this wallet's own decision here would answer a different question than the
      * one the transaction is being asked, and would put a second copy of that decision in the view.
      */
+    /**
+     * Recomputes the status once signatures have landed. The declared hash type is only the answer while nothing has
+     * signed yet: a quorum of unmarked cosigners is handed the base type, so a transaction that declared the opt-in
+     * can finish carrying none of it. Reporting the declaration after that would say protected over a transaction
+     * that is not.
+     */
+    private void refreshOptInStatus() {
+        if(headersForm.getPsbt() != null) {
+            updateOptInStatus(sigHash.getValue());
+        }
+    }
+
     private void updateOptInStatus(SigHash psbtSigHash) {
         //Counted off the signatures rather than taken from the declared hash type, because a transaction assembled
         //from per-device PSBTs carries signatures the declaration does not describe
@@ -1278,6 +1290,7 @@ public class HeadersController extends TransactionFormController implements Init
             }
             unencryptedWallet.sign(signingNodes);
             updateSignedKeystores(headersForm.getSigningWallet());
+            refreshOptInStatus();
         } catch(Exception e) {
             log.warn("Failed to Sign", e);
             AppServices.showErrorDialog("Failed to Sign", e.getMessage());
@@ -1813,6 +1826,9 @@ public class HeadersController extends TransactionFormController implements Init
                 finalizePSBT();
                 EventManager.get().post(new FinalizeTransactionEvent(headersForm.getPsbt(), signedWallet));
             }
+
+            //A combine is where a cosigner's signatures arrive, so it is where the count this reports changes
+            refreshOptInStatus();
         }
     }
 

@@ -156,7 +156,24 @@ public enum UnifiedSigHashDecision {
      * fork and commits to the amounts it spends, and one that predates both guarantees.
      */
     public String getSummary() {
+        //The conditional opt-in is the one answer the wallet cannot promise: it holds only where a signer that can
+        //opt in is among those that actually sign, and the user chooses that after this is displayed. Saying
+        //"Replay protected" here states as settled a thing that is still up to them.
+        if(this == OPTED_IN_IF_MARKED_SIGNS) {
+            return "Replay protected if a marked signer signs";
+        }
+
         return summaryFor(isOptedIn());
+    }
+
+    /**
+     * Whether the opt-in this reports is settled, rather than resting on who ends up signing.
+     *
+     * Drives the glyph: a guarantee earns the success mark, a condition does not, and the two reading the same on
+     * sight was how a partially marked multisig looked identical to a fully marked one.
+     */
+    public boolean isGuaranteed() {
+        return isOptedIn() && this != OPTED_IN_IF_MARKED_SIGNS;
     }
 
     /**
