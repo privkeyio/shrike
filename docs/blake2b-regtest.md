@@ -2,7 +2,7 @@
 
 How to run Shrike against a solo regtest chain that activates the BLAKE2b proof of work at a low height, to confirm the wallet connects, syncs, sends and confirms across the activation.
 
-This requires a build of Bitcoin Knots from the `__base_29_blake2` branch, which is not included in this repository. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below.
+This requires a build of Bitcoin Knots at `v29.4.1.knots20260508`, which is not included in this repository. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below.
 
 ## Start the node
 
@@ -50,7 +50,7 @@ cli getblockheader $(cli getblockhash 19) | grep header_version        # 0
 cli getblockheader $(cli getblockhash 20) | grep header_version        # 2
 ```
 
-That field comes from [bitcoinknots PR #363](https://github.com/bitcoinknots/bitcoin/pull/363), which is not yet merged into `__base_29_blake2`, so it is absent on a plain build of that branch. The serialised length check above shows the same transition on any build and is the primary check.
+That field ships in this release, so it is present on a plain build of the tag. Builds from the development branches that predate it do not report it, and there the serialized length check above shows the same transition and is the primary check.
 
 ## Point Shrike at it
 

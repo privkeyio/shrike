@@ -2,7 +2,7 @@
 
 How to run Shrike against a solo regtest chain that activates the fork at a low height, to confirm that transactions it sends after activation opt in to the unified signature hash and that the node accepts them.
 
-This requires a build of Bitcoin Knots at `v29.4.1.knots20260508rc3` or later, which carries the BLAKE2b proof of work and the unified signature hash together. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below. Earlier release candidates define a different signature hash message and will reject what this wallet signs. The setup is the same as [blake2b-regtest.md](blake2b-regtest.md); only the checks at the end differ.
+This requires a build of Bitcoin Knots at `v29.4.1.knots20260508`, the release that carries the BLAKE2b proof of work and the unified signature hash together. Build it separately and substitute its `bitcoind` and `bitcoin-cli` below. Release candidates before rc3 define a different signature hash message and will reject what this wallet signs. The setup is the same as [blake2b-regtest.md](blake2b-regtest.md); only the checks at the end differ.
 
 ## Start the node
 
