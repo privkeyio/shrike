@@ -136,6 +136,71 @@ public class MixedWitnessCombineTest {
         }
     }
 
+    /**
+     * The mirror: a co-signer's PSBT must not add the opt-in either.
+     *
+     * Whether to opt in is this wallet's decision, taken from the chain it follows, and it only declines when it has
+     * a reason to. On a chain that has not reached the activation height an opted-in transaction is one the network
+     * holds and never mines, so honouring an outside byte there hands a counterparty the choice of what we sign.
+     */
+    @Test
+    public void testCombiningDoesNotAddAnOptInThisWalletDeclined() throws Exception {
+        Network.set(Network.MAINNET);
+        PSBT psbt = unsignedPsbt(SigHash.ALL);
+
+        PSBT reply = psbt.copy();
+        for(PSBTInput psbtInput : reply.getPsbtInputs()) {
+            psbtInput.setSigHash(SigHash.UNIFIED_ALL);
+        }
+
+        psbt.combine(reply);
+
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.ALL, psbtInput.getSigHash(),
+                    "an incoming opt-in must not override the decision this wallet took");
+        }
+    }
+
+    /** The output type is still the co-signer's to change; only the opt-in bit is ours. */
+    @Test
+    public void testCombiningStillAdoptsTheIncomingOutputType() throws Exception {
+        Network.set(Network.MAINNET);
+        PSBT psbt = unsignedPsbt(SigHash.ALL);
+
+        PSBT reply = psbt.copy();
+        for(PSBTInput psbtInput : reply.getPsbtInputs()) {
+            psbtInput.setSigHash(SigHash.UNIFIED_NONE);
+        }
+
+        psbt.combine(reply);
+
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.NONE, psbtInput.getSigHash(),
+                    "the output type moves, the opt-in does not");
+        }
+    }
+
+    /** Nothing declared here means there is no decision of this wallet's to preserve. */
+    @Test
+    public void testCombiningTakesTheIncomingTypeWhereNoneWasDeclared() throws Exception {
+        Network.set(Network.MAINNET);
+        PSBT psbt = unsignedPsbt(SigHash.UNIFIED_ALL);
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            psbtInput.setSigHash(null);
+        }
+
+        PSBT reply = psbt.copy();
+        for(PSBTInput psbtInput : reply.getPsbtInputs()) {
+            psbtInput.setSigHash(SigHash.UNIFIED_ALL);
+        }
+
+        psbt.combine(reply);
+
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash());
+        }
+    }
+
     /** A real 2-of-2 P2WSH declaring one hash type, with nothing signed yet. */
     private PSBT unsignedPsbt(SigHash declared) throws Exception {
         Wallet wallet = twoOfTwo();
