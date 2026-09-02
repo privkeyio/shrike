@@ -9,15 +9,15 @@
   <key>CFBundleAllowMixedLocalizations</key>
   <true/>
   <key>CFBundleExecutable</key>
-  <string>Sparrow</string>
+  <string>Shrike</string>
   <key>CFBundleIconFile</key>
-  <string>Sparrow.icns</string>
+  <string>Shrike.icns</string>
   <key>CFBundleIdentifier</key>
-  <string>com.sparrowwallet.sparrow</string>
+  <string>io.privkey.shrike</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Sparrow</string>
+  <string>Shrike</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -36,14 +36,14 @@
   <key>NSCameraUseContinuityCameraDeviceType</key>
   <true/>
   <key>NSCameraUsageDescription</key>
-  <string>Sparrow requires access to the camera in order to scan QR codes</string>
+  <string>Shrike requires access to the camera in order to scan QR codes</string>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Sparrow requires access to the local network in order to connect to your configured server</string>
+  <string>Shrike requires access to the local network in order to connect to your configured server</string>
   <key>CFBundleURLTypes</key>
   <array>
       <dict>
           <key>CFBundleURLName</key>
-          <string>com.sparrowwallet.sparrow.bitcoin</string>
+          <string>io.privkey.shrike.bitcoin</string>
           <key>CFBundleURLSchemes</key>
           <array>
             <string>bitcoin</string>
@@ -51,7 +51,7 @@
       </dict>
       <dict>
           <key>CFBundleURLName</key>
-          <string>com.sparrowwallet.sparrow.auth47</string>
+          <string>io.privkey.shrike.auth47</string>
           <key>CFBundleURLSchemes</key>
           <array>
             <string>auth47</string>
@@ -59,7 +59,7 @@
       </dict>
       <dict>
           <key>CFBundleURLName</key>
-          <string>com.sparrowwallet.sparrow.lightning</string>
+          <string>io.privkey.shrike.lightning</string>
           <key>CFBundleURLSchemes</key>
           <array>
             <string>lightning</string>
@@ -81,7 +81,7 @@
           <key>UTTypeDescription</key>
           <string>Partially Signed Bitcoin Transaction</string>
           <key>UTTypeIconFile</key>
-          <string>sparrow.icns</string>
+          <string>Shrike.icns</string>
       </dict>
       <dict>
           <key>UTTypeIdentifier</key>
@@ -96,11 +96,11 @@
           <key>UTTypeDescription</key>
           <string>Bitcoin Transaction</string>
           <key>UTTypeIconFile</key>
-          <string>sparrow.icns</string>
+          <string>Shrike.icns</string>
       </dict>
       <dict>
           <key>UTTypeIdentifier</key>
-          <string>com.sparrowwallet.asc</string>
+          <string>io.privkey.shrike.asc</string>
           <key>UTTypeTagSpecification</key>
           <dict>
               <key>public.filename-extension</key>
@@ -111,7 +111,7 @@
           <key>UTTypeDescription</key>
           <string>ASCII Armored File</string>
           <key>UTTypeIconFile</key>
-          <string>sparrow.icns</string>
+          <string>Shrike.icns</string>
       </dict>
   </array>
  <key>CFBundleDocumentTypes</key>
@@ -120,7 +120,7 @@
         <key>CFBundleTypeRole</key>
         <string>Editor</string>
         <key>CFBundleTypeIconFile</key>
-        <string>sparrow.icns</string>
+        <string>Shrike.icns</string>
         <key>CFBundleTypeExtensions</key>
         <array>
             <string>psbt</string>
@@ -134,7 +134,7 @@
         <key>CFBundleTypeRole</key>
         <string>Editor</string>
         <key>CFBundleTypeIconFile</key>
-        <string>sparrow.icns</string>
+        <string>Shrike.icns</string>
         <key>CFBundleTypeExtensions</key>
         <array>
             <string>txn</string>

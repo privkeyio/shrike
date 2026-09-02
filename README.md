@@ -1,17 +1,16 @@
 # Shrike
 
-Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows the BLAKE2b proof-of-work hardfork of Bitcoin and signs with the unified opt-in signature hash. It is not Sparrow and is not affiliated with the Sparrow project. Upstream Sparrow follows the chain that kept SHA256d, so use [upstream Sparrow](https://github.com/sparrowwallet/sparrow) if that is the chain you are on.
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows the BLAKE2b proof-of-work hardfork of Bitcoin and signs with the unified opt-in signature hash. It is not affiliated with the Sparrow project. Upstream Sparrow follows the chain that kept SHA256d, so use it instead if that is the chain you are on.
 
 > **Not audited. Use at your own risk, and no warranty of any kind, see the [Apache 2.0 license](LICENSE).** Everything below the divider is upstream's documentation and describes Sparrow rather than Shrike.
 
 ## What differs from Sparrow
 
-- **BLAKE2b proof of work.** Parses and validates the 164 byte v2 block header, and past activation takes the BLAKE2b hash as the block id rather than SHA256d. Implemented in the [drongo](https://github.com/privkeyio/drongo) submodule.
-- **Unified opt-in signature hash.** Signs with hash type `0x21` past activation. Such a signature is invalid under the pre-fork rules, which is what makes it unreplayable. Where it cannot opt in the wallet signs the legacy way and says so on the send screen rather than failing silently.
-- **Per-keystore opt-in for signers the wallet cannot see.** Nothing a device reports tells the wallet whether its firmware implements the opt-in, and a watch only keystore says nothing about what signs for it, so each is marked by hand under Replay protection. A keystore that signs from a key the wallet holds needs no mark. One marked signer is enough to opt in, because a transaction carrying a single opted-in signature cannot be replayed whatever the rest carry. Unmarked signers are not turned away: each is handed the hash type it can produce, and its signature combines with the opted-in ones.
-- **Separate application identity.** Installs and runs alongside an existing Sparrow without sharing state. Configuration, wallets and logs live in `~/.shrike`, the Linux packages are `shrike` and `shrikeserver` under their own prefix, and the two have separate desktop entries, MIME types and single instance locks.
-- **Nothing that follows the other chain is offered.** A service on the chain that kept SHA256d holds neither this chain's blocks nor its mempool past activation, so a block lookup finds nothing, a fee estimate prices against a mempool this wallet never broadcasts into, and a broadcast puts the transaction on the other chain. Fee rates, explorer links and broadcast all use mempool.guide, and the preconfigured public Electrum servers are gone because none of them index this chain.
-- **Only Knots can corroborate the schedule.** The activation height is read from `getdeploymentinfo`, which only Knots reports. Connect a Knots node, or your own Electrum server indexing one. Through an Electrum server the wallet still opts in, because declining whenever a server cannot answer would forgo the protection on every such connection, and the send screen says the height went unchecked.
+- **BLAKE2b proof of work.** Validates the 164 byte v2 block header and takes the BLAKE2b hash as the block id past activation. Implemented in the [drongo](https://github.com/privkeyio/drongo) submodule.
+- **Unified opt-in signature hash.** Signs with hash type `0x21` past activation, which is invalid under the pre-fork rules and is what makes it unreplayable. Where it cannot opt in, the wallet signs the legacy way and says so on the send screen.
+- **Per-keystore opt-in.** Nothing a device or a watch only keystore reports says what will sign for it, so each is marked by hand under Replay protection. A keystore holding its own key needs no mark. One marked signer is enough, and unmarked signers still sign: each is handed the hash type it can produce.
+- **Nothing that follows the other chain is offered.** Fee rates, explorer links and broadcast use mempool.guide; the preconfigured public Electrum servers are gone, because none of them index this chain. Connect a Knots node, or your own Electrum server indexing one.
+- **Separate application identity.** Installs alongside an existing Sparrow without sharing state: `~/.shrike`, its own packages, desktop entries, MIME types and macOS bundle identifier.
 
 ## Activation
 
@@ -20,44 +19,37 @@ Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/spar
 | mainnet | 961,640 |
 | testnet4 | 150,308 |
 
-Where the connected node reports a height of its own, the compiled-in one is cross checked against it, and on a disagreement the wallet declines to opt in rather than following either value.
+The compiled-in height is cross checked against the connected node where it reports one, and a disagreement declines to opt in rather than following either. Only Knots reports it, through `getdeploymentinfo`; through anything else the wallet still opts in and says the height went unchecked.
 
 ## Replay protection
 
-A signature that does not opt in is valid under the pre-fork rules as well as the new ones, so it can be replayed against nodes that have not adopted the fork. Opting in is what prevents that.
-
-Check the send screen before building anything. The opt-in is selected by default, and this is what it looks like in effect:
+A signature that does not opt in is valid under both rule sets, so it can be replayed against nodes that have not adopted the fork. **Check the send screen before building anything.** The opt-in is selected by default:
 
 ![The send screen reporting a transaction as replay protected](docs/images/send-replay-protected.png)
 
-Where it reads this instead, hovering the status names which of the chain, the node or a keystore is refusing, and what to do about it where there is anything to do:
+Where it reads this instead, hovering the status names what is refusing and what to do about it:
 
 ![The send screen reporting a transaction as not replay protected](docs/images/send-not-replay-protected.png)
 
-Where a hardware signer is the reason, mark it in the keystore tab of the wallet settings. Nothing a device reports says which firmware it runs, so this is what its owner tells the wallet rather than something detected, and it is off until they say otherwise:
+**In a multisig** one marked signer is enough. Mark two of a 2-of-3 and every transaction opts in; mark one and the opt-in depends on that signer taking part, which the wallet says rather than promising in advance.
 
-![The Replay protection field in the keystore tab, marked as supported by this device](docs/images/keystore-replay-protection.png)
+**The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent on the other chain even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
 
-**In a multisig** one marked signer is enough, and every signer can still sign. Mark two of a 2-of-3 and no quorum exists without a marked signer, so every transaction the wallet can make opts in. Mark one and the other two could meet the threshold between them, so the opt-in depends on the marked signer taking part; the wallet says that rather than claiming the protection in advance.
-
-The one exception is a signature that signs Anyone Can Pay, which commits only to its own input and to the outputs rather than to the whole transaction. That input can be lifted out and spent on the chain that kept SHA256d even though the transaction it came from cannot, so where a transaction carries any, the send screen names them. Shrike never chooses Anyone Can Pay by itself, which is upstream Sparrow's behavior and not a restriction added here: select it and Shrike signs it, opted in where the wallet is opting in.
-
-Coins held across activation are only separated once they have been spent with an opted-in signature, and a spend only covers the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
+Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting on the chain that kept SHA256d.
 
 ## Building
 
-As upstream, except that the submodules must come from this fork, so clone this repository rather than upstream's:
+Clone this repository rather than upstream's, and `--recursive` matters: the BLAKE2b work lives in the drongo submodule.
 
 ```bash
 git clone --recursive https://github.com/privkeyio/shrike.git
-cd shrike
 ```
 
-`--recursive` matters: the BLAKE2b work lives in the drongo submodule and a plain clone leaves it empty. Cloning over SSH additionally needs an ssh-agent holding your key, or the submodules fail with `Permission denied (publickey)` even though the parent clone succeeded. Java requirements and the build itself are unchanged, see [Building](#building-1) below.
+Java requirements and the build itself are unchanged, see [Building](#building-1) below.
 
 ## Releases
 
-Builds for Linux, Windows and macOS are published under [Releases](https://github.com/privkeyio/shrike/releases) with a signed `SHA256SUMS` covering every file:
+Published under [Releases](https://github.com/privkeyio/shrike/releases) with a signed `SHA256SUMS` covering every file:
 
 ```bash
 gpg --import privkeyio-signing-key.asc
@@ -67,21 +59,17 @@ sha256sum --ignore-missing -c SHA256SUMS
 
 Signed by Kyle Santiago <kyle@privkey.io>, key `A47D99B6DB0D715D40C59A2023AE8A8EA7E24E38`.
 
-The macOS builds are not code signed or notarized, and the Windows installer is not Authenticode signed. On macOS the app will be reported as damaged or from an unidentified developer on first launch, which means it is unsigned rather than that anything is wrong with the download. Verify `SHA256SUMS` first, because clearing quarantine removes the check that would otherwise stop a tampered download:
+The macOS builds are not notarized and the Windows installer is not Authenticode signed, so both are reported as untrusted on first launch. Verify `SHA256SUMS` first, because clearing quarantine removes the check that would otherwise stop a tampered download:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Shrike.app
 ```
 
-Only the Linux packaging carries the fork's identity so far. The macOS bundle metadata still uses upstream's identifiers.
-
-## Verification
-
-The drongo tests check every stage of the proof-of-work pipeline against the reference implementation's own vectors, and the wallet has been verified end to end against a live forked regtest node. Both are reproducible: see [blake2b-regtest.md](docs/blake2b-regtest.md) and [unified-sighash-regtest.md](docs/unified-sighash-regtest.md).
+Reproducible: see [reproducible.md](docs/reproducible.md). The proof of work and the signature hash are verified end to end against a live forked regtest node, see [blake2b-regtest.md](docs/blake2b-regtest.md) and [unified-sighash-regtest.md](docs/unified-sighash-regtest.md).
 
 ## Reporting issues
 
-Use the [Issues](https://github.com/privkeyio/shrike/issues) tab for problems specific to this fork. Anything not specific to the fork belongs [upstream](https://github.com/sparrowwallet/sparrow/issues) instead.
+Use the [Issues](https://github.com/privkeyio/shrike/issues) tab for problems specific to this fork. Anything else belongs [upstream](https://github.com/sparrowwallet/sparrow/issues).
 
 ## Credit
 
