@@ -17,9 +17,12 @@ import javafx.scene.control.Tooltip;
  */
 public class UnifiedSigHashStatusLabel extends Label {
     public UnifiedSigHashStatusLabel(UnifiedSigHashScheduleEvent event) {
-        getStyleClass().add("unified-sighash-status");
         setPadding(OsType.getCurrent() == OsType.WINDOWS ? new Insets(0, 0, 1, 3) : new Insets(1, 0, 0, 3));
         setGraphic(GlyphUtils.getWarningGlyph());
+        //Shown only on a disagreement, which is the state where nothing this wallet sends opts in. That is worth
+        //words rather than an unlabelled icon: the tooltip explains why, but a warning triangle on its own leaves
+        //the one consequence that matters to be discovered by hovering.
+        setText("No replay protection");
         update(event);
     }
 

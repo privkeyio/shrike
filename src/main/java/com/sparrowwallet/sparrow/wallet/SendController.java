@@ -1585,6 +1585,24 @@ public class SendController extends WalletFormController implements Initializabl
      * saying the two disagree while the transaction it builds is opted in. The label and the PSBT then say
      * different things about the same send, and the label is the one that is wrong.
      */
+    /**
+     * The mark is the other input to this status, and it can be changed while a transaction is drafted: from the
+     * keystore tab, or from the status label on this very screen. Without this the send screen keeps reporting the
+     * answer the mark used to give, and it is stale in the unsafe direction, still saying protected after the
+     * keystore that was providing it has been unmarked.
+     */
+    @Subscribe
+    public void keystoreUnifiedSigHashChanged(KeystoreUnifiedSigHashChangedEvent event) {
+        if(event.getWalletId().equals(getWalletForm().getWalletId())) {
+            if(!Platform.isFxApplicationThread()) {
+                Platform.runLater(() -> keystoreUnifiedSigHashChanged(event));
+                return;
+            }
+
+            updateOptInStatus(walletTransactionProperty.get());
+        }
+    }
+
     @Subscribe
     public void unifiedSigHashSchedule(UnifiedSigHashScheduleEvent event) {
         //EventBus dispatches on the thread that posted, which here is whichever thread dropped a connection or read

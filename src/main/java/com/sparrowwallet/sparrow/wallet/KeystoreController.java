@@ -408,8 +408,10 @@ public class KeystoreController extends WalletFormController implements Initiali
         //nothing to declare for those. Refreshed here rather than at setup so that replacing the keystore with
         //another source shows the right thing
         unifiedSigHashField.setVisible(AppServices.canBeMarked(keystore));
+        //Phrased as the owner's confirmation, because that is what it is. The wallet cannot detect this, and a
+        //control reading "Supported by this device" states it as a fact the wallet established.
         unifiedSigHash.setText(keystore.getSource().isHardware()
-                ? "Supported by this device" : "Supported by the signer for this keystore");
+                ? "I confirm this device supports it" : "I confirm the signer for this keystore supports it");
         refreshingUnifiedSigHash = true;
         try {
             unifiedSigHash.setSelected(keystore.isUnifiedSigHashSupported());

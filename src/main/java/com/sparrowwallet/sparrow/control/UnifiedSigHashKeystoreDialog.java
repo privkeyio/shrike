@@ -38,13 +38,11 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
                 A device reports its model but not its firmware, so only you can say which of these support the \
                 opt-in.
 
-                Leave one unmarked if you are unsure. A device marked that does not support it signs nothing rather \
-                than falling back. This applies to transactions created from now on.""");
+                Leave a signer unmarked if you are unsure. If you mark one that does not support the opt-in, it will \
+                refuse to sign rather than fall back. This applies to transactions created from now on.""");
         dialogPane.getStylesheets().add(AppServices.class.getResource("general.css").toExternalForm());
         dialogPane.getButtonTypes().addAll(ButtonType.CANCEL);
         dialogPane.setPrefWidth(560);
-        //Sized for the header, a line per keystore and the line counting them. A fixed height clipped the counting
-        //line once it was added, and clipped further the more keystores a wallet holds.
         //Sized for the header, a line per keystore and the line counting them, so nothing is clipped and nothing
         //is left as empty space below the buttons
         dialogPane.setPrefHeight(255 + (wallet.getKeystores().size() * 30));

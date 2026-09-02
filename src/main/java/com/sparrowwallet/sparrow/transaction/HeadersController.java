@@ -1025,7 +1025,9 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         if(everySignature || signatures == 0) {
-            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.";
+            //"the amount it spends" rather than "the amounts they spend": an Anyone Can Pay signature commits to its
+            //own input's amount and no other, so the blanket claim was not true of one.
+            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.";
         }
 
         String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "

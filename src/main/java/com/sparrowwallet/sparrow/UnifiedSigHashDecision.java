@@ -42,7 +42,7 @@ public enum UnifiedSigHashDecision {
     /**
      * The tip is not a v2 header, so the proof of work change is not live and neither is this.
      */
-    CHAIN_NOT_ACTIVATED("the chain has not activated it"),
+    CHAIN_NOT_ACTIVATED("the fork is not active on this chain yet"),
 
     /**
      * No tip to read at all, which is every offline session and the moment before the first one arrives.

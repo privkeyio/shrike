@@ -485,6 +485,11 @@ public class PrivateKeySweepDialog extends Dialog<Transaction> {
             psbtInput.setWitnessUtxo(utxoOutput);
         }
 
+        //A swept key signs here, from a key this dialog holds, so there is no device to be marked and nothing to
+        //declare for: the chain is the whole question. Without this the sweep was the one signing path in the
+        //application that never opted in, and it said nothing about it either.
+        AppServices.applyUnifiedSigHash(psbt, AppServices.isUnifiedSigHashActive());
+
         for(int i = 0; i < txOutputs.size(); i++) {
             TransactionOutput utxoOutput = txOutputs.get(i);
             TransactionInput txInput = transaction.getInputs().get(i);

@@ -1307,8 +1307,9 @@ public class AppServices {
     /**
      * Creates the PSBT for a transaction being sent, opting in to the unified signature hash where the
      * chain has it and this wallet holds the keys. Every wallet send path goes through here so the
-     * decision is made in one place; the private key sweep builds its own PSBT from a key that is not in
-     * a wallet, and keeps signing the way it does today.
+     * decision is made in one place. The private key sweep builds its own PSBT from a key that is not in
+     * a wallet, so it cannot come through here; it asks the chain the same question directly, since a key
+     * it holds has no signer to declare for.
      *
      * The wallet does not offer a control for forcing this on. Every input to the decision that it can
      * establish, it establishes more reliably than a person: whether the chain has reached the height,
@@ -1343,7 +1344,7 @@ public class AppServices {
         return applyUnifiedSigHash(walletTransaction.createPSBT(), active);
     }
 
-    static PSBT applyUnifiedSigHash(PSBT psbt, boolean active) {
+    public static PSBT applyUnifiedSigHash(PSBT psbt, boolean active) {
         if(active) {
             for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
                 SigHash sigHash = psbtInput.getSigHash();
