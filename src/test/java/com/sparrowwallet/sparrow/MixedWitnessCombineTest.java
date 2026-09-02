@@ -85,6 +85,57 @@ public class MixedWitnessCombineTest {
         }
     }
 
+    /**
+     * Checking each signature against the type it names must not become "any type verifies".
+     *
+     * The opt-in bit is the only thing a signer may differ on, because it is the only thing this wallet varies per
+     * signer. A signature over SIGHASH_NONE commits to no outputs at all, so accepting one where ALL was asked for
+     * would finalise a transaction anyone could redirect.
+     */
+    @Test
+    public void testASignatureOverATypeNobodyAskedForIsRefused() throws Exception {
+        Network.set(Network.MAINNET);
+        PSBT psbt = mixedWitnessPsbt(SigHash.ALL, SigHash.NONE);
+
+        //Both keys signed, over two different output types
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt)[1]);
+
+        Assertions.assertThrows(PSBTSignatureException.class, psbt::verifySignatures,
+                "a signature over a type the input never asked for must not verify");
+    }
+
+    /** The opt-in still travels with the declared type, which is the whole point of the per signature check. */
+    @Test
+    public void testTheOptInBitIsTheOneThingASignerMayDifferOn() throws Exception {
+        Network.set(Network.MAINNET);
+        //UNIFIED_ALL declared, one signature 0x21 and one 0x01: the shape psbtForDevice produces
+        mixedWitnessPsbt(SigHash.UNIFIED_ALL, SigHash.ALL).verifySignatures();
+        mixedWitnessPsbt(SigHash.ALL, SigHash.UNIFIED_ALL).verifySignatures();
+    }
+
+    /**
+     * A signer that answers with a different output type than it was handed must not clear the opt-in either. A
+     * taproot signer returning DEFAULT where ALL was asked for is the ordinary case, and matching only on the exact
+     * base type let that one through.
+     */
+    @Test
+    public void testAnUnrelatedTypeDoesNotClearTheOptIn() throws Exception {
+        Network.set(Network.MAINNET);
+        PSBT psbt = unsignedPsbt(SigHash.UNIFIED_ALL);
+
+        PSBT reply = psbt.copy();
+        for(PSBTInput psbtInput : reply.getPsbtInputs()) {
+            psbtInput.setSigHash(SigHash.DEFAULT);
+        }
+
+        psbt.combine(reply);
+
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash(),
+                    "the opt-in survives a reply declaring any type without the bit");
+        }
+    }
+
     /** A real 2-of-2 P2WSH declaring one hash type, with nothing signed yet. */
     private PSBT unsignedPsbt(SigHash declared) throws Exception {
         Wallet wallet = twoOfTwo();

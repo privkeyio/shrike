@@ -584,10 +584,14 @@ public class HeadersController extends TransactionFormController implements Init
                     SigHash chosen = newValue == SigHash.DEFAULT && !psbtInput.isTaproot() ? SigHash.ALL : newValue;
                     //The control offers one type for the whole transaction and its items are all opted in or all not,
                     //taken from the first input that declares one. A PSBT can carry a different type per input, so
-                    //writing the chosen one straight out would strip the opt-in from any other input that had it.
-                    //What is being chosen here is the output type; whether an input opted in stays the input's own.
+                    //writing the chosen one straight out moves the opt-in on any input that differs from the first.
+                    //What is being chosen here is the output type; whether an input opted in stays the input's own,
+                    //in both directions.
                     SigHash existing = psbtInput.getSigHash();
-                    psbtInput.setSigHash(existing != null && existing.isUnified() ? chosen.withUnified() : chosen);
+                    if(existing != null) {
+                        chosen = existing.isUnified() ? chosen.withUnified() : chosen.withoutUnified();
+                    }
+                    psbtInput.setSigHash(chosen);
                 }
             });
 
@@ -976,14 +980,6 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     /**
-     * Shows what the transaction's signatures do, and nothing about why.
-     *
-     * Deliberately without a reason. A PSBT records only the hash type its inputs carry, so the reason a
-     * particular one was not opted in is not in it to read, and a PSBT from a co-signer never had one to
-     * begin with. Recomputing this wallet's own decision here would answer a different question than the
-     * one the transaction is being asked, and would put a second copy of that decision in the view.
-     */
-    /**
      * Recomputes the status once signatures have landed. The declared hash type is only the answer while nothing has
      * signed yet: a quorum of unmarked cosigners is handed the base type, so a transaction that declared the opt-in
      * can finish carrying none of it. Reporting the declaration after that would say protected over a transaction
@@ -995,6 +991,14 @@ public class HeadersController extends TransactionFormController implements Init
         }
     }
 
+    /**
+     * Shows what the transaction's signatures do, and nothing about why.
+     *
+     * Deliberately without a reason. A PSBT records only the hash type its inputs carry, so the reason a
+     * particular one was not opted in is not in it to read, and a PSBT from a co-signer never had one to
+     * begin with. Recomputing this wallet's own decision here would answer a different question than the
+     * one the transaction is being asked, and would put a second copy of that decision in the view.
+     */
     private void updateOptInStatus(SigHash psbtSigHash) {
         //Counted off the signatures rather than taken from the declared hash type, because a transaction assembled
         //from per-device PSBTs carries signatures the declaration does not describe

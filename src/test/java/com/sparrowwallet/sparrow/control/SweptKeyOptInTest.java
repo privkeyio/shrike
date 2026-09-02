@@ -1,6 +1,7 @@
-package com.sparrowwallet.sparrow;
+package com.sparrowwallet.sparrow.control;
 
 import com.sparrowwallet.drongo.Network;
+import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.drongo.crypto.ECKey;
 import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.protocol.*;
@@ -25,9 +26,7 @@ public class SweptKeyOptInTest {
     public void testASweptKeySignsTheOptInWhenTheChainHasIt() throws Exception {
         Network.set(Network.MAINNET);
         ECKey privKey = ECKey.fromPrivate(new java.math.BigInteger(1, com.sparrowwallet.drongo.Utils.hexToBytes("a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90")), true);
-        PSBT psbt = sweepShapedPsbt(privKey);
-
-        AppServices.applyUnifiedSigHash(psbt, true);
+        PSBT psbt = sweepPsbtFor(privKey, true);
 
         PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
         Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash());
@@ -47,9 +46,7 @@ public class SweptKeyOptInTest {
     public void testASweptKeySignsTheOldWayWhereTheChainHasNot() throws Exception {
         Network.set(Network.MAINNET);
         ECKey privKey = ECKey.fromPrivate(new java.math.BigInteger(1, com.sparrowwallet.drongo.Utils.hexToBytes("a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90")), true);
-        PSBT psbt = sweepShapedPsbt(privKey);
-
-        AppServices.applyUnifiedSigHash(psbt, false);
+        PSBT psbt = sweepPsbtFor(privKey, false);
 
         PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
         Assertions.assertNull(psbtInput.getSigHash(), "nothing declared, which signs the default");
@@ -59,8 +56,8 @@ public class SweptKeyOptInTest {
         psbt.verifySignatures();
     }
 
-    /** The shape PrivateKeySweepDialog builds: one input spending a key it holds, one output, witness UTXO set. */
-    private PSBT sweepShapedPsbt(ECKey privKey) {
+    /** Built through the dialog's own seam, so removing the opt-in from it fails these. */
+    private PSBT sweepPsbtFor(ECKey privKey, boolean optedIn) {
         Script spk = ScriptType.P2WPKH.getOutputScript(PolicyType.SINGLE_HD, privKey);
 
         Transaction transaction = new Transaction();
@@ -68,8 +65,7 @@ public class SweptKeyOptInTest {
         transaction.addInput(Sha256Hash.wrap("0000000000000000000000000000000000000000000000000000000000000001"), 0, new Script(new byte[0]));
         transaction.addOutput(90000L, spk);
 
-        PSBT psbt = new PSBT(transaction);
-        psbt.getPsbtInputs().getFirst().setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
-        return psbt;
+        return PrivateKeySweepDialog.sweepPsbt(transaction,
+                java.util.List.of(new TransactionOutput(null, 100000L, spk.getProgram())), optedIn);
     }
 }

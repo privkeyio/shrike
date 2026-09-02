@@ -821,18 +821,36 @@ public class KeystoreController extends WalletFormController implements Initiali
      */
     @Subscribe
     public void keystoreUnifiedSigHashChanged(KeystoreUnifiedSigHashChangedEvent event) {
-        if(event.getWalletId().equals(walletForm.getWalletId())) {
-            for(Keystore changedKeystore : event.getChangedKeystores()) {
-                if(changedKeystore.getExtendedPublicKey() != null && keystore.getExtendedPublicKey() != null
-                        && changedKeystore.getExtendedPublicKey().equals(keystore.getExtendedPublicKey())
-                        && keystore.isUnifiedSigHashSupported() != changedKeystore.isUnifiedSigHashSupported()) {
-                    keystore.setUnifiedSigHashSupported(changedKeystore.isUnifiedSigHashSupported());
-                    refreshingUnifiedSigHash = true;
-                    try {
-                        unifiedSigHash.setSelected(changedKeystore.isUnifiedSigHashSupported());
-                    } finally {
-                        refreshingUnifiedSigHash = false;
-                    }
+        if(!event.getWalletId().equals(walletForm.getWalletId())) {
+            return;
+        }
+
+        //EventBus dispatches on the thread that posted. Both posters are on the FX thread today, and this touches the
+        //scene graph, so it says so rather than resting on that staying true.
+        if(!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> keystoreUnifiedSigHashChanged(event));
+            return;
+        }
+
+        //Matched by position, because the diff this exists to protect matches by position too
+        //(SettingsWalletForm.getUnifiedSigHashChangedKeystores walks both keystore lists by index). Matching on the
+        //extended public key instead would silently do nothing whenever the copy's key has been edited in this very
+        //tab, which is exactly when the stale value is about to be written back.
+        int index = walletForm.getWallet().getKeystores().indexOf(keystore);
+        if(index < 0) {
+            return;
+        }
+
+        List<Keystore> eventKeystores = event.getWallet().getKeystores();
+        for(Keystore changedKeystore : event.getChangedKeystores()) {
+            if(eventKeystores.indexOf(changedKeystore) == index
+                    && keystore.isUnifiedSigHashSupported() != changedKeystore.isUnifiedSigHashSupported()) {
+                keystore.setUnifiedSigHashSupported(changedKeystore.isUnifiedSigHashSupported());
+                refreshingUnifiedSigHash = true;
+                try {
+                    unifiedSigHash.setSelected(changedKeystore.isUnifiedSigHashSupported());
+                } finally {
+                    refreshingUnifiedSigHash = false;
                 }
             }
         }

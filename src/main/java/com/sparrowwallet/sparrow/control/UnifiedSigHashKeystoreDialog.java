@@ -60,7 +60,11 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
         //hardware here left the send screen offering a remedy this dialog had no control for.
         for(Keystore keystore : wallet.getKeystores()) {
             if(AppServices.canBeMarked(keystore)) {
-                CheckBox mark = new CheckBox(keystore.getLabel() + " (" + keystore.getWalletModel().toDisplayString() + ")");
+                //The parenthetical names the device. A watch only keystore has no device, and its walletModel defaults to
+                //the application's own name, which read as though Sparrow were the signer.
+                CheckBox mark = new CheckBox(keystore.getSource().isHardware()
+                        ? keystore.getLabel() + " (" + keystore.getWalletModel().toDisplayString() + ")"
+                        : keystore.getLabel());
                 mark.setSelected(keystore.isUnifiedSigHashSupported());
                 marks.put(keystore, mark);
                 content.getChildren().add(mark);

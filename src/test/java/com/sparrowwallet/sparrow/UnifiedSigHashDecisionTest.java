@@ -2,6 +2,7 @@ package com.sparrowwallet.sparrow;
 
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.Utils;
+import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
@@ -45,6 +46,19 @@ public class UnifiedSigHashDecisionTest {
 
     private BlockHeader header(String hex) {
         return new BlockHeader(Utils.hexToBytes(hex), 0);
+    }
+
+    private Wallet multisigWith(int threshold, KeystoreSource... sources) {
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(KeystoreSource source : sources) {
+            Keystore keystore = new Keystore();
+            keystore.setSource(source);
+            wallet.getKeystores().add(keystore);
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), threshold));
+        return wallet;
     }
 
     private Wallet walletWith(KeystoreSource... sources) {
@@ -249,6 +263,48 @@ public class UnifiedSigHashDecisionTest {
             } else {
                 Assertions.assertNotNull(decision.getReason(), decision + " declined, so it owes a reason");
             }
+        }
+    }
+
+    /**
+     * Both caveats are reported, not only the one the headline came from.
+     *
+     * On an Electrum connection no server reports an activation height, so an opt-in there is always uncorroborated;
+     * a partially marked multisig adds its own. The decision can carry one of the two, and reporting only that one
+     * left the common configuration never told that a quorum of signers which cannot opt in produces no protection
+     * at all. The suffix naming the signers belongs to the quorum caveat alone: after the other it names nothing.
+     */
+    @Test
+    public void testEveryCaveatIsReportedNotOnlyTheHeadlines() {
+        Network.set(Network.TESTNET4);
+        try {
+            //A tip past activation with a fork header, and no node schedule, which is every Electrum connection
+            AppServices.setAnnouncedTip(new ChainTip(ACTIVATION, header(V2_HEADER_HEX)));
+            AppServices.clearNodeHardforkHeight();
+
+            Wallet conditional = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+            conditional.getKeystores().get(0).setLabel("Coldcard");
+            conditional.getKeystores().get(0).setUnifiedSigHashSupported(true);
+
+            AppServices.UnifiedSigHashStatus status = AppServices.getUnifiedSigHashStatus(conditional);
+            Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS, status.decision(),
+                    "the weaker of the two claims is the headline");
+            Assertions.assertEquals(2, status.caveats().size(),
+                    "both the quorum caveat and the uncorroborated one apply: " + status.caveats());
+
+            //The quorum caveat comes first and carries the signer names; the chain caveat carries none
+            Assertions.assertTrue(status.caveats().get(0).contains("Coldcard"), status.caveats().get(0));
+            Assertions.assertFalse(status.caveats().get(1).contains("Coldcard"), status.caveats().get(1));
+            Assertions.assertTrue(status.caveats().get(1).contains("activation height"), status.caveats().get(1));
+
+            //A fully marked wallet on the same connection carries the chain caveat only
+            Wallet marked = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+            marked.getKeystores().forEach(keystore -> keystore.setUnifiedSigHashSupported(true));
+            AppServices.UnifiedSigHashStatus markedStatus = AppServices.getUnifiedSigHashStatus(marked);
+            Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, markedStatus.decision());
+            Assertions.assertEquals(1, markedStatus.caveats().size(), markedStatus.caveats().toString());
+        } finally {
+            AppServices.setAnnouncedTip(null);
         }
     }
 

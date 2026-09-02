@@ -1094,6 +1094,9 @@ public class SendController extends WalletFormController implements Initializabl
         }
     }
 
+    //Guards the re-entrancy described on updateOptInStatus below
+    private boolean updatingOptInStatus;
+
     /**
      * Shows what this transaction's signatures will do and, where the wallet declined, why.
      *
@@ -1102,6 +1105,24 @@ public class SendController extends WalletFormController implements Initializabl
      * the same call decides what createPSBT will do when this transaction is created.
      */
     private void updateOptInStatus(WalletTransaction walletTransaction) {
+        //Asking for the decision can post a UnifiedSigHashScheduleEvent, which EventBus dispatches synchronously and
+        //this controller subscribes to, so this method can re-enter itself. It terminates today only because the
+        //report those posts are keyed on has already been recorded by the time the inner call runs, which makes a
+        //dedupe written for log noise load bearing for termination. Said here instead, and the inner pass would
+        //render the label only for the outer one to overwrite it.
+        if(updatingOptInStatus) {
+            return;
+        }
+
+        updatingOptInStatus = true;
+        try {
+            renderOptInStatus(walletTransaction);
+        } finally {
+            updatingOptInStatus = false;
+        }
+    }
+
+    private void renderOptInStatus(WalletTransaction walletTransaction) {
         if(walletTransaction == null) {
             optInStatus.setVisible(false);
             optInStatus.setTooltip(null);
@@ -1131,7 +1152,7 @@ public class SendController extends WalletFormController implements Initializabl
 
         StringBuilder detail = new StringBuilder();
         if(decision.isOptedIn()) {
-            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.");
+            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.");
             //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
             //partially marked multisig has two, and the one the headline dropped is the actionable one
             for(String caveat : status.caveats()) {
@@ -1171,8 +1192,9 @@ public class SendController extends WalletFormController implements Initializabl
             keystore.setUnifiedSigHashSupported(dialog.isMarked(keystore));
         }
 
+        //Dispatched synchronously, and this controller subscribes to it, so that handler is what refreshes the
+        //status. Calling it here as well rendered the label twice for one change.
         EventManager.get().post(new KeystoreUnifiedSigHashChangedEvent(wallet, pastWallet, getWalletForm().getWalletId(), changed.get()));
-        updateOptInStatus(walletTransactionProperty.get());
     }
 
     public void clear(ActionEvent event) {
@@ -1580,13 +1602,6 @@ public class SendController extends WalletFormController implements Initializabl
     }
 
     /**
-     * The status describes a decision made from the chain tip and the node's schedule, neither of which this
-     * controller owns. Rendered only when the transaction changed, it goes stale the moment either moves: a node
-     * upgraded mid-session reports a new activation height, the disagreement clears, and the screen carries on
-     * saying the two disagree while the transaction it builds is opted in. The label and the PSBT then say
-     * different things about the same send, and the label is the one that is wrong.
-     */
-    /**
      * The mark is the other input to this status, and it can be changed while a transaction is drafted: from the
      * keystore tab, or from the status label on this very screen. Without this the send screen keeps reporting the
      * answer the mark used to give, and it is stale in the unsafe direction, still saying protected after the
@@ -1604,6 +1619,13 @@ public class SendController extends WalletFormController implements Initializabl
         }
     }
 
+    /**
+     * The status describes a decision made from the chain tip and the node's schedule, neither of which this
+     * controller owns. Rendered only when the transaction changed, it goes stale the moment either moves: a node
+     * upgraded mid-session reports a new activation height, the disagreement clears, and the screen carries on
+     * saying the two disagree while the transaction it builds is opted in. The label and the PSBT then say
+     * different things about the same send, and the label is the one that is wrong.
+     */
     @Subscribe
     public void unifiedSigHashSchedule(UnifiedSigHashScheduleEvent event) {
         //EventBus dispatches on the thread that posted, which here is whichever thread dropped a connection or read
