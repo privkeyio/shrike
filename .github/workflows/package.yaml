@@ -91,11 +91,14 @@ jobs:
 
   checksums:
     needs: build
-    # The macOS arms fail without codesigning secrets and fail-fast is false, so this must not be
-    # skipped by the matrix job's overall result. It still stands down for a cancelled run.
+    # Runs even where a build job failed, so that a matrix arm failing for want of codesigning secrets
+    # does not skip this. That also means it can see an incomplete set of artifacts, so the manifest it
+    # writes is checked for completeness below rather than published short. It stands down for a
+    # cancelled run.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Download all build artifacts
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -135,6 +138,9 @@ jobs:
 
           echo "$(wc -l < SHA256SUMS) entries"
           cat SHA256SUMS
+      - name: Verify the manifest covers every platform
+        shell: bash
+        run: ./.github/scripts/verify-manifest.sh SHA256SUMS
       - name: Upload SHA256SUMS
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
