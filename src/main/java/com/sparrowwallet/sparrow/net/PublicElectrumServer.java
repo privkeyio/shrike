@@ -35,11 +35,11 @@ public enum PublicElectrumServer {
     }
 
     /*
-        Empty, so the public server option is never offered. Every server listed above follows the chain that kept
-        SHA256d, and connecting to one would show this wallet a different chain's blocks and balances entirely,
-        which is the worst of the wrong-chain failures rather than the mildest. No public Electrum server follows
-        this chain, so the honest answer is to have none rather than to offer one that misleads. Connect a Knots
-        node, or a private Electrum server indexing it. The entries are left in place rather than deleted so that
+        Empty, so the public server option is never offered. No server listed above has adopted the fork, and
+        connecting to one would show this wallet blocks and balances that diverge past the activation height,
+        which is the worst of these failures rather than the mildest. Since none of them has, the honest answer
+        is to offer none rather than one that misleads. Connect a Knots node, or a private Electrum server
+        indexing it. The entries are left in place rather than deleted so that
         upstream changes to this file continue to merge.
      */
     public static final List<Network> SUPPORTED_NETWORKS = List.of();

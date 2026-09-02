@@ -12,8 +12,8 @@ import java.lang.reflect.Field;
  *
  * Nothing sanitized the stored type at load. Config.getServer reads it and returns the stored public server,
  * and the connection is made from AppServices.start, which runs before any settings screen could correct it.
- * So an upgrading user who was on a public server would have silently connected to one on the chain that kept
- * SHA256d, which is the worst of the wrong-chain failures rather than the mildest.
+ * So an upgrading user who was on a public server would have silently connected to one that has not adopted
+ * the fork, which is the worst of these failures rather than the mildest.
  */
 public class StoredServerTypeTest {
     private Config configWith(ServerType stored, Server core, Server electrum) throws Exception {
@@ -44,7 +44,7 @@ public class StoredServerTypeTest {
         Server core = new Server("http://127.0.0.1:8332");
         Assertions.assertEquals(ServerType.BITCOIN_CORE,
                 migrated(configWith(ServerType.PUBLIC_ELECTRUM_SERVER, core, null)),
-                "a node is configured, so use it rather than a public server on the other chain");
+                "a node is configured, so use it rather than a public server that has not adopted the fork");
 
         Server electrum = new Server("ssl://127.0.0.1:50002");
         Assertions.assertEquals(ServerType.ELECTRUM_SERVER,

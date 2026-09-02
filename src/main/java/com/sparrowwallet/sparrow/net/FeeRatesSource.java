@@ -28,7 +28,7 @@ public enum FeeRatesSource {
     },
     /*
         A mempool instance that follows the BLAKE2b fork, which is the reason for its presence here and is not
-        apparent from the name. It runs the same API as the instances that follow the chain that kept SHA256d,
+        apparent from the name. It runs the same API as the instances that have not adopted the fork,
         so it differs from those only in the host it asks.
      */
     MEMPOOL_GUIDE("mempool.guide", true) {
@@ -142,7 +142,7 @@ public enum FeeRatesSource {
     /**
      * The source to use when the user has not chosen one.
      *
-     * mempool.space follows the chain that kept SHA256d, so past the activation height it has neither this
+     * mempool.space has not adopted the fork, so past the activation height it has neither this
      * chain's blocks nor its mempool. Asking it for a block summary returns 404 for a block that exists, and
      * asking it for fee rates prices a transaction against a mempool this wallet is not broadcasting into.
      * mempool.guide runs the same API on this chain, which is why it is the default here and not upstream.

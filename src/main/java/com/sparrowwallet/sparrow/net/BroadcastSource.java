@@ -18,11 +18,11 @@ import java.util.List;
 
 public enum BroadcastSource {
     /*
-        Every source that was here, blockstream.info, mempool.space and mempool.emzy.de alike, follows the chain
-        that kept SHA256d. This path replaces the connected node rather than supplementing it when a Tor proxy is
-        configured, so broadcasting through one of those put the user's transaction onto the other chain: an
-        opted-in transaction is refused there, but a legacy one relays, which is the replay this wallet exists to
-        avoid. mempool.guide follows this chain and is the only source left.
+        Every source that was here, blockstream.info, mempool.space and mempool.emzy.de alike, had not adopted
+        the fork. This path replaces the connected node rather than supplementing it when a Tor proxy is
+        configured, so broadcasting through one of those put the user's transaction where the fork is not in
+        force: an opted-in transaction is refused there, but a legacy one relays, which is the replay this
+        wallet exists to avoid. mempool.guide has adopted it and is the only source left.
      */
     MEMPOOL_GUIDE("mempool.guide", "https://mempool.guide", "http://mempool5nxspkxjk3n5afqh7zswbv4i324z76ltmw3cvfmniw45mnhad.onion") {
         public Sha256Hash broadcastTransaction(Transaction transaction) throws BroadcastException {

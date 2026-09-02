@@ -1020,8 +1020,8 @@ public class HeadersController extends TransactionFormController implements Init
         //protected either way, so this is the one case where the headline is true and still not the whole answer.
         if(liftable > 0) {
             detail += System.lineSeparator() + System.lineSeparator()
-                    + (liftable == 1 ? "One of those signs Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent on the chain that kept SHA256d, paying these same outputs."
-                                     : liftable + " of those sign Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent on the chain that kept SHA256d, paying these same outputs.")
+                    + (liftable == 1 ? "One of those signs Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs."
+                                     : liftable + " of those sign Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs.")
                     + " Have those signers opt in too, or sign the whole transaction with All, to close that.";
         }
 

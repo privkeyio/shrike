@@ -128,8 +128,8 @@ public class UnifiedSigHashItemsTest {
     /**
      * The wallet may produce ANYONECANPAY, because that is the type the user picked and refusing it would just be a
      * device that mysteriously will not sign. What it must never do is reach for it on its own account: a signature
-     * that stands alone is the one legacy type that survives being lifted onto the chain that kept SHA256d, so the
-     * user has to have chosen it. This pins the one type the send screen puts forward by itself.
+     * that stands alone is the one legacy type that survives being lifted out and spent where the fork is
+     * not in force, so the user has to have chosen it. This pins the one type the send screen puts forward by itself.
      */
     @Test
     public void testTheRecommendedTypeIsNeverAnyoneCanPay() {

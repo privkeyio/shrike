@@ -7,8 +7,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The default source has to follow this chain.
  *
- * mempool.space follows the chain that kept SHA256d. Past the activation height it holds neither this chain's
- * blocks nor its mempool, so it answers 404 for a block that exists and prices transactions against a mempool
+ * mempool.space has not adopted the fork. Past the activation height it holds neither these blocks nor
+ * this mempool, so it answers 404 for a block that exists and prices transactions against a mempool
  * this wallet never broadcasts into. Both were reached with the source left unset, which is the state every
  * new install starts in, so the default is the thing worth pinning.
  */
@@ -16,7 +16,7 @@ public class FeeRatesSourceDefaultTest {
     @Test
     public void testTheDefaultFollowsThisChain() {
         Assertions.assertEquals(FeeRatesSource.MEMPOOL_GUIDE, FeeRatesSource.getDefault(),
-                "the default must follow the BLAKE2b chain, not the one that kept SHA256d");
+                "the default must be a source that has adopted the fork");
     }
 
     @Test
@@ -51,8 +51,8 @@ public class FeeRatesSourceDefaultTest {
     }
 
     /**
-     * The explorer a transaction link opens has the same requirement. mempool.space and blockstream.info both
-     * follow the chain that kept SHA256d, so a link to either names a block they do not have once the
+     * The explorer a transaction link opens has the same requirement. Neither mempool.space nor
+     * blockstream.info has adopted the fork, so a link to either names a block they do not have once the
      * transaction is mined past the activation height.
      */
     @Test
@@ -94,7 +94,7 @@ public class FeeRatesSourceDefaultTest {
 
         FeeRatesSource effective = stored == null ? FeeRatesSource.getDefault() : stored;
         Assertions.assertEquals(FeeRatesSource.MEMPOOL_GUIDE, effective,
-                "so the wallet uses the default rather than a source that follows the other chain");
+                "so the wallet uses the default rather than a source that has not adopted the fork");
     }
 
     /**
@@ -113,20 +113,20 @@ public class FeeRatesSourceDefaultTest {
 
     /**
      * Broadcasting is the one that moves value. With a Tor proxy configured this path replaces the connected node
-     * rather than supplementing it, so a source on the other chain does not merely mislead: an opted-in
+     * rather than supplementing it, so a source that has not adopted the fork does not merely mislead: an opted-in
      * transaction is refused there, but a legacy one relays, which is the replay this wallet exists to prevent.
      */
     @Test
     public void testEveryBroadcastSourceFollowsThisChain() {
         for(BroadcastSource source : BroadcastSource.values()) {
             Assertions.assertEquals(BroadcastSource.MEMPOOL_GUIDE, source,
-                    source + " would put a transaction on the chain that kept SHA256d");
+                    source + " would put a transaction where the fork is not in force");
         }
     }
 
     /**
-     * An explorer that does not have this chain's blocks shows nothing for a transaction mined past activation.
-     * A custom URL can still be set in the settings, which is where anyone wanting the other chain should go.
+     * An explorer that has not adopted the fork shows nothing for a transaction mined past activation. A
+     * custom URL can still be set in the settings for anyone who wants one.
      */
     @Test
     public void testEveryOfferedExplorerFollowsThisChainOrIsNone() {
@@ -137,8 +137,8 @@ public class FeeRatesSourceDefaultTest {
     }
 
     /**
-     * No public Electrum server follows this chain, and connecting to one that does not would show the wallet a
-     * different chain's blocks and balances entirely. The option is withdrawn rather than filled with servers
+     * No public Electrum server has adopted the fork, and connecting to one would show the wallet blocks
+     * and balances that diverge past the activation height. The option is withdrawn rather than filled with servers
      * that mislead; the entries stay in the enum only so upstream changes to that file keep merging.
      */
     @Test
