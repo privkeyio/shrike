@@ -86,7 +86,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Sparrow Build - ${{ runner.os }} ${{ runner.arch }}
+          name: Shrike Build - ${{ runner.os }} ${{ runner.arch }}
           path: |
             build/jpackage/*
             !build/jpackage/Shrike/
@@ -104,7 +104,7 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: Sparrow Build - ${{ runner.os }} ${{ runner.arch }} Headless
+          name: Shrike Build - ${{ runner.os }} ${{ runner.arch }} Headless
           path: |
             build/jpackage/*
             !build/jpackage/Shrike/

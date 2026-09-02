@@ -1,23 +1,19 @@
 # Reproducible builds
 
-Reproducibility is a goal of the Sparrow Wallet project.
-As of v1.5.0 and later, it is possible to recreate the exact binaries in the Github releases (specifically, the contents of the `.tar.gz` and `.zip` files).
+The contents of the `.tar.gz` and `.zip` release files can be rebuilt byte for byte from this repository, so you can confirm the published binaries were built from the source you can read.
 
-Due to minor variances, it is not yet possible to reproduce the installer packages (`.deb`, `.rpm` and `.exe`).
-In addition, the OSX binary is code signed and thus can't be directly reproduced yet.
-Work on resolving both of these issues is ongoing.
+The installer packages (`.msi`, `.deb` and `.dmg`) are not byte for byte reproducible, because the files they archive carry the time of the build. Verify those against the signed `SHA256SUMS` published with each release, as described in the [README](../README.md#releases). What a `.deb` installs can still be compared, see [below](#comparing-what-a-deb-installs).
 
 ## Reproducing a release
 
 ### Install Java
 
-Because Sparrow bundles a Java runtime in the release binaries, it is essential to have the same version of Java installed when creating the release.
-For v1.6.6 to v1.9.1, this was Eclipse Temurin 18.0.1+10. For v2.0.0 to v2.3.1, this was Eclipse Temurin 22.0.2+9. For v2.4.0 and later, Eclipse Temurin 25.0.2+10 is used.
+Because the release binaries bundle a Java runtime, the same version of Java must be installed to rebuild them. Shrike uses Eclipse Temurin 25.0.2+10, which is what the release workflow installs.
 
-Note: Do not install Java using a system package manager (e.g. apt, dnf, rpm). 
+Note: Do not install Java using a system package manager (e.g. apt, dnf, rpm).
 Linux packages replace the JDK's bundled `cacerts` file with a symlink to the system CA certificates, which differ from those in the release tarballs and will produce a non-reproducible build.
 
-#### Java from Adoptium github repo
+#### Java from the Adoptium GitHub repository
 
 It is available for all supported platforms from [Eclipse Temurin 25.0.2+10](https://github.com/adoptium/temurin25-binaries/releases/tag/jdk-25.0.2%2B10).
 
@@ -56,36 +52,36 @@ sudo apt install -y rpm fakeroot binutils
 First, assign a temporary variable in your shell for the specific release you want to build. For the current one specify:
 
 ```shell
-GIT_TAG="v2.5.5-blake2b.7"
+GIT_TAG="v2.5.5-blake2b.15"
 ```
 
-The project can then be initially cloned as follows:
+The project can then be initially cloned as follows. `--recursive` matters, because the BLAKE2b work lives in the drongo submodule:
 
 ```shell
-git clone --recursive --branch "${GIT_TAG}" https://github.com/sparrowwallet/sparrow.git
+git clone --recursive --branch "${GIT_TAG}" https://github.com/privkeyio/shrike.git
 ```
 
-If you already have the sparrow repo cloned, fetch all new updates and checkout the release. For this, change into your local sparrow folder and execute:
+If you already have the shrike repo cloned, fetch all new updates and checkout the release. For this, change into your local shrike folder and execute:
 
 ```shell
-cd {yourPathToSparrow}/sparrow
+cd {yourPathToShrike}/shrike
 git pull --recurse-submodules
 git checkout "${GIT_TAG}"
 ```
 
-Note - there is an additional step if you updated rather than initially cloned your repo at `GIT_TAG`. 
-This is due to the Git submodules which need to be checked out to the commit state they had at the time of the release. 
-Only then your build will be comparable to the provided one in the release section of Github. 
+Note - there is an additional step if you updated rather than initially cloned your repo at `GIT_TAG`.
+This is due to the Git submodules which need to be checked out to the commit state they had at the time of the release.
+Only then your build will be comparable to the provided one in the release section of GitHub.
 To checkout the submodule to the correct commit for `GIT_TAG`, additionally run:
 
 ```shell
 git submodule update --checkout
 ```
 
-Thereafter, building should be straightforward. If not already done, change into the sparrow folder and run:
+Thereafter, building should be straightforward. If not already done, change into the shrike folder and run:
 
 ```shell
-cd {yourPathToSparrow}/sparrow  # if you aren't already in the sparrow folder
+cd {yourPathToShrike}/shrike  # if you aren't already in the shrike folder
 ./gradlew jpackage
 ```
 
@@ -93,7 +89,7 @@ The binaries (and installers) will be placed in the `build/jpackage` folder.
 
 ### Verifying the binaries are identical
 
-Verify the built binaries against the released binaries on https://github.com/sparrowwallet/sparrow/releases.
+Verify the built binaries against the released binaries at https://github.com/privkeyio/shrike/releases.
 
 Note that you will be verifying the files in the `build/jpackage/Shrike` folder against either the `.tar.gz` or `.zip` releases.
 Download either of these depending on your platform and extract the contents to a folder (in the following example, `/tmp`).
@@ -104,5 +100,28 @@ diff -r build/jpackage/Shrike /tmp/Shrike
 ```
 
 This command should have no output indicating that the two folders (and all their contents) are identical.
+
+The headless server build reproduces the same way. It is built with the headless flag and compared against `shrikeserver-<version>-<arch>.tar.gz`, which also extracts to a `Shrike` folder:
+
+```shell
+./gradlew -Djava.awt.headless=true clean jpackage
+diff -r build/jpackage/Shrike /tmp/Shrike
+```
+
+### Comparing what a deb installs
+
+The `.deb` file itself is not byte for byte reproducible, but its payload is. Unpack both the locally built package and the published one and compare the trees:
+
+```shell
+./repackage.sh   # the release workflow runs this after jpackage
+
+mkdir -p /tmp/deb-local /tmp/deb-published
+(cd /tmp/deb-local && ar x {yourPathToShrike}/shrike/build/jpackage/shrike_<version>_amd64.deb && tar xf data.tar.xz)
+(cd /tmp/deb-published && ar x /path/to/downloaded/shrike_<version>_amd64.deb && tar xf data.tar.xz)
+
+diff -r /tmp/deb-local/opt /tmp/deb-published/opt
+```
+
+This should have no output. Only the timestamps recorded in the archive differ, and they are the time each build ran.
 
 If there is output, please open an issue with detailed instructions to reproduce, including build system platform.
