@@ -38,13 +38,11 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
                 A device reports its model but not its firmware, so only you can say which of these support the \
                 opt-in.
 
-                Leave one unmarked if you are unsure. A device marked that does not support it signs nothing rather \
-                than falling back. This applies to transactions created from now on.""");
+                Leave a signer unmarked if you are unsure. If you mark one that does not support the opt-in, it will \
+                refuse to sign rather than fall back. This applies to transactions created from now on.""");
         dialogPane.getStylesheets().add(AppServices.class.getResource("general.css").toExternalForm());
         dialogPane.getButtonTypes().addAll(ButtonType.CANCEL);
         dialogPane.setPrefWidth(560);
-        //Sized for the header, a line per keystore and the line counting them. A fixed height clipped the counting
-        //line once it was added, and clipped further the more keystores a wallet holds.
         //Sized for the header, a line per keystore and the line counting them, so nothing is clipped and nothing
         //is left as empty space below the buttons
         dialogPane.setPrefHeight(255 + (wallet.getKeystores().size() * 30));
@@ -57,9 +55,16 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
         final VBox content = new VBox(10);
         //Indented to line up with the header text above it, rather than sitting against the edge of the pane
         content.setPadding(new Insets(4, 20, 0, 20));
+        //Every keystore the owner can speak for, which is the same set the keystore tab shows the field on. A watch
+        //only keystore is in the position an airgapped one is: the wallet cannot verify the claim, and listing only
+        //hardware here left the send screen offering a remedy this dialog had no control for.
         for(Keystore keystore : wallet.getKeystores()) {
-            if(keystore.getSource().isHardware()) {
-                CheckBox mark = new CheckBox(keystore.getLabel() + " (" + keystore.getWalletModel().toDisplayString() + ")");
+            if(AppServices.canBeMarked(keystore)) {
+                //The parenthetical names the device. A watch only keystore has no device, and its walletModel defaults to
+                //the application's own name, which read as though Sparrow were the signer.
+                CheckBox mark = new CheckBox(keystore.getSource().isHardware()
+                        ? keystore.getLabel() + " (" + keystore.getWalletModel().toDisplayString() + ")"
+                        : keystore.getLabel());
                 mark.setSelected(keystore.isUnifiedSigHashSupported());
                 marks.put(keystore, mark);
                 content.getChildren().add(mark);
@@ -72,14 +77,18 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
             progress.setWrapText(true);
             progress.setPadding(new Insets(12, 0, 6, 0));
             Runnable update = () -> {
-                long marked = marks.values().stream().filter(CheckBox::isSelected).count();
-                long unmarked = wallet.getKeystores().size() - marked;
+                //Counted the way the decision counts it: a keystore holding its own key opts in without being marked,
+                //so it is capable whether or not it appears above. Deriving this from the ticked boxes alone reported
+                //a wallet that mixes a seed with a device as less protected than it is.
+                long capable = wallet.getKeystores().stream().filter(keystore -> AppServices.signsInProcess(keystore)
+                        || (marks.containsKey(keystore) && marks.get(keystore).isSelected())).count();
+                long unmarked = wallet.getKeystores().size() - capable;
                 Integer threshold = AppServices.readThreshold(wallet);
                 int required = threshold == null ? 1 : threshold;
 
                 //Three answers, not two: nothing marked cannot opt in at all, a marked signer in every possible quorum
                 //is a guarantee, and anything between opts in but only protects where one of them signs
-                boolean any = marked > 0;
+                boolean any = capable > 0;
                 boolean guaranteed = any && unmarked < required;
 
                 //Carries the same glyph and colour the send screen uses for the same answer, so the two agree on sight
@@ -87,8 +96,8 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
                 progress.getStyleClass().removeAll("success", "failure");
                 progress.getStyleClass().add(any ? "success" : "failure");
                 progress.setText((guaranteed ? "Transactions will opt in. "
-                        : any ? "Transactions opt in when a marked signer signs. " : "Transactions will not opt in. ")
-                        + marked + " of " + wallet.getKeystores().size() + " marked"
+                        : any ? "Transactions opt in when a signer that can opt in takes part. " : "Transactions will not opt in. ")
+                        + capable + " of " + wallet.getKeystores().size() + " signers can opt in"
                         + (threshold == null ? "." : ", " + threshold + " needed to sign."));
             };
             marks.values().forEach(mark -> mark.selectedProperty().addListener((observable, was, is) -> update.run()));

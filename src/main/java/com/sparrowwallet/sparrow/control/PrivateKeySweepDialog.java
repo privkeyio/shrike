@@ -432,6 +432,24 @@ public class PrivateKeySweepDialog extends Dialog<Transaction> {
         return txOutputs.stream().filter(txOutput -> txOutput.getValue() > dustAttackThreshold).collect(Collectors.toList());
     }
 
+    /**
+     * The PSBT a sweep signs, with the witness UTXOs every input needs and the hash type it will declare.
+     *
+     * A swept key signs here, from a key this dialog holds, so there is no device to be marked and nothing to declare
+     * for: the chain is the whole question. Without the opt-in this was the one signing path in the application that
+     * never took it, and it said nothing about that either. Separated from the dialog so the declaration can be
+     * tested without a JavaFX view, which is the only reason the fix would otherwise go uncovered.
+     */
+    static PSBT sweepPsbt(Transaction transaction, List<TransactionOutput> txOutputs, boolean optedIn) {
+        PSBT psbt = new PSBT(transaction);
+        //Set witness UTXOs on PSBT inputs first - they are all required when hashing for a Taproot signature
+        for(int i = 0; i < txOutputs.size(); i++) {
+            psbt.getPsbtInputs().get(i).setWitnessUtxo(txOutputs.get(i));
+        }
+
+        return AppServices.applyUnifiedSigHash(psbt, optedIn);
+    }
+
     private void createTransaction(ECKey privKey, ScriptType scriptType, List<TransactionOutput> txOutputs, Payment payment) {
         Address destAddress = payment instanceof SilentPayment silentPayment ? computeSilentPaymentAddress(privKey, scriptType, txOutputs, silentPayment) : payment.getAddress();
         ECKey pubKey = ECKey.fromPublicOnly(privKey);
@@ -439,7 +457,12 @@ public class PrivateKeySweepDialog extends Dialog<Transaction> {
         Transaction noFeeTransaction = new Transaction();
         long total = 0;
         for(TransactionOutput txOutput : txOutputs) {
-            scriptType.addSpendingInput(PolicyType.SINGLE_HD, noFeeTransaction, txOutput, pubKey, TransactionSignature.dummy(scriptType == P2TR ? TransactionSignature.Type.SCHNORR : TransactionSignature.Type.ECDSA));
+            //Sized for the opt-in, as Wallet does for its own inputs. A schnorr signature carrying a hash type is a
+            //byte longer than one taking the default, so a dummy built without it under-measures the weight of the
+            //transaction this dialog now signs, and the fee is taken off that measurement.
+            scriptType.addSpendingInput(PolicyType.SINGLE_HD, noFeeTransaction, txOutput,
+                    pubKey, TransactionSignature.dummy(scriptType == P2TR ? TransactionSignature.Type.SCHNORR : TransactionSignature.Type.ECDSA,
+                            SigHash.UNIFIED_ALL.value));
             total += txOutput.getValue();
         }
 
@@ -477,13 +500,7 @@ public class PrivateKeySweepDialog extends Dialog<Transaction> {
         }
         transaction.addOutput(new TransactionOutput(transaction, total - fee, destAddress.getOutputScript()));
 
-        PSBT psbt = new PSBT(transaction);
-        //Set witness UTXOs on PSBT inputs first - they are all required when hashing for a Taproot signature
-        for(int i = 0; i < txOutputs.size(); i++) {
-            TransactionOutput utxoOutput = txOutputs.get(i);
-            PSBTInput psbtInput = psbt.getPsbtInputs().get(i);
-            psbtInput.setWitnessUtxo(utxoOutput);
-        }
+        PSBT psbt = sweepPsbt(transaction, txOutputs, AppServices.isUnifiedSigHashActive());
 
         for(int i = 0; i < txOutputs.size(); i++) {
             TransactionOutput utxoOutput = txOutputs.get(i);

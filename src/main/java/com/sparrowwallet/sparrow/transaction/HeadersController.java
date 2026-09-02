@@ -581,7 +581,17 @@ public class HeadersController extends TransactionFormController implements Init
                 }
 
                 for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-                    psbtInput.setSigHash(newValue == SigHash.DEFAULT && !psbtInput.isTaproot() ? SigHash.ALL : newValue);
+                    SigHash chosen = newValue == SigHash.DEFAULT && !psbtInput.isTaproot() ? SigHash.ALL : newValue;
+                    //The control offers one type for the whole transaction and its items are all opted in or all not,
+                    //taken from the first input that declares one. A PSBT can carry a different type per input, so
+                    //writing the chosen one straight out moves the opt-in on any input that differs from the first.
+                    //What is being chosen here is the output type; whether an input opted in stays the input's own,
+                    //in both directions.
+                    SigHash existing = psbtInput.getSigHash();
+                    if(existing != null) {
+                        chosen = existing.isUnified() ? chosen.withUnified() : chosen.withoutUnified();
+                    }
+                    psbtInput.setSigHash(chosen);
                 }
             });
 
@@ -970,6 +980,18 @@ public class HeadersController extends TransactionFormController implements Init
     }
 
     /**
+     * Recomputes the status once signatures have landed. The declared hash type is only the answer while nothing has
+     * signed yet: a quorum of unmarked cosigners is handed the base type, so a transaction that declared the opt-in
+     * can finish carrying none of it. Reporting the declaration after that would say protected over a transaction
+     * that is not.
+     */
+    private void refreshOptInStatus() {
+        if(headersForm.getPsbt() != null) {
+            updateOptInStatus(sigHash.getValue());
+        }
+    }
+
+    /**
      * Shows what the transaction's signatures do, and nothing about why.
      *
      * Deliberately without a reason. A PSBT records only the hash type its inputs carry, so the reason a
@@ -1007,7 +1029,9 @@ public class HeadersController extends TransactionFormController implements Init
         }
 
         if(everySignature || signatures == 0) {
-            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend.";
+            //"the amount it spends" rather than "the amounts they spend": an Anyone Can Pay signature commits to its
+            //own input's amount and no other, so the blanket claim was not true of one.
+            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.";
         }
 
         String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
@@ -1278,6 +1302,7 @@ public class HeadersController extends TransactionFormController implements Init
             }
             unencryptedWallet.sign(signingNodes);
             updateSignedKeystores(headersForm.getSigningWallet());
+            refreshOptInStatus();
         } catch(Exception e) {
             log.warn("Failed to Sign", e);
             AppServices.showErrorDialog("Failed to Sign", e.getMessage());
@@ -1813,6 +1838,9 @@ public class HeadersController extends TransactionFormController implements Init
                 finalizePSBT();
                 EventManager.get().post(new FinalizeTransactionEvent(headersForm.getPsbt(), signedWallet));
             }
+
+            //A combine is where a cosigner's signatures arrive, so it is where the count this reports changes
+            refreshOptInStatus();
         }
     }
 

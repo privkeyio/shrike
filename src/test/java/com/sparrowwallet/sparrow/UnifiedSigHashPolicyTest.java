@@ -314,12 +314,17 @@ public class UnifiedSigHashPolicyTest {
 
     /**
      * The reason a user is shown has to point at the thing they can change, or the setting exists and
-     * nobody finds it. This is the only decision with anything to act on.
+     * nobody finds it. Equally, a decision with nothing to act on must not invent a remedy: a chain that has not
+     * reached its activation height is not something the user can do anything about, and saying otherwise sends
+     * them looking for a control that would not help.
+     *
+     * Three qualify. Two are the keystore mark, reached from the send screen and the keystore tab. The third is a
+     * server announcing a tip that cannot be true, where checking the server is exactly the action to take.
      */
     @Test
-    public void testOnlyTheUnmarkedDeviceReasonCarriesARemedy() {
-        List<UnifiedSigHashDecision> actionable =
-                List.of(UnifiedSigHashDecision.EXTERNAL_SIGNER, UnifiedSigHashDecision.NO_DEVICE_TO_MARK);
+    public void testOnlyReasonsWithSomethingToActOnCarryARemedy() {
+        List<UnifiedSigHashDecision> actionable = List.of(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+                UnifiedSigHashDecision.NO_DEVICE_TO_MARK, UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE);
         for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
             if(actionable.contains(decision)) {
                 Assertions.assertNotNull(decision.getRemedy(), decision + " has something the user can act on");
@@ -682,6 +687,35 @@ public class UnifiedSigHashPolicyTest {
         Wallet belowThreshold = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
         Assertions.assertEquals(UnifiedSigHashDecision.EXTERNAL_SIGNER,
                 AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, belowThreshold));
+    }
+
+    /**
+     * The case the test above does not reach: both caveats apply at once.
+     *
+     * Its quorum wallet marks two of three, so unmarked (1) is below the threshold (2) and the keystores return a
+     * plain OPTED_IN with no caveat to lose. Marking one of three is what produces a keystore caveat, and that is the
+     * common Electrum configuration, since no Electrum server reports an activation height.
+     */
+    @Test
+    public void testTheWeakerOfTwoCaveatsIsTheHeadline() {
+        Wallet conditional = multisigWith(2, KeystoreSource.HW_USB, KeystoreSource.HW_USB, KeystoreSource.HW_USB);
+        conditional.getKeystores().get(0).setUnifiedSigHashSupported(true);
+
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS, AppServices.keystoreDecision(conditional),
+                "one marked of three, needing two, is conditional");
+
+        //A conditional opt-in can end in no protection at all, so it is the weaker claim and has to be the headline
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN_UNCORROBORATED, conditional));
+        Assertions.assertEquals(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS,
+                AppServices.combinedDecision(UnifiedSigHashDecision.OPTED_IN, conditional));
+
+        //And it does not read as a settled answer
+        Assertions.assertTrue(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS.isOptedIn());
+        Assertions.assertFalse(UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS.isGuaranteed());
+        Assertions.assertNotEquals(UnifiedSigHashDecision.OPTED_IN.getSummary(),
+                UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS.getSummary(),
+                "a condition must not read the same as a guarantee");
     }
 
     /**
@@ -1145,6 +1179,41 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertFalse(UnifiedSigHashDecision.CHAIN_UNSEEN.isOptedIn());
         Assertions.assertNull(UnifiedSigHashDecision.CHAIN_UNSEEN.getRemedy(),
                 "connecting is not something the wallet can do for the user, so no remedy is offered");
+    }
+
+    /**
+     * A tip that cannot be true is reported as the server disagreeing, not as the chain not having activated.
+     *
+     * Nothing authenticates the announced tip: it arrives from a subscription and is taken at face value. A server
+     * that kept announcing pre-fork headers would hold the wallet at "not activated" forever, and every transaction
+     * signed in that state is replayable. Where the tip claims a height at or past the one this build ships, a
+     * pre-fork header at that height contradicts the schedule and the wallet says so.
+     */
+    @Test
+    public void testATipThatContradictsTheScheduleIsReportedAsSuch() {
+        BlockHeader v1 = Network.MAINNET.getGenesisHeader();
+        Assertions.assertFalse(v1.isHeaderV2());
+
+        int activation = Network.MAINNET.getBlake2bHeight();
+
+        //Below the height a pre-fork header is exactly what the chain should have, and says nothing about the server
+        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED,
+                AppServices.chainDecision(Network.MAINNET, activation - 1, v1));
+
+        //At and past it the two cannot both be right
+        Assertions.assertEquals(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE,
+                AppServices.chainDecision(Network.MAINNET, activation, v1));
+        Assertions.assertEquals(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE,
+                AppServices.chainDecision(Network.MAINNET, activation + 5000, v1));
+
+        //It declines, and names something the user can actually check
+        Assertions.assertFalse(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.isOptedIn());
+        Assertions.assertNotNull(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.getReason());
+        Assertions.assertNotNull(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.getRemedy());
+
+        //Regtest ships no height, so there is nothing for a tip to contradict
+        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED,
+                AppServices.chainDecision(Network.REGTEST, 5_000_000, v1));
     }
 
     /**

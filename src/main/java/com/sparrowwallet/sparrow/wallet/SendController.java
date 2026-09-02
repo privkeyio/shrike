@@ -1094,6 +1094,9 @@ public class SendController extends WalletFormController implements Initializabl
         }
     }
 
+    //Guards the re-entrancy described on updateOptInStatus below
+    private boolean updatingOptInStatus;
+
     /**
      * Shows what this transaction's signatures will do and, where the wallet declined, why.
      *
@@ -1102,16 +1105,37 @@ public class SendController extends WalletFormController implements Initializabl
      * the same call decides what createPSBT will do when this transaction is created.
      */
     private void updateOptInStatus(WalletTransaction walletTransaction) {
+        //Asking for the decision can post a UnifiedSigHashScheduleEvent, which EventBus dispatches synchronously and
+        //this controller subscribes to, so this method can re-enter itself. It terminates today only because the
+        //report those posts are keyed on has already been recorded by the time the inner call runs, which makes a
+        //dedupe written for log noise load bearing for termination. Said here instead, and the inner pass would
+        //render the label only for the outer one to overwrite it.
+        if(updatingOptInStatus) {
+            return;
+        }
+
+        updatingOptInStatus = true;
+        try {
+            renderOptInStatus(walletTransaction);
+        } finally {
+            updatingOptInStatus = false;
+        }
+    }
+
+    private void renderOptInStatus(WalletTransaction walletTransaction) {
         if(walletTransaction == null) {
             optInStatus.setVisible(false);
             optInStatus.setTooltip(null);
             return;
         }
 
-        UnifiedSigHashDecision decision = AppServices.getUnifiedSigHashDecision(walletTransaction.getWallet());
+        AppServices.UnifiedSigHashStatus status = AppServices.getUnifiedSigHashStatus(walletTransaction.getWallet());
+        UnifiedSigHashDecision decision = status.decision();
         optInStatus.setVisible(true);
         optInStatus.setText(decision.getSummary());
-        optInStatus.setGraphic(decision.isOptedIn() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+        //The success mark is for an answer that is settled. A conditional opt-in is not one, so it takes the warning
+        //glyph even though it did opt in.
+        optInStatus.setGraphic(decision.isGuaranteed() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
 
         //The one decision the user can act on is offered here rather than only described: the send screen is where
         //they find out, and a setting reached by leaving the send and hunting through a tab is a setting nobody uses
@@ -1126,23 +1150,24 @@ public class SendController extends WalletFormController implements Initializabl
             optInStatus.setOnMouseClicked(null);
         }
 
-        Tooltip tooltip = new Tooltip(decision.isOptedIn()
-                ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and they commit to the amounts they spend."
-                    + (decision.getCaveat() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getCaveat()
-                        + namedSigners(walletTransaction))
-                : "Signing the way it always has been, because " + decision.getReason() + "."
-                    + (decision.getRemedy() == null ? "" : System.lineSeparator() + System.lineSeparator() + decision.getRemedy()));
+        StringBuilder detail = new StringBuilder();
+        if(decision.isOptedIn()) {
+            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.");
+            //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
+            //partially marked multisig has two, and the one the headline dropped is the actionable one
+            for(String caveat : status.caveats()) {
+                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(caveat);
+            }
+        } else {
+            detail.append("These signatures will be made the way they always have been, because ").append(decision.getReason()).append(".");
+            if(decision.getRemedy() != null) {
+                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(decision.getRemedy());
+            }
+        }
+
+        Tooltip tooltip = new Tooltip(detail.toString());
         tooltip.setShowDuration(Duration.INDEFINITE);
         optInStatus.setTooltip(tooltip);
-    }
-
-    /**
-     * The signers that can produce the opt-in, appended to a caveat that would otherwise leave the reader to go
-     * and find out which ones those are.
-     */
-    private static String namedSigners(WalletTransaction walletTransaction) {
-        String names = walletTransaction == null ? null : AppServices.markedSignerNames(walletTransaction.getWallet());
-        return names == null ? "" : " Those are: " + names + ".";
     }
 
     /**
@@ -1167,8 +1192,9 @@ public class SendController extends WalletFormController implements Initializabl
             keystore.setUnifiedSigHashSupported(dialog.isMarked(keystore));
         }
 
+        //Dispatched synchronously, and this controller subscribes to it, so that handler is what refreshes the
+        //status. Calling it here as well rendered the label twice for one change.
         EventManager.get().post(new KeystoreUnifiedSigHashChangedEvent(wallet, pastWallet, getWalletForm().getWalletId(), changed.get()));
-        updateOptInStatus(walletTransactionProperty.get());
     }
 
     public void clear(ActionEvent event) {
@@ -1576,6 +1602,24 @@ public class SendController extends WalletFormController implements Initializabl
     }
 
     /**
+     * The mark is the other input to this status, and it can be changed while a transaction is drafted: from the
+     * keystore tab, or from the status label on this very screen. Without this the send screen keeps reporting the
+     * answer the mark used to give, and it is stale in the unsafe direction, still saying protected after the
+     * keystore that was providing it has been unmarked.
+     */
+    @Subscribe
+    public void keystoreUnifiedSigHashChanged(KeystoreUnifiedSigHashChangedEvent event) {
+        if(event.getWalletId().equals(getWalletForm().getWalletId())) {
+            if(!Platform.isFxApplicationThread()) {
+                Platform.runLater(() -> keystoreUnifiedSigHashChanged(event));
+                return;
+            }
+
+            updateOptInStatus(walletTransactionProperty.get());
+        }
+    }
+
+    /**
      * The status describes a decision made from the chain tip and the node's schedule, neither of which this
      * controller owns. Rendered only when the transaction changed, it goes stale the moment either moves: a node
      * upgraded mid-session reports a new activation height, the disagreement clears, and the screen carries on
@@ -1584,6 +1628,13 @@ public class SendController extends WalletFormController implements Initializabl
      */
     @Subscribe
     public void unifiedSigHashSchedule(UnifiedSigHashScheduleEvent event) {
+        //EventBus dispatches on the thread that posted, which here is whichever thread dropped a connection or read
+        //a schedule off a node, so the scene graph work is marshalled rather than assumed
+        if(!Platform.isFxApplicationThread()) {
+            Platform.runLater(() -> unifiedSigHashSchedule(event));
+            return;
+        }
+
         updateOptInStatus(walletTransactionProperty.get());
     }
 

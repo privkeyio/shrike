@@ -784,10 +784,10 @@ public class AppServices {
     /**
      * The activation height per network, or null where the fork is not scheduled.
      *
-     * A height is the part of this decision a server cannot influence, which is why it comes first. On
-     * mainnet the fork has no schedule, so nothing a server says can make a wallet opt in; without that
-     * floor a hostile or intercepted server could serve a forged v2 header today and every transaction
-     * the wallet produced would be rejected by the network as an undefined hash type.
+     * A height is the part of this decision a server cannot influence, which is why it comes first. Mainnet and
+     * testnet4 both ship one, so a server announcing a forged v2 header cannot bring an opt-in forward: the height
+     * has to be reached as well. The height itself is cross checked against the connected node where it reports one,
+     * and a disagreement declines rather than following either side.
      *
      * Regtest chooses its own height through -testactivationheight, so there is nothing to hardcode and
      * the chain is the only available answer there.
@@ -845,16 +845,22 @@ public class AppServices {
             return UnifiedSigHashDecision.CHAIN_UNSEEN;
         }
 
+        Integer activationHeight = getUnifiedSigHashActivationHeight(network);
+
         //A v2 header means the proof of work change is live, and both rule sets activate at the one block
         if(!blockHeader.isHeaderV2()) {
-            return UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED;
+            //Nothing authenticates the announced tip, so a server that kept announcing pre-fork headers could hold
+            //the wallet at "not activated" indefinitely and every transaction it signed would be replayable. Where
+            //this build ships a height and the tip claims to be at or past it, the two cannot both be right, and
+            //saying so names the server rather than the chain.
+            return activationHeight != null && blockHeight != null && blockHeight >= activationHeight
+                    ? UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE : UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED;
         }
 
         if(network == Network.REGTEST) {
             return UnifiedSigHashDecision.OPTED_IN;
         }
 
-        Integer activationHeight = getUnifiedSigHashActivationHeight(network);
         //nodeHardforkHeight is read once here and passed by value. The callee null checks it and then
         //dereferences it, which is only safe because it cannot be cleared between those two steps.
         //Inlining this call so the field is read twice would reintroduce that race.
@@ -989,8 +995,9 @@ public class AppServices {
     /**
      * As canSignUnified, keeping the reason. A software seed signs from a key the wallet holds, so its support is
      * not in question; a device is taken at its owner's word, since nothing it sends says which firmware it runs.
-     * SW_WATCH is neither: it produces no signature at all, so the wallet is in no position to opt in whatever it
-     * has been marked as.
+     * A watch only keystore is in the same position as a device: the wallet is choosing what to declare in a PSBT it
+     * hands out, the signer behind it is the one that answers, and only the owner can say what that signer does. See
+     * canBeMarked, which admits both.
      *
      * A PSBT carries one hash type for every signer, so opting in needs enough of them marked to meet the threshold.
      */
@@ -1160,7 +1167,7 @@ public class AppServices {
         return wallet.getKeystores().stream()
                 .filter(keystore -> keystore.getKeyDerivation() != null
                         && fingerprint.equalsIgnoreCase(keystore.getKeyDerivation().getMasterFingerprint()))
-                .anyMatch(keystore -> keystore.getSource().isHardware() && !keystore.isUnifiedSigHashSupported());
+                .anyMatch(keystore -> canBeMarked(keystore) && !keystore.isUnifiedSigHashSupported());
     }
 
     /**
@@ -1199,7 +1206,7 @@ public class AppServices {
      * and getKey returns a private key for it, so it signs in process exactly as a software seed does. It is
      * grouped with SW_SEED on the sign button upstream for the same reason.
      */
-    static boolean signsInProcess(Keystore keystore) {
+    public static boolean signsInProcess(Keystore keystore) {
         KeystoreSource source = keystore.getSource();
         return source == KeystoreSource.SW_SEED || source == KeystoreSource.SW_PAYMENT_CODE;
     }
@@ -1250,18 +1257,66 @@ public class AppServices {
             return keystores;
         }
 
-        //Both opted in, and either may qualify it. The chain's caveat is about whether the schedule this signed
-        //under is the right one, which decides whether the protection holds at all. The keystores' is about who
-        //can sign what was built. The first is worth more, so it wins where both apply, and returning the chain's
-        //answer is also what stops an uncorroborated opt-in being reported as a confirmed one.
-        return chainDecision == UnifiedSigHashDecision.OPTED_IN ? keystores : chainDecision;
+        //Both opted in, and either may qualify it. The headline has to state the weaker of the two claims, and a
+        //conditional opt-in is the weaker: it can end in no protection at all if a quorum of signers that cannot opt
+        //in signs, where an uncorroborated one is protection whose schedule merely went unconfirmed. Only one of the
+        //two can be the headline, so the other is still reported through combinedCaveats rather than dropped.
+        return keystores == UnifiedSigHashDecision.OPTED_IN_IF_MARKED_SIGNS ? keystores : chainDecision;
+    }
+
+    /**
+     * The decision, with every caveat that applies rather than only the one the headline came from.
+     *
+     * The decision can carry one, and on an Electrum connection both apply at once: no server reports an activation
+     * height, so an opt-in there is always uncorroborated, and a partially marked multisig adds its own. Reporting
+     * only the headline's caveat left the common configuration never told that a quorum of signers which cannot opt
+     * in would produce no protection.
+     */
+    public static UnifiedSigHashStatus getUnifiedSigHashStatus(Wallet wallet) {
+        //One read of the tip for both answers. Reading it again for the caveats would let the headline describe one
+        //tip and the caveats another, which is the same class of split reading the ChainTip record exists to prevent.
+        ChainTip tip = announcedTip;
+        UnifiedSigHashDecision chain = chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header());
+        UnifiedSigHashDecision decision = combinedDecision(chain, wallet);
+
+        if(!decision.isOptedIn()) {
+            return new UnifiedSigHashStatus(decision, List.of());
+        }
+
+        //Both may qualify the same opt-in, and only one of them could be the headline
+        List<String> caveats = new ArrayList<>();
+        UnifiedSigHashDecision keystores = keystoreDecision(wallet);
+        if(keystores.getCaveat() != null) {
+            caveats.add(keystores.getCaveat() + markedSignerSuffix(wallet));
+        }
+        if(chain.getCaveat() != null) {
+            caveats.add(chain.getCaveat());
+        }
+
+        return new UnifiedSigHashStatus(decision, List.copyOf(caveats));
+    }
+
+    /**
+     * The decision and everything qualifying it, taken from one reading of the chain tip so the two agree.
+     */
+    public record UnifiedSigHashStatus(UnifiedSigHashDecision decision, List<String> caveats) {
+    }
+
+    /**
+     * The signers that can produce the opt-in, appended to the quorum caveat that would otherwise leave the reader to
+     * go and find out which ones those are. Belongs to that caveat alone: after any other it names nothing.
+     */
+    private static String markedSignerSuffix(Wallet wallet) {
+        String names = markedSignerNames(wallet);
+        return names == null ? "" : " Those are: " + names + ".";
     }
 
     /**
      * Creates the PSBT for a transaction being sent, opting in to the unified signature hash where the
      * chain has it and this wallet holds the keys. Every wallet send path goes through here so the
-     * decision is made in one place; the private key sweep builds its own PSBT from a key that is not in
-     * a wallet, and keeps signing the way it does today.
+     * decision is made in one place. The private key sweep builds its own PSBT from a key that is not in
+     * a wallet, so it cannot come through here; it asks the chain the same question directly, since a key
+     * it holds has no signer to declare for.
      *
      * The wallet does not offer a control for forcing this on. Every input to the decision that it can
      * establish, it establishes more reliably than a person: whether the chain has reached the height,
@@ -1296,7 +1351,7 @@ public class AppServices {
         return applyUnifiedSigHash(walletTransaction.createPSBT(), active);
     }
 
-    static PSBT applyUnifiedSigHash(PSBT psbt, boolean active) {
+    public static PSBT applyUnifiedSigHash(PSBT psbt, boolean active) {
         if(active) {
             for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
                 SigHash sigHash = psbtInput.getSigHash();

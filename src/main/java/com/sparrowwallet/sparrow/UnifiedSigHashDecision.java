@@ -42,7 +42,7 @@ public enum UnifiedSigHashDecision {
     /**
      * The tip is not a v2 header, so the proof of work change is not live and neither is this.
      */
-    CHAIN_NOT_ACTIVATED("the chain has not activated it"),
+    CHAIN_NOT_ACTIVATED("the fork is not active on this chain yet"),
 
     /**
      * No tip to read at all, which is every offline session and the moment before the first one arrives.
@@ -68,6 +68,20 @@ public enum UnifiedSigHashDecision {
      * This build and the connected node disagree on the height, and there is no way to tell which is right.
      */
     SCHEDULE_MISMATCH("this build and the connected node disagree on the activation height"),
+
+    /**
+     * The tip the server announced contradicts the schedule this build ships.
+     *
+     * The activation height and the header version activate together, so a tip at or above the height has to be a v2
+     * header. One that is not means the server is not following the chain this build is, whether it is behind, on
+     * another chain, or answering dishonestly. The announced tip arrives from a subscription and nothing
+     * authenticates it, so a server that wanted the wallet to stop opting in could simply keep announcing v1 headers;
+     * reported as the disagreement it is rather than as the chain not having activated, which would be a statement
+     * about the chain rather than about the answer.
+     */
+    TIP_CONTRADICTS_SCHEDULE("the connected server announced a tip that contradicts the activation height in this build",
+            "The tip it reports is at or past the activation height but is not a fork header. Check the server is "
+                    + "following the fork and is fully synced before sending."),
 
     /**
      * Both agree on a height the chain has not reached yet.
@@ -156,7 +170,24 @@ public enum UnifiedSigHashDecision {
      * fork and commits to the amounts it spends, and one that predates both guarantees.
      */
     public String getSummary() {
+        //The conditional opt-in is the one answer the wallet cannot promise: it holds only where a signer that can
+        //opt in is among those that actually sign, and the user chooses that after this is displayed. Saying
+        //"Replay protected" here states as settled a thing that is still up to them.
+        if(this == OPTED_IN_IF_MARKED_SIGNS) {
+            return "Replay protected if a marked signer signs";
+        }
+
         return summaryFor(isOptedIn());
+    }
+
+    /**
+     * Whether the opt-in this reports is settled, rather than resting on who ends up signing.
+     *
+     * Drives the glyph: a guarantee earns the success mark, a condition does not, and the two reading the same on
+     * sight was how a partially marked multisig looked identical to a fully marked one.
+     */
+    public boolean isGuaranteed() {
+        return isOptedIn() && this != OPTED_IN_IF_MARKED_SIGNS;
     }
 
     /**
