@@ -43,6 +43,17 @@ for spec in "${required[@]}"; do
     fi
 done
 
+# The generator collects a wider set of extensions than a release actually carries, .rpm and .pkg among
+# them, so a file appearing under one of those would reach the manifest without being counted above. Naming
+# the full expected set here rather than only its minimum keeps the two from drifting apart silently.
+while read -r name; do
+    case "$name" in
+        *.msi|*.zip|*.dmg|*.deb|*.tar.gz) ;;
+        "") ;;
+        *) echo "manifest carries ${name}, which is not a kind of file a release publishes" >&2; short=1 ;;
+    esac
+done < <(awk '{print $2}' "$manifest")
+
 if [ "$short" -ne 0 ]; then
     echo "" >&2
     echo "The manifest does not cover every platform, which means a build job failed and this ran anyway." >&2

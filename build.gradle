@@ -328,7 +328,9 @@ jlink {
             installerType = "deb"
         }
         if(os.macOsX) {
-            installerOptions.addAll(['--mac-sign', '--mac-signing-key-user-name', 'Craig Raw (UPLVMSK9D7)'])
+            //No signing options: the macOS installer is skipped above, so these never took effect, and what
+            //stood here named upstream's signing identity. Anyone enabling the installer needs to add their
+            //own rather than inherit one that would try to sign as someone else.
             imageOptions.addAll(['--icon', 'src/main/deploy/package/macos/shrike.icns', '--resource-dir', 'src/main/deploy/package/macos/'])
             installerType = "dmg"
         }

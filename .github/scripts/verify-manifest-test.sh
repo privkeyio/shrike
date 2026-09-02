@@ -27,6 +27,7 @@ expect 1 "a manifest missing windows is refused"     "$here/fixtures/manifest-mi
 expect 1 "an empty manifest is refused"              "$here/fixtures/manifest-empty"
 expect 1 "a manifest that does not exist is refused" "$here/fixtures/manifest-nonexistent"
 expect 1 "a directory is refused"                    "$here/fixtures"
+expect 1 "an unexpected artifact type is refused"    "$here/fixtures/manifest-unexpected-type"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures case(s) failed" >&2
