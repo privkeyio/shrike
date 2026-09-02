@@ -70,6 +70,20 @@ public enum UnifiedSigHashDecision {
     SCHEDULE_MISMATCH("this build and the connected node disagree on the activation height"),
 
     /**
+     * The tip the server announced contradicts the schedule this build ships.
+     *
+     * The activation height and the header version activate together, so a tip at or above the height has to be a v2
+     * header. One that is not means the server is not following the chain this build is, whether it is behind, on
+     * another chain, or answering dishonestly. The announced tip arrives from a subscription and nothing
+     * authenticates it, so a server that wanted the wallet to stop opting in could simply keep announcing v1 headers;
+     * reported as the disagreement it is rather than as the chain not having activated, which would be a statement
+     * about the chain rather than about the answer.
+     */
+    TIP_CONTRADICTS_SCHEDULE("the connected server announced a tip that contradicts the activation height in this build",
+            "The tip it reports is at or past the activation height but is not a fork header. Check the server is "
+                    + "following the fork and is fully synced before sending."),
+
+    /**
      * Both agree on a height the chain has not reached yet.
      */
     BEFORE_ACTIVATION_HEIGHT("the chain has not reached the activation height"),

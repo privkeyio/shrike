@@ -59,10 +59,21 @@ public class UnifiedSigHashDecisionTest {
         return wallet;
     }
 
+    /**
+     * Below the activation height a pre-fork tip is the chain not having activated. At or above it the same tip
+     * contradicts the schedule this build ships, and the two cannot both be right, so it names the server instead.
+     */
     @Test
     public void testAV1TipIsReportedAsTheChainNotHavingActivated() {
         Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED,
+                AppServices.chainDecision(Network.TESTNET4, ACTIVATION - 1, header(V1_HEADER_HEX)));
+
+        Assertions.assertEquals(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE,
                 AppServices.chainDecision(Network.TESTNET4, ACTIVATION, header(V1_HEADER_HEX)));
+
+        //Neither opts in, which is the part that decides what gets signed
+        Assertions.assertFalse(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED.isOptedIn());
+        Assertions.assertFalse(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.isOptedIn());
     }
 
     /**

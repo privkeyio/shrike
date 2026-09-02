@@ -845,16 +845,22 @@ public class AppServices {
             return UnifiedSigHashDecision.CHAIN_UNSEEN;
         }
 
+        Integer activationHeight = getUnifiedSigHashActivationHeight(network);
+
         //A v2 header means the proof of work change is live, and both rule sets activate at the one block
         if(!blockHeader.isHeaderV2()) {
-            return UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED;
+            //Nothing authenticates the announced tip, so a server that kept announcing pre-fork headers could hold
+            //the wallet at "not activated" indefinitely and every transaction it signed would be replayable. Where
+            //this build ships a height and the tip claims to be at or past it, the two cannot both be right, and
+            //saying so names the server rather than the chain.
+            return activationHeight != null && blockHeight != null && blockHeight >= activationHeight
+                    ? UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE : UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED;
         }
 
         if(network == Network.REGTEST) {
             return UnifiedSigHashDecision.OPTED_IN;
         }
 
-        Integer activationHeight = getUnifiedSigHashActivationHeight(network);
         //nodeHardforkHeight is read once here and passed by value. The callee null checks it and then
         //dereferences it, which is only safe because it cannot be cleared between those two steps.
         //Inlining this call so the field is read twice would reintroduce that race.

@@ -314,12 +314,17 @@ public class UnifiedSigHashPolicyTest {
 
     /**
      * The reason a user is shown has to point at the thing they can change, or the setting exists and
-     * nobody finds it. This is the only decision with anything to act on.
+     * nobody finds it. Equally, a decision with nothing to act on must not invent a remedy: a chain that has not
+     * reached its activation height is not something the user can do anything about, and saying otherwise sends
+     * them looking for a control that would not help.
+     *
+     * Three qualify. Two are the keystore mark, reached from the send screen and the keystore tab. The third is a
+     * server announcing a tip that cannot be true, where checking the server is exactly the action to take.
      */
     @Test
-    public void testOnlyTheUnmarkedDeviceReasonCarriesARemedy() {
-        List<UnifiedSigHashDecision> actionable =
-                List.of(UnifiedSigHashDecision.EXTERNAL_SIGNER, UnifiedSigHashDecision.NO_DEVICE_TO_MARK);
+    public void testOnlyReasonsWithSomethingToActOnCarryARemedy() {
+        List<UnifiedSigHashDecision> actionable = List.of(UnifiedSigHashDecision.EXTERNAL_SIGNER,
+                UnifiedSigHashDecision.NO_DEVICE_TO_MARK, UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE);
         for(UnifiedSigHashDecision decision : UnifiedSigHashDecision.values()) {
             if(actionable.contains(decision)) {
                 Assertions.assertNotNull(decision.getRemedy(), decision + " has something the user can act on");
@@ -1174,6 +1179,41 @@ public class UnifiedSigHashPolicyTest {
         Assertions.assertFalse(UnifiedSigHashDecision.CHAIN_UNSEEN.isOptedIn());
         Assertions.assertNull(UnifiedSigHashDecision.CHAIN_UNSEEN.getRemedy(),
                 "connecting is not something the wallet can do for the user, so no remedy is offered");
+    }
+
+    /**
+     * A tip that cannot be true is reported as the server disagreeing, not as the chain not having activated.
+     *
+     * Nothing authenticates the announced tip: it arrives from a subscription and is taken at face value. A server
+     * that kept announcing pre-fork headers would hold the wallet at "not activated" forever, and every transaction
+     * signed in that state is replayable. Where the tip claims a height at or past the one this build ships, a
+     * pre-fork header at that height contradicts the schedule and the wallet says so.
+     */
+    @Test
+    public void testATipThatContradictsTheScheduleIsReportedAsSuch() {
+        BlockHeader v1 = Network.MAINNET.getGenesisHeader();
+        Assertions.assertFalse(v1.isHeaderV2());
+
+        int activation = Network.MAINNET.getBlake2bHeight();
+
+        //Below the height a pre-fork header is exactly what the chain should have, and says nothing about the server
+        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED,
+                AppServices.chainDecision(Network.MAINNET, activation - 1, v1));
+
+        //At and past it the two cannot both be right
+        Assertions.assertEquals(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE,
+                AppServices.chainDecision(Network.MAINNET, activation, v1));
+        Assertions.assertEquals(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE,
+                AppServices.chainDecision(Network.MAINNET, activation + 5000, v1));
+
+        //It declines, and names something the user can actually check
+        Assertions.assertFalse(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.isOptedIn());
+        Assertions.assertNotNull(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.getReason());
+        Assertions.assertNotNull(UnifiedSigHashDecision.TIP_CONTRADICTS_SCHEDULE.getRemedy());
+
+        //Regtest ships no height, so there is nothing for a tip to contradict
+        Assertions.assertEquals(UnifiedSigHashDecision.CHAIN_NOT_ACTIVATED,
+                AppServices.chainDecision(Network.REGTEST, 5_000_000, v1));
     }
 
     /**

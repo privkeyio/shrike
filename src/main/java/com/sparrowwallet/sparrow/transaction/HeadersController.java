@@ -581,7 +581,13 @@ public class HeadersController extends TransactionFormController implements Init
                 }
 
                 for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-                    psbtInput.setSigHash(newValue == SigHash.DEFAULT && !psbtInput.isTaproot() ? SigHash.ALL : newValue);
+                    SigHash chosen = newValue == SigHash.DEFAULT && !psbtInput.isTaproot() ? SigHash.ALL : newValue;
+                    //The control offers one type for the whole transaction and its items are all opted in or all not,
+                    //taken from the first input that declares one. A PSBT can carry a different type per input, so
+                    //writing the chosen one straight out would strip the opt-in from any other input that had it.
+                    //What is being chosen here is the output type; whether an input opted in stays the input's own.
+                    SigHash existing = psbtInput.getSigHash();
+                    psbtInput.setSigHash(existing != null && existing.isUnified() ? chosen.withUnified() : chosen);
                 }
             });
 
