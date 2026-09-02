@@ -142,10 +142,10 @@ public enum FeeRatesSource {
     /**
      * The source to use when the user has not chosen one.
      *
-     * mempool.space has not adopted the fork, so past the activation height it has neither this
-     * chain's blocks nor its mempool. Asking it for a block summary returns 404 for a block that exists, and
-     * asking it for fee rates prices a transaction against a mempool this wallet is not broadcasting into.
-     * mempool.guide runs the same API on this chain, which is why it is the default here and not upstream.
+     * mempool.space has not adopted the fork, so past the activation height it holds neither these blocks
+     * nor this mempool. Asking it for a block summary returns 404 for a block that exists, and asking it for
+     * fee rates prices a transaction against a mempool this wallet is not broadcasting into. mempool.guide
+     * runs the same API and has adopted the fork, which is why it is the default here and not upstream.
      */
     public static FeeRatesSource getDefault() {
         return MEMPOOL_GUIDE;

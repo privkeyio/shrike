@@ -39,7 +39,7 @@ Where a signer is the reason, tick it in the keystore tab of the wallet settings
 
 **The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent against nodes that have not adopted the fork, even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
 
-Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting where the fork is not in force.
+Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting with nodes that have not adopted the fork.
 
 ## Building
 

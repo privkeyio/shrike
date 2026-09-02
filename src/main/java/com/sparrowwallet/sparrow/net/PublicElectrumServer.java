@@ -36,11 +36,11 @@ public enum PublicElectrumServer {
 
     /*
         Empty, so the public server option is never offered. No server listed above has adopted the fork, and
-        connecting to one would show this wallet blocks and balances that diverge past the activation height,
-        which is the worst of these failures rather than the mildest. Since none of them has, the honest answer
-        is to offer none rather than one that misleads. Connect a Knots node, or a private Electrum server
-        indexing it. The entries are left in place rather than deleted so that
-        upstream changes to this file continue to merge.
+        connecting to one would show this wallet blocks and balances that diverge past the activation height.
+        That is worse than a stale fee or a dead explorer link: it is the whole wallet reading the wrong
+        history. Since there is no public server that has adopted the fork, the honest answer is to offer none
+        rather than one that misleads. Connect a Knots node, or a private Electrum server indexing it. The
+        entries are left in place rather than deleted so that upstream changes to this file continue to merge.
      */
     public static final List<Network> SUPPORTED_NETWORKS = List.of();
 

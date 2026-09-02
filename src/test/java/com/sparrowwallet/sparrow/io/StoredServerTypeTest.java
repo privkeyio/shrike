@@ -13,7 +13,7 @@ import java.lang.reflect.Field;
  * Nothing sanitized the stored type at load. Config.getServer reads it and returns the stored public server,
  * and the connection is made from AppServices.start, which runs before any settings screen could correct it.
  * So an upgrading user who was on a public server would have silently connected to one that has not adopted
- * the fork, which is the worst of these failures rather than the mildest.
+ * the fork, which is the whole wallet reading the wrong history rather than one stale number.
  */
 public class StoredServerTypeTest {
     private Config configWith(ServerType stored, Server core, Server electrum) throws Exception {

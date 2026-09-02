@@ -1081,7 +1081,8 @@ public class AppServices {
     }
 
     /**
-     * How many signatures in this transaction can be lifted out of it and spent on the pre-fork chain.
+     * How many signatures in this transaction can be lifted out of it and spent against nodes that have not
+     * adopted the fork.
      *
      * One opted-in signature makes the whole transaction invalid under the pre-fork rules, but the legacy signatures
      * inside it stay individually valid there. A legacy ALL or SINGLE signature commits to every input, so it is

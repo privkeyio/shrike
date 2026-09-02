@@ -14,6 +14,14 @@ set -euo pipefail
 
 manifest="${1:?usage: verify-manifest.sh SHA256SUMS}"
 
+# Without this, a path that cannot be read makes every grep fail rather than match nothing, the counts come
+# out empty, `[ -ne ]` errors and is read as false, and the gate exits 0. A check that passes when it cannot
+# see the thing it is checking is worse than no check.
+if [ ! -r "$manifest" ]; then
+    echo "no readable manifest at ${manifest}" >&2
+    exit 1
+fi
+
 # extension:count, one entry per class of artifact the matrix produces
 required=(
     '\.msi$:1'          # windows installer
@@ -27,7 +35,8 @@ short=0
 for spec in "${required[@]}"; do
     pattern="${spec%:*}"
     expected="${spec##*:}"
-    actual=$(grep -cE "$pattern" "$manifest" || true)
+    # grep exits 1 for no matches and 2 for an error, and only the first is an expected answer here
+    actual=$(grep -cE "$pattern" "$manifest") || [ $? -eq 1 ] || exit 1
     if [ "$actual" -ne "$expected" ]; then
         echo "manifest carries $actual file(s) matching ${pattern}, expected ${expected}" >&2
         short=1
@@ -37,7 +46,8 @@ done
 if [ "$short" -ne 0 ]; then
     echo "" >&2
     echo "The manifest does not cover every platform, which means a build job failed and this ran anyway." >&2
-    echo "Publishing this would hand users a signed manifest with no line to verify some download against." >&2
+    echo "This manifest is signed by hand at release time, so publishing it would hand users a signature" >&2
+    echo "covering everything except the download they cannot then check." >&2
     exit 1
 fi
 

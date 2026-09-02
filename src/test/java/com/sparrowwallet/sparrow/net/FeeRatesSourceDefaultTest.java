@@ -5,16 +5,16 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
- * The default source has to follow this chain.
+ * The default source has to be one that has adopted the fork.
  *
- * mempool.space has not adopted the fork. Past the activation height it holds neither these blocks nor
- * this mempool, so it answers 404 for a block that exists and prices transactions against a mempool
+ * mempool.space has not adopted the fork. Past the activation height it holds neither this wallet's blocks
+ * nor its mempool, so it answers 404 for a block that exists and prices transactions against a mempool
  * this wallet never broadcasts into. Both were reached with the source left unset, which is the state every
  * new install starts in, so the default is the thing worth pinning.
  */
 public class FeeRatesSourceDefaultTest {
     @Test
-    public void testTheDefaultFollowsThisChain() {
+    public void testTheDefaultHasAdoptedTheFork() {
         Assertions.assertEquals(FeeRatesSource.MEMPOOL_GUIDE, FeeRatesSource.getDefault(),
                 "the default must be a source that has adopted the fork");
     }
@@ -56,13 +56,13 @@ public class FeeRatesSourceDefaultTest {
      * transaction is mined past the activation height.
      */
     @Test
-    public void testTheDefaultBlockExplorerFollowsThisChain() {
+    public void testTheDefaultBlockExplorerHasAdoptedTheFork() {
         Assertions.assertEquals(BlockExplorer.MEMPOOL_GUIDE, BlockExplorer.getDefault());
         Assertions.assertTrue(BlockExplorer.getDefault().getServer().getUrl().contains("mempool.guide"));
     }
 
     @Test
-    public void testNoCallSiteDefaultsToAnExplorerOnTheOtherChain() throws Exception {
+    public void testNoCallSiteDefaultsToAnExplorerThatHasNotAdoptedTheFork() throws Exception {
         java.nio.file.Path main = java.nio.file.Path.of("src/main/java/com/sparrowwallet/sparrow");
         long hardcoded;
         try(var paths = java.nio.file.Files.walk(main)) {
@@ -102,7 +102,7 @@ public class FeeRatesSourceDefaultTest {
      * user connected, and MINIMUM is a constant, so neither queries a third party.
      */
     @Test
-    public void testEveryOfferedSourceFollowsThisChain() {
+    public void testEveryOfferedSourceHasAdoptedTheFork() {
         for(FeeRatesSource source : FeeRatesSource.values()) {
             Assertions.assertTrue(
                     source == FeeRatesSource.ELECTRUM_SERVER || source == FeeRatesSource.MINIMUM
@@ -117,10 +117,10 @@ public class FeeRatesSourceDefaultTest {
      * transaction is refused there, but a legacy one relays, which is the replay this wallet exists to prevent.
      */
     @Test
-    public void testEveryBroadcastSourceFollowsThisChain() {
+    public void testEveryBroadcastSourceHasAdoptedTheFork() {
         for(BroadcastSource source : BroadcastSource.values()) {
             Assertions.assertEquals(BroadcastSource.MEMPOOL_GUIDE, source,
-                    source + " would put a transaction where the fork is not in force");
+                    source + " would offer a transaction to nodes that have not adopted the fork");
         }
     }
 
@@ -129,10 +129,10 @@ public class FeeRatesSourceDefaultTest {
      * custom URL can still be set in the settings for anyone who wants one.
      */
     @Test
-    public void testEveryOfferedExplorerFollowsThisChainOrIsNone() {
+    public void testEveryOfferedExplorerHasAdoptedTheForkOrIsNone() {
         for(BlockExplorer explorer : BlockExplorer.values()) {
             Assertions.assertTrue(explorer == BlockExplorer.MEMPOOL_GUIDE || explorer == BlockExplorer.NONE,
-                    explorer + " points at an explorer without this chain's blocks");
+                    explorer + " points at an explorer that has not adopted the fork");
         }
     }
 
@@ -162,7 +162,7 @@ public class FeeRatesSourceDefaultTest {
         java.util.List<ServerType> offered = java.util.List.of(
                 com.sparrowwallet.sparrow.terminal.settings.ServerTypeDialog.getServerTypes());
         Assertions.assertFalse(offered.contains(ServerType.PUBLIC_ELECTRUM_SERVER),
-                "no public server indexes this chain, so the terminal must not offer the type");
+                "no public server has adopted the fork, so the terminal must not offer the type");
         Assertions.assertTrue(offered.contains(ServerType.BITCOIN_CORE) && offered.contains(ServerType.ELECTRUM_SERVER),
                 "the two that can be configured must remain");
     }

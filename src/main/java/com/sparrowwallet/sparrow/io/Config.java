@@ -136,10 +136,10 @@ public class Config {
     /**
      * Corrects a stored server type that names an option this build no longer has.
      *
-     * No public Electrum server indexes this chain. Left alone, a config written before the option was
+     * No public Electrum server has adopted the fork. Left alone, a config written before the option was
      * withdrawn connects to one at startup, from AppServices.start, well before any settings screen could
-     * correct it, and shows a different set of blocks and balances than this wallet's. Done once here rather
-     * than in the accessor so that reading the type still returns what was set.
+     * correct it, and shows blocks and balances that diverge past the activation height. Done once here
+     * rather than in the accessor so that reading the type still returns what was set.
      */
     private void migrateServerType() {
         if(serverType == ServerType.PUBLIC_ELECTRUM_SERVER && !PublicElectrumServer.supportedNetwork()) {

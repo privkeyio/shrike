@@ -53,18 +53,22 @@ jobs:
           VERSION=$(grep -m1 "^version" ../../build.gradle | cut -d"'" -f2)
           DMG="Shrike-${VERSION}-$(uname -m)-unsigned.dmg"
 
-          # hdiutil fails with "Resource busy" often enough to hit most releases, three times in four runs
-          # here, because the volume it attaches is still held when it tries to detach. It succeeds on a
-          # retry. Left unhandled it fails the build, and the checksums job then writes a manifest without
-          # this platform's dmg in it.
-          for attempt in 1 2 3 4 5; do
+          # hdiutil create intermittently fails with "Resource busy", twice in the runs behind this change and
+          # on both macOS arms. It succeeds on a retry. Left unhandled it fails the build, and the checksums
+          # job then writes a manifest without this platform's dmg in it.
+          #
+          # Detaching first because a failure can leave the volume attached, and a second create would then
+          # mount alongside it at /Volumes/Shrike 1 rather than clearing what blocked the first.
+          ATTEMPTS=5
+          for attempt in $(seq "$ATTEMPTS"); do
             if hdiutil create -volname Shrike -srcfolder Shrike.app -ov -format UDZO "$DMG"; then
               break
             fi
-            if [ "$attempt" -eq 5 ]; then
+            if [ "$attempt" -eq "$ATTEMPTS" ]; then
               echo "hdiutil create failed $attempt times" >&2
               exit 1
             fi
+            hdiutil detach /Volumes/Shrike -force 2>/dev/null || true
             echo "hdiutil create failed, retrying in $((attempt * 5))s"
             sleep $((attempt * 5))
           done
