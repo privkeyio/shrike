@@ -31,6 +31,10 @@ Where it reads this instead, hovering the status names what is refusing and what
 
 ![The send screen reporting a transaction as not replay protected](docs/images/send-not-replay-protected.png)
 
+Where a signer is the reason, tick it in the keystore tab of the wallet settings. Nothing a device reports says which firmware it runs, so this is what its owner tells the wallet, and it is off until they say so:
+
+![The Replay protection field in the keystore tab, marked as supported by this device](docs/images/keystore-replay-protection.png)
+
 **In a multisig** one marked signer is enough. Mark two of a 2-of-3 and every transaction opts in; mark one and the opt-in depends on that signer taking part, which the wallet says rather than promising in advance.
 
 **The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent on the other chain even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
