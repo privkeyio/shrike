@@ -100,6 +100,13 @@ public class ElectrumServer {
     //Session cache of headers below the last pin, verified by hash linkage to it and deliberately never persisted
     static final Map<Integer, BlockHeader> verifiedHistoricalHeaders = new ConcurrentHashMap<>();
 
+    //Session cache of the transactions proven at a height, keyed by the pair proven. Kept across servers, since a proof reconstructs a header the
+    //compiled in checkpoints anchor rather than anything the server that supplied it vouches for, and dropped only where a reorg replaces the block
+    static final Map<String, BlockHeader> provenTransactionHeaders = new ConcurrentHashMap<>();
+
+    //Counts the rewinds of the header store, so that a proof can tell whether one happened while it was being obtained. Written under headerSyncLock
+    static volatile int reorgCount;
+
     //The deepest fork point the store has been rewound to this session, at or above which a stored height may have been proven against an orphaned
     //header. Written only under headerSyncLock, which is what makes the min in reconcile atomic; volatile is for the readers that do not take it
     static volatile int lastReorgForkHeight = Integer.MAX_VALUE;
@@ -128,6 +135,9 @@ public class ElectrumServer {
     private static volatile boolean staleTipWarned;
 
     private static volatile boolean invalidTipWarned;
+
+    //Whether the connected server has announced a tip at or above the last pinned header, which the chain cannot then rewind below
+    static volatile boolean tipReachedCheckpoints;
 
     private static volatile long lastTipWarningLoggedAt;
 
@@ -1174,6 +1184,91 @@ public class ElectrumServer {
     }
 
     /**
+     * The header the given transaction is proven to be included in at the given height, or null where the connected server did not substantiate it,
+     * whether by declining the proof, answering for another block, or supplying a branch that does not reconstruct. For a transaction reached outside
+     * a wallet, where there is no history to demote and nothing to report per wallet: the caller has only the header to show, or its absence.
+     * <p>
+     * A server that does not implement the call at all disables verification for the session here as it does on the wallet paths, since a server
+     * lacking it substantiates nothing and marking every transaction against it unverified says something about the server that is not true.
+     */
+    public BlockHeader getProvenHeader(Sha256Hash txid, int height) throws ServerException {
+        String pair = txid + ":" + height;
+        BlockHeader provenHeader = provenTransactionHeaders.get(pair);
+        if(provenHeader != null) {
+            return provenHeader;    //a transaction reopened, or open in a second tab, and the answer cannot have changed while the block stands
+        }
+
+        BlockTransactionHash reference = new BlockTransaction(txid, height, null, null, null);
+        int reorgsBefore = reorgCount;
+        try {
+            Map<String, TransactionMerkleProof> proofs = electrumServerRpc.getTransactionMerkleProofs(getTransport(), null, List.of(reference));
+            TransactionMerkleProof proof = proofs.get(pair);
+            if(proof == null || proof == TransactionMerkleProof.ERROR_PROOF || proof.block_height != height) {
+                return null;
+            }
+
+            BlockHeader header = getVerifiedHeader(height);
+            if(header == null || !verifyProof(txid, proof, header)) {
+                return null;    //only what was proven is cached: a server that will not prove it now is not the server that will be asked next
+            }
+
+            //Remembered only where no reorg intervened, under the lock reconcile holds while it clears: a proof resolving across one would otherwise
+            //be written behind that clear, leaving an entry proven against a header the chain no longer holds. The proof itself still stands or falls
+            //on the header it reconstructed, so it is returned either way
+            synchronized(headerSyncLock) {
+                if(reorgCount == reorgsBefore) {
+                    provenTransactionHeaders.put(pair, header);
+                }
+            }
+
+            return header;
+        } catch(UnsupportedMethodException e) {
+            //Before the catch below, as elsewhere: a property of the server rather than of this transaction, so it is settled for the session on the
+            //same terms the wallet paths settle it, and raised rather than recorded where verification is mandatory
+            disableVerification(e);
+            return null;
+        } catch(ElectrumServerRpcException e) {
+            throw new ServerException(e.getMessage(), e.getCause());     //the server said nothing about this transaction, so it is a failed call
+        }
+    }
+
+    /**
+     * Whether a transaction carries the block it was proven to be in. The zero hash is not one: it marks a response that could not carry a height at
+     * all, and says nothing about a block.
+     */
+    public static boolean isProven(BlockTransaction blockTransaction) {
+        Sha256Hash blockHash = blockTransaction.getBlockHash();
+        return blockHash != null && !Sha256Hash.ZERO_HASH.equals(blockHash);
+    }
+
+    /**
+     * The given transaction carrying the block it was proven to be in, where this session has proved its height, and the transaction itself where it
+     * has not. The proof outlives the objects a wallet or a fetch hands out, none of which carry what was established after they were built, so what
+     * has been proven is asked here rather than read from whichever of them a form was last handed.
+     */
+    public static BlockTransaction getProvenTransaction(BlockTransaction blockTransaction) {
+        if(blockTransaction.getHeight() <= 0 || isProven(blockTransaction)) {
+            return blockTransaction;
+        }
+
+        BlockHeader provenHeader = provenTransactionHeaders.get(blockTransaction.getHashAsString() + ":" + blockTransaction.getHeight());
+        if(provenHeader == null) {
+            return blockTransaction;
+        }
+
+        return getProvenTransaction(blockTransaction, provenHeader);
+    }
+
+    /**
+     * The given transaction carrying the given block, for a caller holding the header a proof was verified against. What was proven is shown from the
+     * proof itself rather than from the cache above, which is an optimisation and does not remember a proof obtained across a reorg.
+     */
+    public static BlockTransaction getProvenTransaction(BlockTransaction blockTransaction, BlockHeader provenHeader) {
+        return new BlockTransaction(blockTransaction.getHash(), blockTransaction.getHeight(), provenHeader.getTimeAsDate(),
+                blockTransaction.getFee(), blockTransaction.getTransaction(), provenHeader.getHash());
+    }
+
+    /**
      * Whether the branch reconstructs the merkle root of the given verified header from the given transaction. Any malformed proof is a proof that
      * does not verify rather than a broken session.
      */
@@ -1525,6 +1620,9 @@ public class ElectrumServer {
         //one - only the current tip is replaced by the next announcement. Dropped with the headers they came from
         int reorganisedFrom = forkHeight;
         retrievedBlockHeaders.keySet().removeIf(height -> height > reorganisedFrom);
+        //Cleared whole rather than above the fork, the height being half of the key: a reorg is rare, and what it costs is one proof per transaction reopened
+        provenTransactionHeaders.clear();
+        reorgCount++;
         try {
             store.append(segment);
         } finally {
@@ -1669,17 +1767,22 @@ public class ElectrumServer {
      * setting is asked here so one answer covers the sync, both write boundaries and the connect time enforcement.
      * <p>
      * A server below the last pinned header cannot substantiate any height, so asking would refuse every new confirmation and raise a dialog for it.
-     * The public tier rejects such a server at connect; a private one still catching up simply goes unverified until it arrives. A tip not yet
-     * announced is not evidence of lagging.
+     * That accommodation is for a private server still catching up, and is not offered where verification is mandatory: such a server was already
+     * above the last pin when it was accepted at connect, so a later claim to be below it is not a server catching up, and its confirmations belong
+     * in the wallet no more than any other the server cannot prove. A tip not yet announced is not evidence of lagging.
      * <p>
      * Not asked of a Bitcoin Core connection at all, whichever backend is fronting it: the node answering is the user's own, and a proof it built
      * against headers it also supplied establishes nothing it has not already been trusted for. Cormorant declares as much in its capability, but
      * bwt takes over where cormorant cannot start, and the same node should not verify or not according to which one did.
      */
-    static boolean isVerifyingTransactions() {
+    public static boolean isVerifyingTransactions() {
         if(!Config.get().isVerifyTransactions() || Config.get().getServerType() == ServerType.BITCOIN_CORE
                 || serverCapability == null || !serverCapability.supportsMerkleProofs()) {
             return false;
+        }
+
+        if(isVerificationMandatory()) {
+            return true;
         }
 
         ChainTip announced = AppServices.getAnnouncedTip();
@@ -2717,6 +2820,26 @@ public class ElectrumServer {
     }
 
     /**
+     * Sanity checks a tip announced during a session, being the connect time checks above plus the one thing only a session can establish: a chain
+     * does not rewind below a compiled in pin. A server that has announced a tip at or above the last pinned header and then announces one below it
+     * is not a server catching up, it is withdrawing the ground verification stands on, so the announcement is refused rather than acted on.
+     */
+    static String getAnnouncedTipValidationError(BlockHeaderTip tip) {
+        String tipError = getTipValidationError(tip);
+        if(tipError != null) {
+            return tipError;
+        }
+
+        int maxCheckpointHeight = Network.get().getHeaderCheckpoints().getMaxHeight();
+        if(tipReachedCheckpoints && tip.height < maxCheckpointHeight) {
+            return "Announced block header tip at height " + tip.height + " is below the last verified checkpoint at height " + maxCheckpointHeight
+                    + ", which the connected server has already announced a tip above";
+        }
+
+        return null;
+    }
+
+    /**
      * Logs and shows a status warning for an invalid tip. A hostile server can send invalid tips at any rate, so warnings are rate limited,
      * and the status warning is shown at most once per episode of invalid tips (reset on any valid tip).
      */
@@ -2734,17 +2857,20 @@ public class ElectrumServer {
     }
 
     private static void initializeTip(BlockHeaderTip tip) {
-        updateTipReceived();
+        updateTipReceived(tip.height);
         //Public servers are never mid-sync, so seed the staleness clock from the tip timestamp to warn promptly on an already stale server
         if(Config.get().getServerType() == ServerType.PUBLIC_ELECTRUM_SERVER) {
             lastTipReceivedAt = Math.min(lastTipReceivedAt, tip.getBlockHeader().getTime() * 1000);
         }
     }
 
-    static void updateTipReceived() {
+    static void updateTipReceived(int height) {
         lastTipReceivedAt = System.currentTimeMillis();
         staleTipWarned = false;
         invalidTipWarned = false;
+        if(height >= Network.get().getHeaderCheckpoints().getMaxHeight()) {
+            tipReachedCheckpoints = true;
+        }
     }
 
     public static ServerCapability getServerCapability(List<String> serverVersion) {
@@ -2945,6 +3071,8 @@ public class ElectrumServer {
                     if(firstCall) {
                         electrumServer.connect();
 
+                        //What the last server announced says nothing about this one, and is cleared before the thread that dispatches announcements exists
+                        tipReachedCheckpoints = false;
                         reader = new Thread(new ReadRunnable(), "ElectrumServerReadThread");
                         reader.setDaemon(true);
                         reader.setUncaughtExceptionHandler(ConnectionService.this);
@@ -3634,6 +3762,38 @@ public class ElectrumServer {
                     }
 
                     return Collections.emptyMap();
+                }
+            };
+        }
+    }
+
+    /**
+     * Proves a transaction the tab is displaying, off the thread that fetched it: the proof is a round trip of its own, and the header it is checked
+     * against can cost a range fetch below the last pin, neither of which the transaction should wait behind to be shown.
+     * <p>
+     * Succeeding with no header is the server answering that it will not substantiate the height, which is a finding. Failing is not reaching the
+     * server at all, which is nothing, and the two are kept apart here so that the caller can tell what it has been told.
+     */
+    public static class TransactionVerificationService extends Service<BlockHeader> {
+        private final Sha256Hash txid;
+        private final int height;
+
+        public TransactionVerificationService(Sha256Hash txid, int height) {
+            this.txid = txid;
+            this.height = height;
+        }
+
+        @Override
+        protected Task<BlockHeader> createTask() {
+            return new Task<>() {
+                @Override
+                protected BlockHeader call() throws ServerException {
+                    //getTransport() opens one where there is none, so a task running after the connection closed must not reach it
+                    if(!isConnected()) {
+                        throw new ServerException("Not connected");
+                    }
+
+                    return new ElectrumServer().getProvenHeader(txid, height);
                 }
             };
         }
