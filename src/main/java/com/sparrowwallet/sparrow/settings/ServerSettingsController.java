@@ -705,7 +705,7 @@ public class ServerSettingsController extends SettingsDetailController {
         } else if(exception instanceof ProxyServerException) {
             reason += ". Check if the proxy server is running.";
         } else if(reason != null && (reason.contains("Check if Bitcoin Knots is running") || reason.contains("Could not connect to Bitcoin Knots RPC"))) {
-            reason += "\n\nSee https://sparrowwallet.com/docs/connect-node.html";
+            reason += "\n\nSee https://shrikewallet.com/docs/connect-node.html";
         } else if(reason != null && (reason.startsWith("Cannot connect to hidden service"))) {
             reason += " on the server. Check that the onion address and port are correct, and that both Tor and the Electrum server are running on the node. Usually SSL is not enabled, and the port is 50001.";
         } else if(reason != null && (reason.startsWith("Cannot find Bitcoin Knots cookie file at"))) {
