@@ -110,11 +110,11 @@
 .hyperlink {
     -fx-padding: 0;
     -fx-border-width: 0;
-    -fx-fill: #1e88cf;
+    -fx-fill: #C3402A;
 }
 
 .hyperlink:visited {
-    -fx-text-fill: #1e88cf;
+    -fx-text-fill: #C3402A;
     -fx-underline: false;
 }
 
@@ -138,11 +138,11 @@
 }
 
 .copyable-text-field .copy-button:hover > .graphic {
-    -fx-background-color: #0184bc;
+    -fx-background-color: #9C3321;
 }
 
 .copyable-text-field .copy-button:pressed > .graphic {
-    -fx-background-color: #116a8d;
+    -fx-background-color: #822A1C;
 }
 
 .combo-text-field .combo-button {
@@ -157,11 +157,11 @@
 }
 
 .combo-text-field .combo-button:hover > .graphic {
-    -fx-background-color: #0184bc;
+    -fx-background-color: #9C3321;
 }
 
 .combo-text-field .combo-button:pressed > .graphic {
-    -fx-background-color: #116a8d;
+    -fx-background-color: #822A1C;
 }
 
 .view-password-text-field .view-password-button > .graphic {
@@ -179,11 +179,11 @@
 }
 
 .view-password-text-field .view-password-button:hover > .graphic, .view-password-text-field .hide-password-button:hover > .graphic {
-    -fx-background-color: #0184bc;
+    -fx-background-color: #9C3321;
 }
 
 .view-password-text-field .view-password-button:pressed > .graphic, .view-password-text-field .hide-password-button:pressed > .graphic {
-    -fx-background-color: #116a8d;
+    -fx-background-color: #822A1C;
 }
 
 .readonly.text-input {
@@ -248,11 +248,11 @@
 }
 
 .icon-button .glyph-font {
-    -fx-text-fill: #1e88cf;
+    -fx-text-fill: #C3402A;
 }
 
 .icon-button:hover .glyph-font {
-    -fx-text-fill: #259cf5;
+    -fx-text-fill: #D75843;
 }
 
 .number-field {
@@ -371,4 +371,24 @@ CellView > .text-input.text-field {
 
 .chunk-addresses .tree-table-view .tree-table-row-cell:selected .address-chunk.alternate {
     -fx-fill: derive(-fx-selection-bar-text, 50%);
+}
+
+/* ControlsFX hardcodes a blue for the switched-on state in its own toggleswitch.css, so it is the one
+   control colour the theme cannot reach. Overridden here to the fork's red. The server type switches in
+   welcome.css and settings.css name their own colour with more specificity and are left alone: those say
+   which kind of server is connected, which is not a chrome colour. */
+.toggle-switch:selected .thumb-area {
+    -fx-background-color:
+            linear-gradient(to bottom, derive(-fx-text-box-border, -20%), derive(-fx-text-box-border, -30%)),
+            linear-gradient(to bottom, derive(#AF3925, 30%), #AF3925);
+    -fx-background-insets: 0, 1;
+}
+
+.toggle-switch:selected:focused .thumb-area {
+    -fx-background-color:
+            -fx-focus-color,
+            linear-gradient(to bottom, derive(-fx-text-box-border, -20%), derive(-fx-text-box-border, -30%)),
+            -fx-faint-focus-color,
+            linear-gradient(to bottom, derive(#AF3925, 30%), #AF3925);
+    -fx-background-insets: -0.2, 0, -1.4, 1;
 }

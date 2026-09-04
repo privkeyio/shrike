@@ -92,11 +92,11 @@
 }
 
 #transactionDiagramLabel .button .glyph-font {
-    -fx-text-fill: #0184bc;
+    -fx-text-fill: #9C3321;
 }
 
 #transactionDiagramLabel .button:hover .glyph-font {
-    -fx-text-fill: #259cf5;
+    -fx-text-fill: #D75843;
 }
 
 .details-lower .fieldset {

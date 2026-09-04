@@ -87,7 +87,7 @@
 
 .version-hyperlink, .status-bar .status-label .hyperlink {
     -fx-border-color: transparent;
-    -fx-text-fill: #1e88cf;
+    -fx-text-fill: #C3402A;
 }
 
 .version-hyperlink:visited, .status-bar .status-label .hyperlink {
