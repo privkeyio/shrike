@@ -768,12 +768,19 @@ public class AppServices {
      * way, and a signature carrying no replay protection is the worse of the two failures to choose.
      */
     private static ChainTip decisionTip() {
-        ChainTip announced = announcedTip;
+        //Read once each: the store can advance between the two reads, and taking the rule below on a verified tip
+        //that no longer matches the announcement it was compared against is the split read ChainTip exists to prevent.
+        return decisionTip(announcedTip, ElectrumServer.getVerifiedTip());
+    }
+
+    /**
+     * The rule itself, taking both tips so it can be exercised without a loaded store.
+     */
+    static ChainTip decisionTip(ChainTip announced, ChainTip verified) {
         if(announced == null) {
             return null;
         }
 
-        ChainTip verified = ElectrumServer.getVerifiedTip();
         return verified != null && verified.height() >= announced.height() ? verified : announced;
     }
 
