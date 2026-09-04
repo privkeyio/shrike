@@ -760,6 +760,24 @@ public class AppServices {
     }
 
     /**
+     * The tip the opt-in decision is taken from.
+     *
+     * The announced tip is what a server says. The header store is what has been verified from the pinned anchor, so
+     * where it has reached the announcement its answer cannot be forged and is used instead. Where it is behind, which
+     * is every session until it catches up, the announcement is used as before: declining there would sign the legacy
+     * way, and a signature carrying no replay protection is the worse of the two failures to choose.
+     */
+    private static ChainTip decisionTip() {
+        ChainTip announced = announcedTip;
+        if(announced == null) {
+            return null;
+        }
+
+        ChainTip verified = ElectrumServer.getVerifiedTip();
+        return verified != null && verified.height() >= announced.height() ? verified : announced;
+    }
+
+    /**
      * Whether transactions this wallet creates should opt in to the unified signature hash.
      *
      * The fork carries both the BLAKE2b proof of work and the opt-in signature hash, and both take
@@ -777,7 +795,7 @@ public class AppServices {
     public static boolean isUnifiedSigHashActive() {
         //Read once: ChainTip carries the height and the header together so the decision cannot take the
         //height of one block with the header of another, which two separate reads would allow.
-        ChainTip tip = announcedTip;
+        ChainTip tip = decisionTip();
         return isUnifiedSigHashActive(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header());
     }
 
@@ -1236,7 +1254,7 @@ public class AppServices {
      * wallet also holds a device, since the device is no obstacle until the rules are live.
      */
     public static UnifiedSigHashDecision getUnifiedSigHashDecision(Wallet wallet) {
-        ChainTip tip = announcedTip;
+        ChainTip tip = decisionTip();
         return combinedDecision(chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header()), wallet);
     }
 
@@ -1275,7 +1293,7 @@ public class AppServices {
     public static UnifiedSigHashStatus getUnifiedSigHashStatus(Wallet wallet) {
         //One read of the tip for both answers. Reading it again for the caveats would let the headline describe one
         //tip and the caveats another, which is the same class of split reading the ChainTip record exists to prevent.
-        ChainTip tip = announcedTip;
+        ChainTip tip = decisionTip();
         UnifiedSigHashDecision chain = chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header());
         UnifiedSigHashDecision decision = combinedDecision(chain, wallet);
 

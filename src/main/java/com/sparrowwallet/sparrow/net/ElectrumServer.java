@@ -1467,6 +1467,28 @@ public class ElectrumServer {
     }
 
     /**
+     * The tip of the verified header chain, or null where that cannot be answered without loading or fetching.
+     *
+     * Read only on purpose: a caller asking what has been verified must not set a store load or a header download
+     * going, so an absent, superseded or torn store is simply not answered for and the caller falls back.
+     */
+    public static ChainTip getVerifiedTip() {
+        try {
+            HeaderStore store = headerStore;
+            if(store == null || !store.isIntact()) {
+                return null;
+            }
+
+            int height = store.getTipHeight();
+            BlockHeader header = store.getHeader(height);
+            return header == null ? null : new ChainTip(height, header);
+        } catch(IOException e) {
+            log.warn("Could not read the block header store: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * The header store for this network, loaded on first use from a background thread. It is not cleared when the server changes: headers are claims
      * about the chain rather than about the server, and a new server announcing a different tip is handled as an ordinary reorg.
      */
