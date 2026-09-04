@@ -1,10 +1,10 @@
 .root {
-    -fx-accent: #166793;
+    -fx-accent: #8B2D1E;
     -fx-focus-color: -fx-accent;
     -fx-base: #1b1d1f;
     -fx-control-inner-background: derive(-fx-base, 25%);
     -fx-control-inner-background-alt: -fx-control-inner-background ;
-    -fx-default-button: #1e88cf;
+    -fx-default-button: #C3402A;
     -fx-box-border: ladder(-fx-color, black 20%, derive(-fx-color,40%) 30%);
 }
 
@@ -130,20 +130,20 @@ HorizontalHeaderColumn > TableColumnHeader.column-header.table-column{
 }
 
 .root .list-menu {
-    -fx-background-color: #2284bb;
+    -fx-background-color: #B63B27;
 }
 
 .root .list-item {
     -fx-pref-width: 180;
-    -fx-background-color: #2284bb;
+    -fx-background-color: #B63B27;
 }
 
 .root .list-item:hover {
-    -fx-background-color: linear-gradient(to right, #2284bb, derive(#388fc7, 10%));
+    -fx-background-color: linear-gradient(to right, #B63B27, derive(#D2452D, 10%));
 }
 
 .root .list-item:selected {
-    -fx-background-color: linear-gradient(to right, #2284bb, derive(#1479bb, -10%));
+    -fx-background-color: linear-gradient(to right, #B63B27, derive(#AA3825, -10%));
 }
 
 .root .list-item:disabled {
@@ -166,11 +166,11 @@ HorizontalHeaderColumn > TableColumnHeader.column-header.table-column{
 }
 
 .root .wallet-subtabs > .tab-header-area > .headers-region > .tab {
-    -fx-background-color: derive(#2284bb, 32%);
+    -fx-background-color: derive(#B63B27, 32%);
 }
 
 .root .wallet-subtabs > .tab-header-area > .headers-region > .tab:selected {
-    -fx-background-color: #2284bb;
+    -fx-background-color: #B63B27;
 }
 
 #inputsPie .default-color0.chart-pie {
@@ -302,7 +302,7 @@ HorizontalHeaderColumn > TableColumnHeader.column-header.table-column{
 }
 
 .root .placeholder .hyperlink {
-    -fx-text-fill: derive(#1e88cf, 20%);
+    -fx-text-fill: derive(#C3402A, 20%);
 }
 
 .root .box-overlay {
@@ -339,11 +339,11 @@ HorizontalHeaderColumn > TableColumnHeader.column-header.table-column{
 }
 
 .root .hyperlink {
-    -fx-text-fill: #229df5;
+    -fx-text-fill: #D65641;
 }
 
 .root .hyperlink:visited {
-    -fx-text-fill: #229df5;
+    -fx-text-fill: #D65641;
 }
 
 #grid .spreadsheet-cell.selection {

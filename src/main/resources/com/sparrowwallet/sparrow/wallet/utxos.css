@@ -11,7 +11,7 @@
 }
 
 .chart-bar.selected {
-    -fx-bar-fill: rgba(30, 136, 207, 0.6);
+    -fx-bar-fill: rgba(195, 64, 42, 0.6);
 }
 
 .freeze-dust-utxo {

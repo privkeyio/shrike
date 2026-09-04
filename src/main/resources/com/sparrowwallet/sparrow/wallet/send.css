@@ -50,11 +50,11 @@
 }
 
 .chart-line-symbol {
-    -fx-background-color: rgba(30, 136, 207, 0);
+    -fx-background-color: rgba(195, 64, 42, 0);
 }
 
 .chart-line-symbol.selected {
-    -fx-background-color: rgba(30, 136, 207, 0.6);
+    -fx-background-color: rgba(195, 64, 42, 0.6);
 }
 
 .inactive {

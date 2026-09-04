@@ -56,12 +56,12 @@
     -fx-pref-height: 50;
     -fx-pref-width: 90;
     -fx-alignment: CENTER;
-    -fx-background-color: derive(#3da0e3, 32%);
+    -fx-background-color: derive(#C4402A, 32%);
     -fx-background-insets: 0 1 0 1,0,0;
 }
 
 .wallet-subtabs > .tab-header-area .tab:selected {
-    -fx-background-color: #3da0e3;
+    -fx-background-color: #C4402A;
 }
 
 .wallet-subtabs > .tab-header-area .tab-label {
@@ -87,7 +87,7 @@
 
 .version-hyperlink, .status-bar .status-label .hyperlink {
     -fx-border-color: transparent;
-    -fx-text-fill: #1e88cf;
+    -fx-text-fill: #C3402A;
 }
 
 .version-hyperlink:visited, .status-bar .status-label .hyperlink {
