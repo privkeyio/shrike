@@ -1,11 +1,11 @@
 .list-menu {
     -fx-pref-width: 180;
-    -fx-background-color: #3da0e3;
+    -fx-background-color: #C4402A;
 }
 
 .list-item {
     -fx-pref-width: 180;
-    -fx-background-color: #3da0e3;
+    -fx-background-color: #C4402A;
 }
 
 .list-item * {
@@ -13,11 +13,11 @@
 }
 
 .list-item:hover {
-    -fx-background-color: linear-gradient(to right, #3da0e3, derive(#4aa7e5, 10%));
+    -fx-background-color: linear-gradient(to right, #C4402A, derive(#D0442D, 10%));
 }
 
 .list-item:selected {
-    -fx-background-color: linear-gradient(to right, #3da0e3, derive(#1e88cf, -10%));
+    -fx-background-color: linear-gradient(to right, #C4402A, derive(#9A3221, -10%));
 }
 
 .list-item:disabled {
