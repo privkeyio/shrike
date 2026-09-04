@@ -320,7 +320,7 @@ jlink {
                 installerName = "shrike"
                 installerOptions.addAll(['--linux-shortcut', '--linux-menu-group', 'Shrike'])
             }
-            installerOptions.addAll(['--resource-dir', layout.buildDirectory.dir('deploy/package').get().asFile.toString(), '--linux-app-category', 'utils', '--linux-app-release', blake2bRelease, '--linux-rpm-license-type', 'ASL 2.0', '--linux-deb-maintainer', 'AcesHigh70 <6564423+AcesHigh70@users.noreply.github.com>'])
+            installerOptions.addAll(['--resource-dir', layout.buildDirectory.dir('deploy/package').get().asFile.toString(), '--linux-app-category', 'utils', '--linux-app-release', blake2bRelease, '--linux-rpm-license-type', 'ASL 2.0', '--linux-deb-maintainer', 'Kyle Santiago <kyle@privkey.io>'])
             imageOptions.addAll(['--icon', 'src/main/deploy/package/linux/Shrike.png', '--resource-dir', 'src/main/deploy/package/linux/'])
             //Set explicitly, as the other two platforms do. Left unset, jpackage attempts every installer
             //type the platform advertises and stops on the one whose tooling is absent, so packaging fails

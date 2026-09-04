@@ -1,7 +1,7 @@
 Package: shrike
 Version: ${version}-${release}
 Section: utils
-Maintainer: AcesHigh70 <6564423+AcesHigh70@users.noreply.github.com>
+Maintainer: Kyle Santiago <kyle@privkey.io>
 Priority: optional
 Architecture: ${arch}
 Provides: shrike
