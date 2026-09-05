@@ -18,6 +18,7 @@ import com.sparrowwallet.sparrow.control.WalletPasswordDialog;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
 import com.sparrowwallet.drongo.policy.Policy;
+import com.sparrowwallet.drongo.protocol.Script;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
@@ -77,6 +78,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.sparrowwallet.sparrow.AppController.CONNECTION_FAILED_PREFIX;
@@ -1092,25 +1094,117 @@ public class AppServices {
      *
      * Read off the signatures rather than the declared hash type, because a transaction assembled from per-device
      * PSBTs carries signatures the declaration does not describe.
+     *
+     * The two numbers are counted differently, and deliberately so, because they are claimed in opposite directions.
+     * The first says a protection is present, so it counts only signatures that verify against a key the input names: a
+     * push is taken for a signature when it merely decodes as one, and any 64 or 65 byte push decodes as a Schnorr
+     * signature whose hash type is its own last byte, so a taproot control block or an uncompressed public key sitting
+     * in a witness would otherwise report an opt-in that nothing made. The second is the denominator of that claim, so
+     * it counts everything that looks like a signature: a signature this cannot check has to make the claim weaker, not
+     * disappear from the count and make it look complete.
      */
-    public static int[] signatureOptInCounts(PSBT psbt) {
+    public static int[] signatureOptInCounts(PSBT psbt, Wallet wallet) {
         if(psbt == null) {
             return new int[] {0, 0};
         }
 
+        //Which inputs this wallet holds keys for. An input it does not, it cannot vouch for, and a signature it cannot
+        //vouch for cannot support the claim: the keys an input carries are written by whoever wrote the input.
+        Map<PSBTInput, WalletNode> signingNodes = wallet == null ? Map.of() : wallet.getSigningNodes(psbt);
+
+        return signatureOptInCounts(psbt, psbtInput -> trustedKeys(psbtInput, wallet, signingNodes.get(psbtInput)));
+    }
+
+    /**
+     * The keys this wallet will stand behind for an input, or none.
+     *
+     * The spent output has to be the one this wallet derives for that node before any of it counts. Everything the
+     * message is built from comes out of the PSBT, the amount included, so an input whose output this wallet did not
+     * derive is one where a stranger chose the message, and a signature verifying over a message a stranger chose says
+     * nothing about the transaction being sent.
+     */
+    static Set<ECKey> trustedKeys(PSBTInput psbtInput, Wallet wallet, WalletNode walletNode) {
+        if(wallet == null || walletNode == null || psbtInput.getUtxo() == null) {
+            return Set.of();
+        }
+
+        //A wallet built out of the PSBT vouches for nothing: it answers for the script with the PSBT's own output and
+        //for the keys with the ones the PSBT names, so every check below would be the file agreeing with itself
+        if(wallet instanceof FinalizingPSBTWallet) {
+            return Set.of();
+        }
+
+        Script walletScript = wallet.getOutputScript(walletNode);
+        if(walletScript == null || !walletScript.equals(psbtInput.getUtxo().getScript())) {
+            return Set.of();
+        }
+
+        //getPubKeys throws for a singlesig wallet rather than answering with the one key, so ask by policy. Either can
+        //answer with nothing for a node it does not hold, and nothing is the safe answer rather than an exception.
+        Set<ECKey> keys = new LinkedHashSet<>();
+        try {
+            if(ScriptType.P2TR.isScriptType(walletScript)) {
+                //Only the output key can authorise a key path spend, so the untweaked key it was derived from is not
+                //something to accept a signature against
+                keys.add(ScriptType.P2TR.getPublicKeyFromScript(walletScript));
+            } else if(wallet.getPolicyType() == PolicyType.MULTI_HD) {
+                keys.addAll(walletNode.getPubKeys());
+            } else {
+                //getPubKeys throws for a singlesig wallet rather than answering with the one key, so ask by policy
+                keys.add(walletNode.getPubKey());
+            }
+        } catch(RuntimeException e) {
+            //A wallet that cannot answer for a node vouches for nothing, which is the safe answer rather than an
+            //exception out of a label
+            return Set.of();
+        }
+        keys.remove(null);
+        return keys;
+    }
+
+    /**
+     * As above, vouching for a set of keys directly rather than through a wallet, for a caller that holds a key no
+     * wallet does. A sweep signs with one such key, though it broadcasts its own transaction rather than showing this.
+     */
+    public static int[] signatureOptInCounts(PSBT psbt, Collection<ECKey> trustedKeys) {
+        return psbt == null ? new int[] {0, 0} : signatureOptInCounts(psbt, psbtInput -> trustedKeys);
+    }
+
+    /**
+     * The counting itself, over whatever each input's keys are taken to be.
+     */
+    private static int[] signatureOptInCounts(PSBT psbt, Function<PSBTInput, Collection<ECKey>> keysFor) {
         int optedIn = 0;
         int total = 0;
+        int checked = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            for(TransactionSignature signature : psbtInput.getSignatures()) {
-                total++;
-                if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
-                    optedIn++;
+            total += psbtInput.getSignatures().size();
+
+            //Each input is capped on its own, and the inputs are not, so a transaction of them is capped here. Every
+            //check builds a message over the whole transaction, and this runs while a screen is being drawn.
+            Collection<ECKey> keys = checked < MAX_SIGNATURE_CHECKS ? keysFor.apply(psbtInput) : List.of();
+            checked += keys.size() * psbtInput.getSignatures().size();
+
+            try {
+                for(TransactionSignature signature : psbtInput.getVerifiedSignatures(keys)) {
+                    if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
+                        optedIn++;
+                    }
                 }
+            } catch(RuntimeException e) {
+                //A check that cannot run must not read as a check that failed, and must not take the screen with it:
+                //a missing native signature library is the case that reaches this
+                log.warn("Could not check the signatures on an input for the opt-in", e);
             }
         }
 
         return new int[] {optedIn, total};
     }
+
+    /**
+     * The most signature checks worth making for one transaction, matching what one input is allowed on its own.
+     */
+    private static final int MAX_SIGNATURE_CHECKS = 1024;
 
     /**
      * How many signatures in this transaction can be lifted out of it and spent against nodes that have not
@@ -1121,6 +1215,9 @@ public class AppServices {
      * useless in any other transaction. A legacy ANYONECANPAY one commits only to its own input and to the outputs,
      * so it can be copied into a transaction that drops the opted-in inputs and spent against a node that never
      * adopted the fork. The transaction is protected; that input is not, and saying only "protected" would hide it.
+     *
+     * Counted from every push that looks like a signature rather than only from those that verify, because this reports
+     * a risk. Naming one that is not there costs a warning; missing one that is costs the warning that mattered.
      */
     public static int liftableSignatureCount(PSBT psbt) {
         if(psbt == null) {

@@ -185,6 +185,11 @@ public class SparrowSendHarness {
                 .orElse(witness.getPushes().getFirst());
 
         System.out.println("SIGHASH_BYTE=" + String.format("%02x", signature[signature.length - 1]));
+        //What the transaction view counts the replay protection label from, on the PSBT this run actually signed. The
+        //first number is claimed as a protection so it counts only signatures that verify; the second is what is there.
+        int[] counts = AppServices.signatureOptInCounts(psbt, wallet);
+        System.out.println("VERIFIED_OPTED_IN=" + counts[0]);
+        System.out.println("SIGNATURES_PRESENT=" + counts[1]);
         System.out.println("RAWTX=" + Utils.bytesToHex(finalTx.bitcoinSerialize()));
     }
 }

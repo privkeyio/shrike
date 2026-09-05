@@ -572,6 +572,10 @@ public class HeadersController extends TransactionFormController implements Init
             //written back to every input below.
             updateOptInStatus(psbtSigHash);
             sigHash.valueProperty().addListener((observable, oldValue, newValue) -> updateOptInStatus(newValue));
+            //The wallet arrives after this view is built for a PSBT that came from elsewhere, and it is what vouches
+            //for the keys, so the status is read again when it does. Without this a co-signer's opted-in PSBT keeps
+            //the reading taken before there was anything to check it against, which is "no replay protection".
+            headersForm.signingWalletProperty().addListener((observable, oldValue, newValue) -> refreshOptInStatus());
 
             sigHash.valueProperty().addListener((observable, oldValue, newValue) -> {
                 SigHash newBase = (newValue == null ? null : newValue.withoutUnified());
@@ -1070,7 +1074,9 @@ public class HeadersController extends TransactionFormController implements Init
     private void updateOptInStatus(SigHash psbtSigHash) {
         //Counted off the signatures rather than taken from the declared hash type, because a transaction assembled
         //from per-device PSBTs carries signatures the declaration does not describe
-        int[] counts = AppServices.signatureOptInCounts(headersForm.getPsbt());
+        //With the wallet, because only a key this wallet holds can vouch for a signature: every key an input carries
+        //was written by whoever wrote the input
+        int[] counts = AppServices.signatureOptInCounts(headersForm.getPsbt(), headersForm.getSigningWallet());
         int optedInSignatures = counts[0];
         int signatures = counts[1];
 
@@ -1078,11 +1084,14 @@ public class HeadersController extends TransactionFormController implements Init
         boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
+        //Counted once rather than per label: both read the same PSBT, and the reading now verifies signatures
+        String detail = optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures,
+                AppServices.liftableSignatureCount(headersForm.getPsbt()));
+
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
             label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
             label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
-            label.setTooltip(new Tooltip(optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures,
-                    AppServices.liftableSignatureCount(headersForm.getPsbt()))));
+            label.setTooltip(new Tooltip(detail));
         }
     }
 
@@ -1093,7 +1102,12 @@ public class HeadersController extends TransactionFormController implements Init
      */
     private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures, int liftable) {
         if(!optedIn) {
-            return "These signatures are made the way they always have been. They carry no replay protection.";
+            //Hedged where signatures are present, because then this does not know how they were made: an opt-in counts
+            //only where a key this wallet vouches for made it, so nothing counted can mean no wallet to vouch yet, an
+            //input this wallet does not derive, or a message that could not be built. Only the unsigned case is flat.
+            return signatures > 0
+                    ? "None of these signatures could be confirmed as opting in, so treat them as made the way they always have been: they carry no replay protection."
+                    : "These signatures are made the way they always have been. They carry no replay protection.";
         }
 
         if(everySignature || signatures == 0) {
@@ -1105,7 +1119,10 @@ public class HeadersController extends TransactionFormController implements Init
         String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
                 + optedInSignatures + " of " + signatures + " do."
                 + System.lineSeparator() + System.lineSeparator()
-                + "The other " + (signatures - optedInSignatures) + " were made the way they always have been, so those signers were shown the amounts by this computer rather than committing to them.";
+                //"could not be confirmed" rather than "were made the old way", because the two numbers are counted
+                //differently: the first counts only signatures that verify, the second counts everything that looks
+                //like one, and the difference is a signature made the old way or a push that is not a signature at all
+                + "The other " + (signatures - optedInSignatures) + " could not be confirmed as opting in, so treat them as made the way they always have been: those signers were shown the amounts by this computer rather than committing to them.";
 
         //A legacy ANYONECANPAY signature commits only to its own input and to the outputs, so unlike the other legacy
         //types it survives being lifted into a transaction that drops the inputs which opted in. The transaction is
