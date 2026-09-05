@@ -22,7 +22,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Over a socket, against a server that behaves the way a server on a chain with v2 headers is specified to.
+ * Over a socket, against a server that behaves the way one serving v2 headers is specified to.
  *
  * The two halves this exercises cannot be reached below the JSON layer, which is where the rest of the header tests fake their answers: whether the
  * version this client asks for is one such a server will serve at all, and whether the list form that asking for it produces can be read.

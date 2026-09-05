@@ -13,7 +13,7 @@ import java.util.List;
  *
  * Protocol 1.6 moved the run out of hex and into a headers field of its own, one entry per header. Asking for 1.8 therefore changes the form this
  * client is sent by any server capping between the version it used to ask for and this one, so reading only the concatenated form would break those
- * servers on every chain, whether or not it has a v2 header anywhere in it.
+ * servers, whether or not a v2 header has been reached.
  */
 public class BlockHeadersFormTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -119,7 +119,7 @@ public class BlockHeadersFormTest {
     }
 
     @Test
-    public void the_client_asks_for_a_version_a_v2_chain_will_serve() {
+    public void the_client_asks_for_a_version_a_v2_header_server_will_serve() {
         Assertions.assertEquals("1.8", ElectrumServer.SUPPORTED_VERSIONS[ElectrumServer.SUPPORTED_VERSIONS.length - 1]);
     }
 }

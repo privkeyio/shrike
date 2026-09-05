@@ -29,7 +29,7 @@ public class BlockHeaders {
     /**
      * Protocol 1.6 moved the run out of {@code hex} and into a field of its own, one hex string per header, and a server answers in whichever form
      * the negotiated version calls for. Raising the version this client asks for therefore changes the form it is sent by any server capping between
-     * the old maximum and the new one, so reading only the older field would break those servers on every chain, fork or not.
+     * the old maximum and the new one, so reading only the older field would break those servers, whether or not a v2 header has been reached.
      *
      * The list is joined back into the concatenated form, which is what the rest of this class, and every caller that reads {@code hex}, already
      * expects. Nothing is lost: the run is walked by each header's own length either way, and an entry that is not one whole header is refused here

@@ -59,7 +59,7 @@ public class ElectrumServer {
     /**
      * The range this client negotiates, a minimum and a maximum, so every server still settles on the highest version it supports within it.
      *
-     * The maximum is 1.8 because the electrs build that indexes this chain refuses to negotiate below it. A client that assumes an eighty byte header
+     * The maximum is 1.8 because the electrs build that indexes Bitcoin since the BLAKE2b hardfork refuses to negotiate below it. A client that assumes an eighty byte header
      * computes the wrong hash for every block past the activation and fails to link the chain, which reads as a sync problem rather than as the
      * incompatibility it is, so that server declines rather than serving headers it expects to be misread.
      *
