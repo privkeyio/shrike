@@ -1086,15 +1086,34 @@ public class HeadersController extends TransactionFormController implements Init
 
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
             label.setText(status.summary());
-            label.setGraphic(status.optedIn() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+            label.setGraphic(switch(status.level()) {
+                case PROTECTED -> GlyphUtils.getSuccessGlyph();
+                case UNPROTECTED -> GlyphUtils.getWarningGlyph();
+                case UNCHECKED -> GlyphUtils.getQuestionGlyph();
+            });
             label.setTooltip(new Tooltip(status.detail()));
         }
     }
 
     /**
+     * The three things a transaction can be, which are not two.
+     *
+     * Protection takes one opted-in signature anywhere, so saying a transaction has none is a claim about every
+     * signature in it. Where one could not be checked, that claim cannot be made either way: the unchecked one might be
+     * the opt-in. Folding that into "not replay protected" states something unknown as a finding, and folding it into
+     * "replay protected" would be the far worse direction.
+     */
+    enum OptInLevel {
+        PROTECTED, UNPROTECTED, UNCHECKED
+    }
+
+    /**
      * What the labels say, worked out apart from the labels themselves so that it can be read back and checked.
      */
-    record OptInStatus(boolean optedIn, String summary, String detail) {
+    record OptInStatus(OptInLevel level, String summary, String detail) {
+        boolean optedIn() {
+            return level == OptInLevel.PROTECTED;
+        }
     }
 
     static OptInStatus optInStatus(SigHash psbtSigHash, int optedInSignatures, int verifiedSignatures, int signatures, int liftable) {
@@ -1102,7 +1121,11 @@ public class HeadersController extends TransactionFormController implements Init
         boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
-        return new OptInStatus(optedIn, UnifiedSigHashDecision.summaryFor(optedIn),
+        OptInLevel level = optedIn ? OptInLevel.PROTECTED
+                : (signatures > verifiedSignatures ? OptInLevel.UNCHECKED : OptInLevel.UNPROTECTED);
+
+        return new OptInStatus(level, level == OptInLevel.UNCHECKED ? "Replay protection not checked"
+                : UnifiedSigHashDecision.summaryFor(optedIn),
                 optedInStatusDetail(optedIn, everySignature, optedInSignatures, verifiedSignatures, signatures, liftable));
     }
 
@@ -1117,13 +1140,18 @@ public class HeadersController extends TransactionFormController implements Init
             //checked, this knows how they were made. Where none could be checked, it knows nothing about them and must
             //not imply it looked: no wallet to vouch for the keys, an input this wallet does not derive, or a message
             //that could not be built all arrive here. Where some could and some could not, it says that.
+            //One opted-in signature anywhere protects the transaction, so a signature that could not be checked leaves
+            //the question open rather than answered. Neither of the first two says the transaction is unprotected,
+            //because this does not know that, and the wallet that holds the keys is what would settle it.
             if(verifiedSignatures == 0 && signatures > 0) {
-                return "None of these signatures could be checked against a key this wallet holds, so nothing here says whether they opt in. Treat them as made the way they always have been: they carry no replay protection.";
+                return "None of these signatures could be checked against a key this wallet holds, so this cannot say whether any of them opts in. Open this transaction with the wallet that holds the keys to find out, and until then treat it as carrying no replay protection.";
             }
 
-            return verifiedSignatures < signatures
-                    ? "Not all of these signatures could be checked, and none of the ones that could opts in. Treat them as made the way they always have been: they carry no replay protection."
-                    : "These signatures are made the way they always have been. They carry no replay protection.";
+            if(verifiedSignatures < signatures) {
+                return "Not all of these signatures could be checked. None of the ones that could opts in, and one signature that opts in anywhere is enough, so this cannot say whether the transaction is protected. Until it can be, treat it as carrying no replay protection.";
+            }
+
+            return "These signatures are made the way they always have been. They carry no replay protection.";
         }
 
         if(everySignature || signatures == 0) {

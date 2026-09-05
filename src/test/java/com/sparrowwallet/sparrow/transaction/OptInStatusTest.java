@@ -37,6 +37,7 @@ public class OptInStatusTest {
     public void a_signature_that_opts_in_is_reported_as_protection() {
         HeadersController.OptInStatus status = status(SigHash.UNIFIED_ALL, 1, 1, 1, 0);
 
+        Assertions.assertEquals(HeadersController.OptInLevel.PROTECTED, status.level());
         Assertions.assertTrue(status.optedIn());
         Assertions.assertEquals("Replay protected", status.summary());
         Assertions.assertTrue(status.detail().contains("cannot be replayed"));
@@ -52,6 +53,8 @@ public class OptInStatusTest {
         HeadersController.OptInStatus status = status(SigHash.ALL, 0, 1, 1, 0);
 
         Assertions.assertFalse(status.optedIn());
+        Assertions.assertEquals(HeadersController.OptInLevel.UNPROTECTED, status.level(),
+                "every signature present was checked, so this is a finding and not a gap");
         Assertions.assertEquals("Not replay protected", status.summary());
         Assertions.assertEquals("These signatures are made the way they always have been. They carry no replay protection.",
                 status.detail());
@@ -127,19 +130,26 @@ public class OptInStatusTest {
         HeadersController.OptInStatus status = status(SigHash.ALL, 0, 0, 2, 0);
 
         Assertions.assertFalse(status.optedIn());
-        Assertions.assertEquals("Not replay protected", status.summary());
-        Assertions.assertTrue(status.detail().startsWith("None of these signatures could be checked against a key this wallet holds"),
-                "with nothing checked, the detail cannot claim anything about how they were made");
-        Assertions.assertFalse(status.detail().contains("none of the ones that could"),
-                "there were no ones that could");
+        Assertions.assertEquals(HeadersController.OptInLevel.UNCHECKED, status.level());
+        Assertions.assertEquals("Replay protection not checked", status.summary(),
+                "saying it is not protected would state as a finding something this did not look at");
+        Assertions.assertTrue(status.detail().startsWith("None of these signatures could be checked against a key this wallet holds"));
+        Assertions.assertTrue(status.detail().contains("treat it as carrying no replay protection"),
+                "unknown is not an invitation to assume the good case");
     }
 
-    /** Some checked, some not, which is a different sentence again. */
+    /**
+     * Some checked, some not. One opted-in signature anywhere is enough, so an unchecked one leaves the question open:
+     * this is not entitled to say the transaction is unprotected either.
+     */
     @Test
-    public void partly_checkable_says_that() {
+    public void partly_checkable_is_also_unknown() {
         HeadersController.OptInStatus status = status(SigHash.ALL, 0, 1, 2, 0);
 
+        Assertions.assertEquals(HeadersController.OptInLevel.UNCHECKED, status.level());
+        Assertions.assertEquals("Replay protection not checked", status.summary());
         Assertions.assertTrue(status.detail().startsWith("Not all of these signatures could be checked"));
+        Assertions.assertTrue(status.detail().contains("one signature that opts in anywhere is enough"));
     }
 
     /**
