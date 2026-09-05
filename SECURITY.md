@@ -4,15 +4,17 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, report them privately using GitHub's [Security tab](https://github.com/sparrowwallet/sparrow/security/advisories/new) for this repository. This creates a private security advisory visible only to you and the maintainers.
+Instead, report them privately using GitHub's [Security tab](https://github.com/privkeyio/shrike/security/advisories/new) for this repository. This creates a private security advisory visible only to you and the maintainers.
 
-If you are unable to use GitHub, you may email mail@sparrowwallet.com. Sensitive reports can be encrypted to [craigraw's GPG key](https://keybase.io/craigraw) (fingerprint `D4D0D3202FC06849A257B38DE94618334C674B40`).
+If you are unable to use GitHub, you may email kyle@privkey.io. Sensitive reports can be encrypted to the key the releases are signed with, `privkeyio-signing-key.asc` on any [release](https://github.com/privkeyio/shrike/releases) (fingerprint `A47D99B6DB0D715D40C59A2023AE8A8EA7E24E38`).
+
+Vulnerabilities in upstream Sparrow that are not specific to this project belong with [Sparrow's own policy](https://github.com/sparrowwallet/sparrow/blob/master/SECURITY.md) instead, since a fix there reaches far more users.
 
 ### What to include
 
 To help triage the report quickly, please include as much of the following as you can:
 
-- The Sparrow version, operating system, and how Sparrow was installed (installer, package, or built from source)
+- The Shrike version, operating system, and how it was installed (installer, package, or built from source)
 - A description of the vulnerability and its impact
 - Steps to reproduce, ideally with a proof of concept
 - Any relevant configuration (network, wallet type, connected server or hardware wallet)
@@ -29,7 +31,7 @@ Fixes for serious issues are generally released as soon as they are ready, rathe
 
 ### Disclosure
 
-Sparrow follows the [Bitcoin Core Security Disclosure Policy](https://bitcoincore.org/en/security-advisories/). Reports are assigned one of four severity levels, which determines when details are made public:
+Shrike follows the [Bitcoin Core Security Disclosure Policy](https://bitcoincore.org/en/security-advisories/). Reports are assigned one of four severity levels, which determines when details are made public:
 
 | Severity | Description | Disclosure                                  |
 | --- | --- |---------------------------------------------|
@@ -46,17 +48,17 @@ For Medium and High severity issues, the advisory is published once the disclosu
 
 Please give us the opportunity to release a fix before disclosing the issue publicly. If you intend to disclose on a timeline of your own, say so in your report so it can be discussed early.
 
-There is currently no bug bounty programme for Sparrow.
+There is currently no bug bounty program for Shrike.
 
 ## Supported Versions
 
-Security fixes are made against the latest release only. Users are encouraged to run the most recent version, available from [sparrowwallet.com](https://sparrowwallet.com/download/) or the [GitHub releases](https://github.com/sparrowwallet/sparrow/releases) page.
+Security fixes are made against the latest release only. Users are encouraged to run the most recent version, available from the [releases](https://github.com/privkeyio/shrike/releases) page.
 
-Release binaries are signed with the GPG key above, and are [reproducible from source](docs/reproducible.md) from v1.5.0 onwards. Verifying the signature on a download before installing is strongly recommended.
+Release binaries are signed with the GPG key above, and are [reproducible from source](docs/reproducible.md). Verifying the signature on a download before installing is strongly recommended.
 
 ## Scope
 
-This policy covers Sparrow and its submodules, [Drongo](https://github.com/sparrowwallet/drongo) (Bitcoin protocol and wallet primitives) and [Lark](https://github.com/sparrowwallet/lark) (USB hardware wallet interaction). Report issues in any of them here rather than on the submodule repositories, so that a fix and a Sparrow release can be coordinated.
+This policy covers Shrike and its submodules, [Drongo](https://github.com/privkeyio/drongo) (Bitcoin protocol and wallet primitives) and [Lark](https://github.com/privkeyio/lark) (USB hardware wallet interaction). Report issues in any of them here rather than on the submodule repositories, so that a fix and a release can be coordinated.
 
 Examples of issues we are particularly interested in:
 
@@ -69,7 +71,7 @@ Examples of issues we are particularly interested in:
 
 The following are generally out of scope:
 
-- Vulnerabilities in third-party servers, hardware wallet firmware, or upstream dependencies, which should be reported to the relevant project (though we appreciate being told where Sparrow's use of them makes the impact worse)
+- Vulnerabilities in third-party servers, hardware wallet firmware, or upstream dependencies, which should be reported to the relevant project (though we appreciate being told where this wallet's use of them makes the impact worse)
 - Attacks requiring an already compromised operating system, or physical access to an unlocked machine
 - Missing hardening or best-practice recommendations without a demonstrated impact
 - Reports generated by automated scanners or language models where the reporter has not independently verified the issue and demonstrated its impact. A plausible-sounding description of a vulnerability is not a vulnerability; if you cannot reproduce it, we are unlikely to be able to either
