@@ -16,20 +16,26 @@ public class OptInStatusTest {
         return HeadersController.optInStatus(declared != null && declared.isUnified(), optedIn, verified, signatures, liftable);
     }
 
-    /** Nothing signed yet, so the declared type is the whole answer. */
+    /**
+     * Nothing signed yet, so the declared type is all there is to go on, and a declaration is not a check. A PSBT from
+     * elsewhere writes its own declarations, so the settled wording and the success mark are not available here.
+     */
     @Test
-    public void an_unsigned_transaction_reads_from_what_it_declares() {
+    public void an_unsigned_transaction_says_what_it_will_be_rather_than_what_it_is() {
         HeadersController.OptInStatus unified = status(SigHash.UNIFIED_ALL, 0, 0, 0, 0);
-        Assertions.assertTrue(unified.optedIn());
-        Assertions.assertEquals("Replay protected", unified.summary());
+        Assertions.assertEquals(HeadersController.OptInLevel.UNCHECKED, unified.level(),
+                "nothing has been checked, so this cannot carry the settled mark");
+        Assertions.assertEquals("Will be replay protected", unified.summary());
+        Assertions.assertFalse(unified.optedIn());
 
         HeadersController.OptInStatus legacy = status(SigHash.ALL, 0, 0, 0, 0);
         Assertions.assertFalse(legacy.optedIn());
-        Assertions.assertEquals("Not replay protected", legacy.summary());
-        Assertions.assertTrue(legacy.detail().startsWith("These signatures are made the way they always have been."),
-                "nothing was checked because nothing is there, which is not the same as something unreadable");
+        Assertions.assertEquals("Will not be replay protected", legacy.summary());
+        Assertions.assertTrue(legacy.detail().startsWith("These signatures will be made the way they always have been."),
+                "nothing is signed yet, so this describes what the transaction will be rather than what it is");
 
-        Assertions.assertFalse(status(null, 0, 0, 0, 0).optedIn(), "a transaction declaring nothing has not opted in");
+        Assertions.assertEquals("Will not be replay protected", status(null, 0, 0, 0, 0).summary(),
+                "a transaction declaring nothing has not opted in");
         Assertions.assertFalse(HeadersController.optInStatus(false, 0, 0, 0, 0).optedIn(),
                 "an unsigned transaction where any input declares the old type has not opted in");
     }
@@ -88,9 +94,9 @@ public class OptInStatusTest {
 
         Assertions.assertTrue(status.optedIn());
         Assertions.assertEquals("Replay protected", status.summary());
-        Assertions.assertTrue(status.detail().contains("1 of 2 do"));
-        Assertions.assertTrue(status.detail().contains("The other 1 were made the way they always have been"),
-                "both signatures were checked, so neither is unknown");
+        Assertions.assertTrue(status.detail().contains("1 of 2 does"), "a count of one reads as one");
+        Assertions.assertTrue(status.detail().contains("The other one was made the old way"),
+                "both signatures were checked, so neither is unknown, and one of them reads as one");
         Assertions.assertFalse(status.detail().contains("could not be confirmed"));
     }
 
@@ -100,7 +106,7 @@ public class OptInStatusTest {
         HeadersController.OptInStatus status = status(SigHash.ALL, 1, 2, 3, 0);
 
         Assertions.assertTrue(status.optedIn());
-        Assertions.assertTrue(status.detail().contains("1 of 3 do"));
+        Assertions.assertTrue(status.detail().contains("1 of 3 does"));
         Assertions.assertTrue(status.detail().contains("The other 2 could not be confirmed as opting in"));
     }
 

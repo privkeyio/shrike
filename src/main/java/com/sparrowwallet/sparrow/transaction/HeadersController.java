@@ -576,6 +576,7 @@ public class HeadersController extends TransactionFormController implements Init
             //for the keys, so the status is read again when it does. Without this a co-signer's opted-in PSBT keeps
             //the reading taken before there was anything to check it against, which is "no replay protection".
             headersForm.signingWalletProperty().addListener((observable, oldValue, newValue) -> refreshOptInStatus());
+            signingWallet.valueProperty().addListener((observable, oldValue, newValue) -> refreshOptInStatus());
 
             sigHash.valueProperty().addListener((observable, oldValue, newValue) -> {
                 SigHash newBase = (newValue == null ? null : newValue.withoutUnified());
@@ -1079,7 +1080,7 @@ public class HeadersController extends TransactionFormController implements Init
         applyOptInStatus(uncheckedStatus());
 
         try {
-            computeOptInStatus(psbtSigHash);
+            computeOptInStatus();
         } catch(RuntimeException e) {
             log.warn("Could not work out the replay protection status of this transaction", e);
         }
@@ -1105,12 +1106,16 @@ public class HeadersController extends TransactionFormController implements Init
         }
     }
 
-    private void computeOptInStatus(SigHash psbtSigHash) {
+    private void computeOptInStatus() {
         //Counted off the signatures rather than taken from the declared hash type, because a transaction assembled
         //from per-device PSBTs carries signatures the declaration does not describe
         //With the wallet, because only a key this wallet holds can vouch for a signature: every key an input carries
         //was written by whoever wrote the input
-        int[] counts = AppServices.signatureOptInCounts(headersForm.getPsbt(), headersForm.getSigningWallet());
+        //The wallet chosen in the dropdown counts as much as one already bound to the form. Where several wallets can
+        //sign, nothing binds one until finalising, and reading only the form told the user to open a wallet that was
+        //selected on the screen in front of them.
+        Wallet vouchingWallet = headersForm.getSigningWallet() != null ? headersForm.getSigningWallet() : signingWallet.getValue();
+        int[] counts = AppServices.signatureOptInCounts(headersForm.getPsbt(), vouchingWallet);
         int optedInSignatures = counts[0];
         int verifiedSignatures = counts[1];
         int signatures = counts[2];
@@ -1154,6 +1159,15 @@ public class HeadersController extends TransactionFormController implements Init
         boolean optedIn = signatures > 0 ? optedInSignatures > 0 : everyInputDeclaresUnified;
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
+        //Nothing is signed yet, so nothing has been checked: what the inputs declare is a statement of intent, and one
+        //a PSBT from elsewhere writes for itself. The send screen draws the same line, keeping its success mark for an
+        //answer that is settled, and this said "Replay protected" in the present tense over attacker supplied bytes.
+        if(signatures == 0) {
+            return new OptInStatus(OptInLevel.UNCHECKED,
+                    optedIn ? "Will be replay protected" : "Will not be replay protected",
+                    optedInStatusDetail(optedIn, everySignature, optedInSignatures, verifiedSignatures, signatures, liftable));
+        }
+
         OptInLevel level = optedIn ? OptInLevel.PROTECTED
                 : (signatures > verifiedSignatures ? OptInLevel.UNCHECKED : OptInLevel.UNPROTECTED);
 
@@ -1184,7 +1198,9 @@ public class HeadersController extends TransactionFormController implements Init
                 return "Not all of these signatures could be checked. None of the ones that could opts in, and one signature that opts in anywhere is enough, so this cannot say whether the transaction is protected. Until it can be, treat it as carrying no replay protection.";
             }
 
-            return "These signatures are made the way they always have been. They carry no replay protection.";
+            return signatures == 0
+                    ? "These signatures will be made the way they always have been. They will carry no replay protection."
+                    : "These signatures are made the way they always have been. They carry no replay protection.";
         }
 
         if(signatures == 0) {
@@ -1198,15 +1214,20 @@ public class HeadersController extends TransactionFormController implements Init
             return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.";
         }
 
+        int others = signatures - optedInSignatures;
         String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
-                + optedInSignatures + " of " + signatures + " do."
+                + optedInSignatures + " of " + signatures + (optedInSignatures == 1 ? " does." : " do.")
                 + System.lineSeparator() + System.lineSeparator()
                 //Only hedged where something could not be checked. Where every signature present was checked, the ones
                 //that did not opt in are known to have been made the old way, and saying otherwise would tell a signer
                 //their own signature could not be read.
                 + (verifiedSignatures < signatures
-                        ? "The other " + (signatures - optedInSignatures) + " could not be confirmed as opting in, so treat them as made the way they always have been: those signers were shown the amounts by this computer rather than committing to them."
-                        : "The other " + (signatures - optedInSignatures) + " were made the way they always have been, so those signers were shown the amounts by this computer rather than committing to them.");
+                        ? (others == 1 ? "The other one could not be confirmed as opting in, so treat it as made the old way: that signer was"
+                                       : "The other " + others + " could not be confirmed as opting in, so treat them as made the old way: those signers were")
+                            + " shown the amounts by this computer rather than committing to them."
+                        : (others == 1 ? "The other one was made the old way, so that signer was"
+                                       : "The other " + others + " were made the way they always have been, so those signers were")
+                            + " shown the amounts by this computer rather than committing to them.");
 
         //A legacy ANYONECANPAY signature commits only to its own input and to the outputs, so unlike the other legacy
         //types it survives being lifted into a transaction that drops the inputs which opted in. The transaction is
@@ -1474,8 +1495,10 @@ public class HeadersController extends TransactionFormController implements Init
                 EventManager.get().post(new TransactionOutputsChangedEvent(headersForm.getTransaction()));
             }
             unencryptedWallet.sign(signingNodes);
-            updateSignedKeystores(headersForm.getSigningWallet());
+            //Before anything else that can throw, because a partial sign followed by a failure would otherwise leave
+            //the label describing the transaction as it was before this wallet signed it
             refreshOptInStatus();
+            updateSignedKeystores(headersForm.getSigningWallet());
         } catch(Exception e) {
             log.warn("Failed to Sign", e);
             AppServices.showErrorDialog("Failed to Sign", e.getMessage());
@@ -1864,6 +1887,13 @@ public class HeadersController extends TransactionFormController implements Init
             broadcastButtonBox.setVisible(true);
             viewFinalButton.setDisable(true);
 
+            //This form carries the replay protection reading, and a transaction that is not a PSBT has nothing for it
+            //to read: the signatures are there but no wallet vouches for the keys behind them. An empty field beside a
+            //label reading Protection is worse than one saying it was not checked.
+            if(headersForm.getPsbt() == null) {
+                applyOptInStatus(uncheckedStatus());
+            }
+
             if(headersForm.getSigningWallet() == null) {
                 for(Wallet wallet : AppServices.get().getOpenWallets().keySet()) {
                     if(wallet.canSign(headersForm.getTransaction())) {
@@ -2006,6 +2036,11 @@ public class HeadersController extends TransactionFormController implements Init
     @Subscribe
     public void psbtCombined(PSBTCombinedEvent event) {
         if(event.getPsbt().equals(headersForm.getPsbt())) {
+            //A combine is where a cosigner's signatures arrive, so it is where the count this reports changes, and it
+            //is read first: the event bus swallows a subscriber's exception, so anything ahead of this that threw would
+            //leave the label describing the transaction as it was before those signatures arrived
+            refreshOptInStatus();
+
             learnSilentPaymentAddresses(headersForm.getSigningWallet(), headersForm.getPsbt());
             if(headersForm.getSigningWallet() != null) {
                 updateSignedKeystores(headersForm.getSigningWallet());
@@ -2015,24 +2050,25 @@ public class HeadersController extends TransactionFormController implements Init
                 finalizePSBT();
                 EventManager.get().post(new FinalizeTransactionEvent(headersForm.getPsbt(), signedWallet));
             }
-
-            //A combine is where a cosigner's signatures arrive, so it is where the count this reports changes
-            refreshOptInStatus();
         }
     }
 
     @Subscribe
     public void psbtFinalized(PSBTFinalizedEvent event) {
         if(event.getPsbt().equals(headersForm.getPsbt())) {
+            //First, before anything that could throw. The PSBT is already what it is going to be by the time this
+            //event is posted, and the event bus swallows a subscriber's exception, so work done ahead of this would
+            //take the reading down with it and leave the label describing the transaction as it was.
+            //
+            //Finalising can drop a signature: a quorum takes the first signatures in key order up to its threshold, so
+            //where more signed than were needed the opted-in one can be the one left out, and this is the moment the
+            //broadcast button appears.
+            refreshOptInStatus();
+
             learnSilentPaymentAddresses(headersForm.getSigningWallet(), headersForm.getPsbt());
             if(headersForm.getSigningWallet() != null) {
                 updateSignedKeystores(headersForm.getSigningWallet());
             }
-
-            //Read again, because finalising can drop a signature. A quorum takes the first signatures in key order up to
-            //its threshold, so where more signed than were needed the opted-in one can be the one left out, and this is
-            //the moment the broadcast button appears.
-            refreshOptInStatus();
 
             signButtonBox.setVisible(false);
             broadcastButtonBox.setVisible(true);

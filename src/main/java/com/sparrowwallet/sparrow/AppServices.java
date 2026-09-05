@@ -19,6 +19,7 @@ import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
 import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.protocol.Script;
+import com.sparrowwallet.drongo.protocol.ScriptChunk;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
@@ -1226,15 +1227,18 @@ public class AppServices {
             //transaction's budget without a single check being made, and silence every honest input after it.
             Collection<ECKey> keys = keysFor.apply(psbtInput);
             long wouldCheck = (long)keys.size() * psbtInput.getSignatures().size();
-            boolean canCheck = wouldCheck > 0 && wouldCheck <= MAX_INPUT_SIGNATURE_CHECKS
-                    && psbtInput.getUtxo() != null && psbtInput.getSigningScript() != null;
-            if(!canCheck || checked + wouldCheck > budget) {
-                keys = List.of();
-                wouldCheck = 0;
-            }
-            checked += (int)wouldCheck;
 
             try {
+                //Inside the guard, because working out whether this input can be checked reads the script it would be
+                //checked against, and that reading can fail on a PSBT written to make it fail
+                boolean canCheck = wouldCheck > 0 && wouldCheck <= MAX_INPUT_SIGNATURE_CHECKS
+                        && psbtInput.getUtxo() != null && psbtInput.getSigningScript() != null;
+                if(!canCheck || checked + wouldCheck > budget) {
+                    keys = List.of();
+                    wouldCheck = 0;
+                }
+                checked += (int)wouldCheck;
+
                 for(TransactionSignature signature : psbtInput.getVerifiedSignatures(keys)) {
                     verified++;
                     if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
@@ -1269,8 +1273,13 @@ public class AppServices {
      * so it can be copied into a transaction that drops the opted-in inputs and spent against a node that never
      * adopted the fork. The transaction is protected; that input is not, and saying only "protected" would hide it.
      *
-     * Counted from every push that looks like a signature rather than only from those that verify, because this reports
-     * a risk. Naming one that is not there costs a warning; missing one that is costs the warning that mattered.
+     * Counted from every push that could be a signature rather than only from those that verify, because this reports a
+     * risk: naming one that is not there costs a warning, and missing one that is costs the warning that mattered.
+     *
+     * Pushes that are provably not signatures are still left out. A taproot control block and an uncompressed public
+     * key are both 65 bytes, so both decode as a Schnorr signature carrying whatever byte they end with, and about one
+     * in four lands on Anyone Can Pay without the opt-in. Warning that such a push can be lifted into another
+     * transaction describes nothing at all, and a warning about nothing is how the ones about something get ignored.
      */
     public static int liftableSignatureCount(PSBT psbt) {
         if(psbt == null) {
@@ -1279,7 +1288,7 @@ public class AppServices {
 
         int liftable = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            for(TransactionSignature signature : psbtInput.getSignatures()) {
+            for(TransactionSignature signature : liftableCandidates(psbtInput)) {
                 if((signature.sighashFlags & SigHash.UNIFIED_FLAG) == 0
                         && (signature.sighashFlags & SigHash.ANYONECANPAY.value) != 0) {
                     liftable++;
@@ -1288,6 +1297,34 @@ public class AppServices {
         }
 
         return liftable;
+    }
+
+    /**
+     * The pushes on an input that could be a signature. A partial signature is one by construction, since it is named
+     * by the key that made it. A finalised input carries pushes, and the ones a script puts there for another purpose
+     * are recognisable: a public key, and the control block that ends a taproot script path spend.
+     */
+    private static List<TransactionSignature> liftableCandidates(PSBTInput psbtInput) {
+        if(psbtInput.getFinalScriptSig() == null && psbtInput.getFinalScriptWitness() == null) {
+            return new ArrayList<>(psbtInput.getSignatures());
+        }
+
+        List<ScriptChunk> chunks = new ArrayList<>();
+        if(psbtInput.getFinalScriptSig() != null) {
+            chunks.addAll(psbtInput.getFinalScriptSig().getChunks());
+        }
+        if(psbtInput.getFinalScriptWitness() != null) {
+            chunks.addAll(psbtInput.getFinalScriptWitness().asScriptChunks());
+        }
+
+        List<TransactionSignature> candidates = new ArrayList<>();
+        for(ScriptChunk chunk : chunks) {
+            if(chunk.isSignature() && !chunk.isPubKey() && !chunk.isTaprootControlBlock()) {
+                candidates.add(chunk.getSignature());
+            }
+        }
+
+        return candidates;
     }
 
     /**
