@@ -107,6 +107,23 @@ public class OptInLabelRenderHarness {
                 render("opted-in, wallet present", signedPsbt(wallet, SigHash.UNIFIED_ALL), wallet);
                 render("legacy, wallet present", signedPsbt(wallet, SigHash.ALL), wallet);
                 render("opted-in, no wallet to vouch", signedPsbt(wallet, SigHash.UNIFIED_ALL), null);
+
+                //A PSBT carrying a derivation this wallet cannot follow, on an input it does own. The input is found
+                //by its script, so the derivation is never consulted and the honest answer stands: the guard around
+                //that lookup must not cost a transaction its reading. Where the lookup does throw, the labels fall
+                //back to saying nothing was checked, which is what the fail closed path in updateOptInStatus is for.
+                PSBT undrivable = signedPsbt(wallet, SigHash.UNIFIED_ALL);
+                java.util.List<com.sparrowwallet.drongo.crypto.ChildNumber> path =
+                        new java.util.ArrayList<>(wallet.getKeystores().get(0).getKeyDerivation().getDerivation());
+                path.add(new com.sparrowwallet.drongo.crypto.ChildNumber(0, false));
+                path.add(new com.sparrowwallet.drongo.crypto.ChildNumber(0, true));
+                undrivable.getPsbtInputs().get(0).getDerivedPublicKeys().put(
+                        com.sparrowwallet.drongo.crypto.ECKey.fromPrivate(
+                                com.sparrowwallet.drongo.Utils.hexToBytes("33".repeat(32))),
+                        new com.sparrowwallet.drongo.KeyDerivation(
+                                wallet.getKeystores().get(0).getKeyDerivation().getMasterFingerprint(),
+                                com.sparrowwallet.drongo.KeyDerivation.writePath(path)));
+                render("opted-in, junk derivation attached to its own input", undrivable, wallet);
             } catch(Throwable t) {
                 System.out.println("RENDER FAILED: " + t);
                 t.printStackTrace(System.out);

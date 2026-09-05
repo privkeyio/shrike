@@ -1072,6 +1072,40 @@ public class HeadersController extends TransactionFormController implements Init
      * one the transaction is being asked, and would put a second copy of that decision in the view.
      */
     private void updateOptInStatus(SigHash psbtSigHash) {
+        //Said first, so that anything going wrong below leaves the labels saying nothing was checked rather than
+        //saying whatever they said a moment ago. Twice this has been the bug: an exception on the way to an answer
+        //abandoned the update and left a confident green from an earlier state standing over a transaction it no
+        //longer described. Both writes land in the same pulse, so nothing flickers.
+        applyOptInStatus(uncheckedStatus());
+
+        try {
+            computeOptInStatus(psbtSigHash);
+        } catch(RuntimeException e) {
+            log.warn("Could not work out the replay protection status of this transaction", e);
+        }
+    }
+
+    /**
+     * What the labels say where nothing could be worked out, which is what they are left saying if working it out fails.
+     */
+    private static OptInStatus uncheckedStatus() {
+        return new OptInStatus(OptInLevel.UNCHECKED, "Replay protection not checked",
+                "This transaction could not be checked for replay protection. Open it with the wallet that holds the keys, and until then treat it as carrying no replay protection.");
+    }
+
+    private void applyOptInStatus(OptInStatus status) {
+        for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
+            label.setText(status.summary());
+            label.setGraphic(switch(status.level()) {
+                case PROTECTED -> GlyphUtils.getSuccessGlyph();
+                case UNPROTECTED -> GlyphUtils.getWarningGlyph();
+                case UNCHECKED -> GlyphUtils.getQuestionGlyph();
+            });
+            label.setTooltip(new Tooltip(status.detail()));
+        }
+    }
+
+    private void computeOptInStatus(SigHash psbtSigHash) {
         //Counted off the signatures rather than taken from the declared hash type, because a transaction assembled
         //from per-device PSBTs carries signatures the declaration does not describe
         //With the wallet, because only a key this wallet holds can vouch for a signature: every key an input carries
@@ -1089,15 +1123,7 @@ public class HeadersController extends TransactionFormController implements Init
         OptInStatus status = optInStatus(everyInputDeclaresUnified, optedInSignatures, verifiedSignatures, signatures,
                 AppServices.liftableSignatureCount(headersForm.getPsbt()));
 
-        for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
-            label.setText(status.summary());
-            label.setGraphic(switch(status.level()) {
-                case PROTECTED -> GlyphUtils.getSuccessGlyph();
-                case UNPROTECTED -> GlyphUtils.getWarningGlyph();
-                case UNCHECKED -> GlyphUtils.getQuestionGlyph();
-            });
-            label.setTooltip(new Tooltip(status.detail()));
-        }
+        applyOptInStatus(status);
     }
 
     /**
