@@ -5,13 +5,15 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sparrowwallet.drongo.Utils;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
+import com.sparrowwallet.drongo.protocol.HeaderChainState;
 import com.sparrowwallet.drongo.protocol.ProtocolException;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The blockchain.block.headers response: a run of consecutive block headers as concatenated hex, with the maximum number of headers the server will return.
+ * The blockchain.block.headers response: a run of consecutive block headers, with the maximum number of headers the server will return. The run
+ * arrives as concatenated hex below protocol 1.6 and as a list of one hex string per header at 1.6 and above, never both.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class BlockHeaders {
@@ -25,33 +27,34 @@ public class BlockHeaders {
     public int max;
 
     /**
-     * Protocol 1.6 changed this field from concatenated hex to a list with one entry per header, and a server answers in whichever form the
-     * negotiated version calls for. Raising the version this client asks for therefore changes the form it is sent by any server capping between
-     * the old maximum and the new one, so reading only the older form would break those servers on every chain, fork or not.
+     * Protocol 1.6 moved the run out of {@code hex} and into a field of its own, one hex string per header, and a server answers in whichever form
+     * the negotiated version calls for. Raising the version this client asks for therefore changes the form it is sent by any server capping between
+     * the old maximum and the new one, so reading only the older field would break those servers on every chain, fork or not.
      *
-     * A list is joined back into the concatenated form, which is what the rest of this class reads. Nothing is lost: the run is walked by each
-     * header's own length either way, and a list entry that is not one whole header is refused here rather than being concatenated into a run that
-     * happens to add up.
+     * The list is joined back into the concatenated form, which is what the rest of this class, and every caller that reads {@code hex}, already
+     * expects. Nothing is lost: the run is walked by each header's own length either way, and an entry that is not one whole header is refused here
+     * rather than concatenated into a run that happens to add up.
      */
-    @JsonSetter("hex")
-    public void setHex(JsonNode value) {
-        if(value == null || value.isNull()) {
-            hex = null;
-        } else if(value.isTextual()) {
-            hex = value.asText();
-        } else if(value.isArray()) {
-            StringBuilder joined = new StringBuilder();
-            for(JsonNode element : value) {
-                if(!element.isTextual() || new BlockHeaders(element.asText()).getHeaders(1) == null) {
-                    hex = null;
-                    return;
-                }
-                joined.append(element.asText());
-            }
-            hex = joined.toString();
-        } else {
-            hex = null;
+    @JsonSetter("headers")
+    public void setHeaders(JsonNode value) {
+        if(value == null || !value.isArray()) {
+            return;
         }
+
+        StringBuilder joined = new StringBuilder();
+        for(JsonNode element : value) {
+            if(!element.isTextual() || new BlockHeaders(element.asText()).getHeaders(1) == null) {
+                hex = null;
+                return;
+            }
+            joined.append(element.asText());
+            //A server cannot make the join outgrow the largest run this call can legitimately return, whatever it puts in the list
+            if(joined.length() > 2L * HeaderChainState.RETARGET_INTERVAL * BlockHeader.V2_LENGTH) {
+                hex = null;
+                return;
+            }
+        }
+        hex = joined.toString();
     }
 
     public BlockHeaders() {

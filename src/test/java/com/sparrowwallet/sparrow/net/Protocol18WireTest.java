@@ -62,9 +62,9 @@ public class Protocol18WireTest {
                             out.println("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":[\"ElectrumStub 1.0\",\"1.8\"]}");
                         }
                     } else if(line.contains("blockchain.block.headers")) {
-                        //The list form, one entry per header, mixing the two lengths
+                        //The list form as Fulcrum sends it at 1.6 and above: a headers field, one entry per header, mixing the two lengths
                         out.println("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"count\":2,\"max\":2016,"
-                                + "\"hex\":[\"" + V1 + "\",\"" + V2 + "\"]}}");
+                                + "\"headers\":[\"" + V1 + "\",\"" + V2 + "\"]}}");
                     } else {
                         out.println("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":null}");
                     }

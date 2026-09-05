@@ -11,9 +11,9 @@ import java.util.List;
 /**
  * Both forms a blockchain.block.headers response can take.
  *
- * Protocol 1.6 changed this field from concatenated hex to a list with one entry per header. Asking for 1.8 therefore changes the form this client
- * is sent by any server capping between the version it used to ask for and this one, so reading only the concatenated form would break those servers
- * on every chain, whether or not it has a v2 header anywhere in it.
+ * Protocol 1.6 moved the run out of hex and into a headers field of its own, one entry per header. Asking for 1.8 therefore changes the form this
+ * client is sent by any server capping between the version it used to ask for and this one, so reading only the concatenated form would break those
+ * servers on every chain, whether or not it has a v2 header anywhere in it.
  */
 public class BlockHeadersFormTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -43,7 +43,7 @@ public class BlockHeadersFormTest {
     @Test
     public void the_list_form_reads_the_same_headers() throws Exception {
         BlockHeaders concatenated = read("{\"count\":2,\"max\":2016,\"hex\":\"" + V1 + V2 + "\"}");
-        BlockHeaders list = read("{\"count\":2,\"max\":2016,\"hex\":[\"" + V1 + "\",\"" + V2 + "\"]}");
+        BlockHeaders list = read("{\"count\":2,\"max\":2016,\"headers\":[\"" + V1 + "\",\"" + V2 + "\"]}");
 
         Assertions.assertEquals(concatenated.hex, list.hex);
         List<BlockHeader> a = headersOf(concatenated, 2);
@@ -57,7 +57,7 @@ public class BlockHeadersFormTest {
 
     @Test
     public void an_empty_list_is_an_empty_run() throws Exception {
-        BlockHeaders b = read("{\"count\":0,\"max\":2016,\"hex\":[]}");
+        BlockHeaders b = read("{\"count\":0,\"max\":2016,\"headers\":[]}");
         Assertions.assertEquals("", b.hex);
         Assertions.assertNotNull(headersOf(b, 0));
         Assertions.assertTrue(headersOf(b, 0).isEmpty());
@@ -70,16 +70,52 @@ public class BlockHeadersFormTest {
     @Test
     public void a_list_entry_that_is_not_one_header_is_refused() throws Exception {
         String half = V1.substring(0, V1.length() / 2);
-        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"hex\":[\"" + half + "\"]}").hex);
-        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"hex\":[\"" + V1 + V2 + "\"]}").hex);
-        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"hex\":[\"zz\"]}").hex);
+        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"headers\":[\"" + half + "\"]}").hex);
+        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"headers\":[\"" + V1 + V2 + "\"]}").hex);
+        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"headers\":[\"zz\"]}").hex);
     }
 
+    /** A headers field that is not a list of hex strings leaves nothing to read, rather than something partly read. */
     @Test
-    public void neither_a_string_nor_a_list_is_refused() throws Exception {
-        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"hex\":17}").hex);
-        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"hex\":null}").hex);
-        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"hex\":[1,2]}").hex);
+    public void a_headers_field_that_is_not_a_list_is_refused() throws Exception {
+        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"headers\":[1,2]}").hex);
+        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"headers\":\"" + V1 + "\"}").hex);
+        Assertions.assertNull(read("{\"count\":1,\"max\":2016,\"headers\":null}").hex);
+    }
+
+    /** The two forms are exclusive, so a response carrying only the old field is unaffected by the new one existing. */
+    @Test
+    public void the_concatenated_form_is_not_disturbed_by_the_new_field() throws Exception {
+        BlockHeaders b = read("{\"count\":1,\"max\":2016,\"hex\":\"" + V1 + "\"}");
+        Assertions.assertEquals(V1, b.hex);
+        Assertions.assertEquals(1, headersOf(b, 1).size());
+    }
+
+    /**
+     * Not a shape written here from reading the protocol, but the response a Fulcrum 2.1.2 actually returned once this client asked for a range
+     * reaching past 1.6. The first fixture written for this was invented, put the list under hex, and passed against a server that does not exist.
+     */
+    @Test
+    public void a_response_a_real_server_sent() throws Exception {
+        BlockHeaders b = read("{\"count\":3,\"headers\":[\"0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff7f2002000000\",\"0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910fdc2dac016f2b3f4f356b30114a22a291ac643b82dd8a6af247c6d23428791849e8889b6affff7f2000000000\",\"0000002062fab197b7b201627d8673f3e6cb278394f98ee25e25f79e6391233575804e112de13277c4f93d6276bf83aaa0b8147c9e5775339d97fd87f737b4a2c287c2c9e9889b6affff7f2000000000\"],\"max\":2016}");
+        List<BlockHeader> headers = headersOf(b, 3);
+        Assertions.assertNotNull(headers, "the run a real server sent did not split into headers");
+        Assertions.assertEquals(3, headers.size());
+        Assertions.assertEquals("0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206", headers.get(0).getHash().toString());
+        for(int i = 1; i < headers.size(); i++) {
+            Assertions.assertEquals(headers.get(i - 1).getHash(), headers.get(i).getPrevBlockHash(), "the run does not link");
+        }
+    }
+
+    /** Every entry can be a valid header and the run still be larger than this call can legitimately return, so the join stops rather than growing. */
+    @Test
+    public void a_run_larger_than_the_call_can_return_is_refused() throws Exception {
+        StringBuilder list = new StringBuilder("{\"count\":1,\"max\":2016,\"headers\":[");
+        for(int i = 0; i < 4200; i++) {
+            list.append(i == 0 ? "" : ",").append('"').append(V1).append('"');
+        }
+        list.append("]}");
+        Assertions.assertNull(read(list.toString()).hex);
     }
 
     @Test

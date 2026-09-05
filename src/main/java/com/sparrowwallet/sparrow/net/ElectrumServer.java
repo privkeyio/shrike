@@ -57,12 +57,14 @@ public class ElectrumServer {
     private static final Logger log = LoggerFactory.getLogger(ElectrumServer.class);
 
     /**
-     * The range this client negotiates. The maximum is 1.8 because a server on a chain with v2 headers refuses to negotiate below it: a client that
-     * assumes an eighty byte header computes the wrong hash for every block past the activation and fails to link the chain, which reads as a sync
-     * problem rather than as the incompatibility it is, so the server declines rather than serving headers it would be misread.
+     * The range this client negotiates, a minimum and a maximum, so every server still settles on the highest version it supports within it.
      *
-     * Asking for 1.8 also changes the form of a blockchain.block.headers response from any server capping between the old maximum and this one,
-     * which BlockHeaders reads either way.
+     * The maximum is 1.8 because the electrs build that indexes this chain refuses to negotiate below it. A client that assumes an eighty byte header
+     * computes the wrong hash for every block past the activation and fails to link the chain, which reads as a sync problem rather than as the
+     * incompatibility it is, so that server declines rather than serving headers it expects to be misread.
+     *
+     * Reaching past 1.6 on the way there is not incidental. Fulcrum caps at 1.6 and so now settles there rather than at 1.4.2, and 1.6 is where a
+     * blockchain.block.headers response stops being one concatenated string and becomes a list, which is why BlockHeaders has to read both.
      */
     static final String[] SUPPORTED_VERSIONS = new String[]{"1.3", "1.8"};
 
