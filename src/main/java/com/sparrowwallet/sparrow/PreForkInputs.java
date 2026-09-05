@@ -74,24 +74,23 @@ public class PreForkInputs {
     }
 
     /**
-     * The same for a transaction that already exists, taking each input's funding transaction from the PSBT where it
-     * carries one and from the wallet otherwise. A PSBT is only obliged to carry the spent output for a segwit input,
-     * not the transaction that created it, so the wallet is what answers for those.
+     * The same for a transaction that already exists, taking each input's funding transaction from the wallet's own
+     * history and from nowhere else.
+     *
+     * Deliberately not from the PSBT, which carries one for some inputs. A PSBT's non witness utxo is checked on parse
+     * against the input's outpoint, and a txid does not commit to a witness, so that check leaves the witness free:
+     * anyone can take the real funding transaction, attach a witness stamped with the opt-in, and hand over something
+     * that passes. The evidence read here is exactly that witness, so a PSBT supplying it would be choosing the answer.
+     * The wallet's own copy comes from the node it is connected to, which is where every other fact it shows comes from.
      */
     public static boolean noneReachable(PSBT psbt, Wallet wallet) {
-        if(psbt == null) {
+        if(psbt == null || wallet == null) {
             return false;
         }
 
-        Map<Sha256Hash, BlockTransaction> walletTransactions = wallet == null ? Map.of() : wallet.getTransactions();
+        Map<Sha256Hash, BlockTransaction> walletTransactions = wallet.getTransactions();
         List<Transaction> funding = new ArrayList<>();
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            Transaction nonWitnessUtxo = psbtInput.getNonWitnessUtxo();
-            if(nonWitnessUtxo != null) {
-                funding.add(nonWitnessUtxo);
-                continue;
-            }
-
             BlockTransaction blockTransaction = walletTransactions.get(psbtInput.getInput().getOutpoint().getHash());
             funding.add(blockTransaction == null ? null : blockTransaction.getTransaction());
         }

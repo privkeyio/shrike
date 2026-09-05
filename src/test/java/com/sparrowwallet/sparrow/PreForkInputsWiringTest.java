@@ -128,27 +128,43 @@ public class PreForkInputsWiringTest {
     }
 
     /**
-     * The transaction view's question. A PSBT carrying the funding transaction answers it without the wallet, which is
-     * the case for a PSBT that arrived from elsewhere.
+     * The transaction view's question, answered from the wallet's own history.
      */
     @Test
-    public void the_transaction_view_reads_it_from_the_psbt_where_it_is_carried() {
-        PSBT psbt = new PSBT(fixture("legacySpendOfIt"));
-        psbt.getPsbtInputs().get(0).setNonWitnessUtxo(fixture("optedInFunder"));
-
-        Assertions.assertTrue(PreForkInputs.noneReachable(psbt, null),
-                "the funding transaction in the PSBT was not read");
-    }
-
-    @Test
-    public void and_falls_back_to_the_wallet_where_it_is_not() {
+    public void the_transaction_view_reads_it_from_the_wallet() {
         PSBT psbt = new PSBT(fixture("legacySpendOfIt"));
 
+        Assertions.assertTrue(PreForkInputs.noneReachable(psbt, walletHolding(fixture("optedInFunder"))));
         Assertions.assertFalse(PreForkInputs.noneReachable(psbt, new Wallet()),
                 "nothing holds the funding transaction, so nothing is proven");
-        Assertions.assertTrue(PreForkInputs.noneReachable(psbt, walletHolding(fixture("optedInFunder"))));
         Assertions.assertFalse(PreForkInputs.noneReachable(psbt, walletHolding(fixture("legacyFunder"))),
                 "the wallet holds a different transaction, which does not fund this input");
+        Assertions.assertFalse(PreForkInputs.noneReachable(psbt, null));
+    }
+
+    /**
+     * A forged funding transaction, which is why the PSBT is not a source for this.
+     *
+     * A PSBT's non witness utxo is checked on parse against the input's outpoint, and a txid does not commit to a
+     * witness, so the same txid can arrive carrying any witness at all. malleatedFunder is exactly that: the ordinary
+     * funding transaction with the opted-in one's witness attached. Read on its own it looks like it opts in, and it is
+     * the witness that this reads, so trusting the PSBT for it would let whoever sent the PSBT choose the answer.
+     */
+    @Test
+    public void a_funding_transaction_supplied_with_the_psbt_is_not_trusted() {
+        Transaction forged = fixture("malleatedFunder");
+        Assertions.assertEquals(fixture("legacyFunder").getTxId(), forged.getTxId(),
+                "the forgery must carry the real transaction's txid, or it proves nothing");
+        Assertions.assertTrue(PreForkInputs.optsIn(forged),
+                "read on its own the forgery looks opted in, which is what makes the source matter");
+
+        PSBT psbt = new PSBT(fixture("legacySpendOfIt"));
+        psbt.getPsbtInputs().get(0).setNonWitnessUtxo(forged);
+
+        Assertions.assertFalse(PreForkInputs.noneReachable(psbt, new Wallet()),
+                "a funding transaction carried by the PSBT must not be read at all");
+        Assertions.assertFalse(PreForkInputs.noneReachable(psbt, walletHolding(fixture("legacyFunder"))),
+                "the wallet holds the real transaction, which does not opt in, and that is the one that counts");
     }
 
     /**

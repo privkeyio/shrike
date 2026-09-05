@@ -44,7 +44,7 @@ public class PreForkInputsTest {
             }
         }
 
-        Assertions.assertEquals(3, read.size(), "the fixtures did not read");
+        Assertions.assertEquals(4, read.size(), "the fixtures did not read");
         fixtures = read;
     }
 
