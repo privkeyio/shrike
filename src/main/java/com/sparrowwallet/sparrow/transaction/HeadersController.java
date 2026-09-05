@@ -1081,19 +1081,29 @@ public class HeadersController extends TransactionFormController implements Init
         int verifiedSignatures = counts[1];
         int signatures = counts[2];
 
+        OptInStatus status = optInStatus(psbtSigHash, optedInSignatures, verifiedSignatures, signatures,
+                AppServices.liftableSignatureCount(headersForm.getPsbt()));
+
+        for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
+            label.setText(status.summary());
+            label.setGraphic(status.optedIn() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+            label.setTooltip(new Tooltip(status.detail()));
+        }
+    }
+
+    /**
+     * What the labels say, worked out apart from the labels themselves so that it can be read back and checked.
+     */
+    record OptInStatus(boolean optedIn, String summary, String detail) {
+    }
+
+    static OptInStatus optInStatus(SigHash psbtSigHash, int optedInSignatures, int verifiedSignatures, int signatures, int liftable) {
         //Before anything is signed there is nothing to count, so the declared type is what the transaction will be
         boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
-        //Counted once rather than per label: both read the same PSBT, and the reading now verifies signatures
-        String detail = optedInStatusDetail(optedIn, everySignature, optedInSignatures, verifiedSignatures, signatures,
-                AppServices.liftableSignatureCount(headersForm.getPsbt()));
-
-        for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
-            label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
-            label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
-            label.setTooltip(new Tooltip(detail));
-        }
+        return new OptInStatus(optedIn, UnifiedSigHashDecision.summaryFor(optedIn),
+                optedInStatusDetail(optedIn, everySignature, optedInSignatures, verifiedSignatures, signatures, liftable));
     }
 
     /**
@@ -1123,10 +1133,12 @@ public class HeadersController extends TransactionFormController implements Init
         String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
                 + optedInSignatures + " of " + signatures + " do."
                 + System.lineSeparator() + System.lineSeparator()
-                //"could not be confirmed" rather than "were made the old way", because the two numbers are counted
-                //differently: the first counts only signatures that verify, the second counts everything that looks
-                //like one, and the difference is a signature made the old way or a push that is not a signature at all
-                + "The other " + (signatures - optedInSignatures) + " could not be confirmed as opting in, so treat them as made the way they always have been: those signers were shown the amounts by this computer rather than committing to them.";
+                //Only hedged where something could not be checked. Where every signature present was checked, the ones
+                //that did not opt in are known to have been made the old way, and saying otherwise would tell a signer
+                //their own signature could not be read.
+                + (verifiedSignatures < signatures
+                        ? "The other " + (signatures - optedInSignatures) + " could not be confirmed as opting in, so treat them as made the way they always have been: those signers were shown the amounts by this computer rather than committing to them."
+                        : "The other " + (signatures - optedInSignatures) + " were made the way they always have been, so those signers were shown the amounts by this computer rather than committing to them.");
 
         //A legacy ANYONECANPAY signature commits only to its own input and to the outputs, so unlike the other legacy
         //types it survives being lifted into a transaction that drops the inputs which opted in. The transaction is
