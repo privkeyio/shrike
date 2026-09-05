@@ -49,10 +49,10 @@ sudo apt install -y rpm fakeroot binutils
 
 ### Building the binaries
 
-First, assign a temporary variable in your shell for the specific release you want to build. For the current one specify:
+First, assign a temporary variable in your shell for the specific release you want to build, as it is named on the [releases page](https://github.com/privkeyio/shrike/releases):
 
 ```shell
-GIT_TAG="v2.5.5-blake2b.15"
+GIT_TAG="v2.5.5-blake2b.21"
 ```
 
 The project can then be initially cloned as follows. `--recursive` matters, because the BLAKE2b work lives in the drongo submodule:
