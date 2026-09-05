@@ -1099,10 +1099,10 @@ public class HeadersController extends TransactionFormController implements Init
         if(everySignature || signatures == 0) {
             //"the amount it spends" rather than "the amounts they spend": an Anyone Can Pay signature commits to its
             //own input's amount and no other, so the blanket claim was not true of one.
-            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.";
+            return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes still on the old rules, and each commits to the amount it spends.";
         }
 
-        String detail = "This transaction cannot be replayed against nodes that have not adopted the fork: one signature that opts in is enough, and "
+        String detail = "This transaction cannot be replayed against nodes still on the old rules: one signature that opts in is enough, and "
                 + optedInSignatures + " of " + signatures + " do."
                 + System.lineSeparator() + System.lineSeparator()
                 + "The other " + (signatures - optedInSignatures) + " were made the way they always have been, so those signers were shown the amounts by this computer rather than committing to them.";
@@ -1112,8 +1112,8 @@ public class HeadersController extends TransactionFormController implements Init
         //protected either way, so this is the one case where the headline is true and still not the whole answer.
         if(liftable > 0) {
             detail += System.lineSeparator() + System.lineSeparator()
-                    + (liftable == 1 ? "One of those signs Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs."
-                                     : liftable + " of those sign Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs.")
+                    + (liftable == 1 ? "One of those signs Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent against nodes still on the old rules, paying these same outputs."
+                                     : liftable + " of those sign Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent against nodes still on the old rules, paying these same outputs.")
                     + " Have those signers opt in too, or sign the whole transaction with All, to close that.";
         }
 

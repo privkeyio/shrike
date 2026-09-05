@@ -166,7 +166,7 @@ public enum UnifiedSigHashDecision {
      * What the signature does, in terms of the consequence rather than the hash type that carries it.
      *
      * The sighash control names the type already, and the byte is not what a person is deciding about:
-     * the choice is between a signature that cannot be replayed against nodes that have not adopted the
+     * the choice is between a signature that cannot be replayed against nodes still on the old rules
      * fork and commits to the amounts it spends, and one that predates both guarantees.
      */
     public String getSummary() {

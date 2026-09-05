@@ -5,9 +5,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
- * The default source has to be one that has adopted the fork.
+ * The default source has to be one that kept up.
  *
- * mempool.space has not adopted the fork. Past the activation height it holds neither this wallet's blocks
+ * mempool.space stayed on the old rules, so past the activation height it holds neither this wallet's blocks
  * nor its mempool, so it answers 404 for a block that exists and prices transactions against a mempool
  * this wallet never broadcasts into. Both were reached with the source left unset, which is the state every
  * new install starts in, so the default is the thing worth pinning.
@@ -16,7 +16,7 @@ public class FeeRatesSourceDefaultTest {
     @Test
     public void testTheDefaultHasAdoptedTheFork() {
         Assertions.assertEquals(FeeRatesSource.MEMPOOL_GUIDE, FeeRatesSource.getDefault(),
-                "the default must be a source that has adopted the fork");
+                "the default must be a source that kept up");
     }
 
     @Test
@@ -52,7 +52,7 @@ public class FeeRatesSourceDefaultTest {
 
     /**
      * The explorer a transaction link opens has the same requirement. Neither mempool.space nor
-     * blockstream.info has adopted the fork, so a link to either names a block they do not have once the
+     * blockstream.info kept up, so a link to either names a block they do not have once the
      * transaction is mined past the activation height.
      */
     @Test
@@ -94,7 +94,7 @@ public class FeeRatesSourceDefaultTest {
 
         FeeRatesSource effective = stored == null ? FeeRatesSource.getDefault() : stored;
         Assertions.assertEquals(FeeRatesSource.MEMPOOL_GUIDE, effective,
-                "so the wallet uses the default rather than a source that has not adopted the fork");
+                "so the wallet uses the default rather than a source that stopped at the activation height");
     }
 
     /**
@@ -113,31 +113,31 @@ public class FeeRatesSourceDefaultTest {
 
     /**
      * Broadcasting is the one that moves value. With a Tor proxy configured this path replaces the connected node
-     * rather than supplementing it, so a source that has not adopted the fork does not merely mislead: an opted-in
+     * rather than supplementing it, so a source that stopped at the activation height does not merely mislead: an opted-in
      * transaction is refused there, but a legacy one relays, which is the replay this wallet exists to prevent.
      */
     @Test
     public void testEveryBroadcastSourceHasAdoptedTheFork() {
         for(BroadcastSource source : BroadcastSource.values()) {
             Assertions.assertEquals(BroadcastSource.MEMPOOL_GUIDE, source,
-                    source + " would offer a transaction to nodes that have not adopted the fork");
+                    source + " would offer a transaction to nodes still on the old rules");
         }
     }
 
     /**
-     * An explorer that has not adopted the fork shows nothing for a transaction mined past activation. A
+     * An explorer that stopped at the activation height shows nothing for a transaction mined past activation. A
      * custom URL can still be set in the settings for anyone who wants one.
      */
     @Test
     public void testEveryOfferedExplorerHasAdoptedTheForkOrIsNone() {
         for(BlockExplorer explorer : BlockExplorer.values()) {
             Assertions.assertTrue(explorer == BlockExplorer.MEMPOOL_GUIDE || explorer == BlockExplorer.NONE,
-                    explorer + " points at an explorer that has not adopted the fork");
+                    explorer + " points at an explorer that stopped at the activation height");
         }
     }
 
     /**
-     * No public Electrum server has adopted the fork, and connecting to one would show the wallet blocks
+     * No public Electrum server kept up, and connecting to one would show the wallet blocks
      * and balances that diverge past the activation height. The option is withdrawn rather than filled with servers
      * that mislead; the entries stay in the enum only so upstream changes to that file keep merging.
      */
@@ -162,7 +162,7 @@ public class FeeRatesSourceDefaultTest {
         java.util.List<ServerType> offered = java.util.List.of(
                 com.sparrowwallet.sparrow.terminal.settings.ServerTypeDialog.getServerTypes());
         Assertions.assertFalse(offered.contains(ServerType.PUBLIC_ELECTRUM_SERVER),
-                "no public server has adopted the fork, so the terminal must not offer the type");
+                "no public server kept up, so the terminal must not offer the type");
         Assertions.assertTrue(offered.contains(ServerType.BITCOIN_CORE) && offered.contains(ServerType.ELECTRUM_SERVER),
                 "the two that can be configured must remain");
     }

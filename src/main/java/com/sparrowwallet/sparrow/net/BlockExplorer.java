@@ -13,7 +13,7 @@ import java.util.Locale;
 public enum BlockExplorer {
     /*
         mempool.guide is a mempool instance following the BLAKE2b fork. mempool.space and blockstream.info
-        were here and are gone: neither has adopted the fork, so a link to either for anything
+        were here and are gone: neither kept up, so a link to either for anything
         mined past the activation height names a block they do not have. A custom URL can still be entered
         in the settings for anyone who wants one.
      */
