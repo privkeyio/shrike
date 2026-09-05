@@ -32,8 +32,10 @@ public class SweptKeyOptInTest {
         Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash());
         Assertions.assertTrue(psbtInput.sign(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
 
-        int[] counts = AppServices.signatureOptInCounts(psbt);
-        Assertions.assertEquals(1, counts[1], "the key signed");
+        //The swept key is the whole of what there is to vouch for, since it belongs to no wallet
+        int[] counts = AppServices.signatureOptInCounts(psbt,
+                java.util.List.of(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
+        Assertions.assertEquals(1, counts[2], "the key signed");
         Assertions.assertEquals(1, counts[0], "and it opted in");
 
         //The signature has to verify against the digest its own byte names, or the node would refuse it
@@ -52,7 +54,8 @@ public class SweptKeyOptInTest {
         Assertions.assertNull(psbtInput.getSigHash(), "nothing declared, which signs the default");
         Assertions.assertTrue(psbtInput.sign(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
 
-        Assertions.assertEquals(0, AppServices.signatureOptInCounts(psbt)[0], "no signature opted in");
+        Assertions.assertEquals(0, AppServices.signatureOptInCounts(psbt,
+                java.util.List.of(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)))[0], "no signature opted in");
         psbt.verifySignatures();
     }
 

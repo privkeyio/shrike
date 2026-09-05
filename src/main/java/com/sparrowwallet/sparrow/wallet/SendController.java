@@ -1152,7 +1152,12 @@ public class SendController extends WalletFormController implements Initializabl
 
         StringBuilder detail = new StringBuilder();
         if(decision.isOptedIn()) {
-            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.");
+            //Committing to the spent amounts belongs to each signature, not to the transaction, so it can only be
+            //claimed where every signature will opt in. A partially marked quorum is protected the moment one marked
+            //signer signs, and the unmarked ones still commit to nothing.
+            detail.append(decision.isGuaranteed()
+                    ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends."
+                    : "This transaction cannot be replayed against nodes that have not adopted the fork if one of the marked signers is among those that sign, because one signature that opts in is enough. Only the signers that opt in commit to the amounts they spend; the others are shown those amounts by this computer.");
             //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
             //partially marked multisig has two, and the one the headline dropped is the actionable one
             for(String caveat : status.caveats()) {

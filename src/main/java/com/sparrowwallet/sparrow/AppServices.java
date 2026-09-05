@@ -18,6 +18,8 @@ import com.sparrowwallet.sparrow.control.WalletPasswordDialog;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
 import com.sparrowwallet.drongo.policy.Policy;
+import com.sparrowwallet.drongo.protocol.Script;
+import com.sparrowwallet.drongo.protocol.ScriptChunk;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
@@ -77,6 +79,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.sparrowwallet.sparrow.AppController.CONNECTION_FAILED_PREFIX;
@@ -1092,25 +1095,173 @@ public class AppServices {
      *
      * Read off the signatures rather than the declared hash type, because a transaction assembled from per-device
      * PSBTs carries signatures the declaration does not describe.
+     *
+     * Three numbers: how many signatures opt in, how many could be checked at all, and how many are there.
+     *
+     * The first two are counted differently from the third, and deliberately so, because they are claimed in opposite
+     * directions.
+     * The first says a protection is present, so it counts only signatures that verify against a key the caller vouches
+     * for, which for a wallet means a key it derives itself. A key the input names proves nothing, because whoever wrote
+     * the input wrote those too. On top of that, a
+     * push is taken for a signature when it merely decodes as one, and any 64 or 65 byte push decodes as a Schnorr
+     * signature whose hash type is its own last byte, so a taproot control block or an uncompressed public key sitting
+     * in a witness would otherwise report an opt-in that nothing made. The last is the denominator of that claim, so it
+     * counts everything that looks like a signature: a signature this cannot check has to make the claim weaker, not
+     * disappear from the count and make it look complete. The middle one separates the two reasons a signature does not
+     * opt in, which read very differently to someone deciding whether to broadcast: this checked it and it does not, or
+     * this could not check it.
      */
-    public static int[] signatureOptInCounts(PSBT psbt) {
+    public static int[] signatureOptInCounts(PSBT psbt, Wallet wallet) {
         if(psbt == null) {
-            return new int[] {0, 0};
+            return new int[] {0, 0, 0};
         }
 
+        //Which inputs this wallet holds keys for. An input it does not, it cannot vouch for, and a signature it cannot
+        //vouch for cannot support the claim: the keys an input carries are written by whoever wrote the input.
+        //
+        //Guarded, because working that out reads derivations the PSBT supplies. One naming this wallet's fingerprint
+        //with a hardened path cannot be derived from a public key and throws, and an exception leaving here would
+        //abandon the label mid update, leaving whatever it said before, which is the one way this can read as
+        //protection that was never checked.
+        Map<PSBTInput, WalletNode> signingNodes;
+        try {
+            signingNodes = wallet == null ? Map.of() : wallet.getSigningNodes(psbt);
+        } catch(RuntimeException e) {
+            log.warn("Could not work out which inputs this wallet signs for", e);
+            signingNodes = Map.of();
+        }
+
+        Map<PSBTInput, WalletNode> nodes = signingNodes;
+
+        return signatureOptInCounts(psbt, psbtInput -> trustedKeys(psbtInput, wallet, nodes.get(psbtInput)));
+    }
+
+    /**
+     * The keys this wallet will stand behind for an input, or none.
+     *
+     * The spent output has to be the one this wallet derives for that node before any of it counts. Everything the
+     * message is built from comes out of the PSBT, the amount included, so an input whose output this wallet did not
+     * derive is one where a stranger chose the message, and a signature verifying over a message a stranger chose says
+     * nothing about the transaction being sent.
+     */
+    static Set<ECKey> trustedKeys(PSBTInput psbtInput, Wallet wallet, WalletNode walletNode) {
+        if(wallet == null || walletNode == null || psbtInput.getUtxo() == null) {
+            return Set.of();
+        }
+
+        //A wallet built out of the PSBT vouches for nothing: it answers for the script with the PSBT's own output and
+        //for the keys with the ones the PSBT names, so every check below would be the file agreeing with itself
+        if(wallet instanceof FinalizingPSBTWallet) {
+            return Set.of();
+        }
+
+        Script walletScript;
+        try {
+            walletScript = wallet.getOutputScript(walletNode);
+        } catch(RuntimeException e) {
+            //A wallet that cannot derive for a node vouches for nothing. Deriving reaches the keystores, so it can
+            //throw for the same reasons asking for the keys can, and no exception may leave a label.
+            return Set.of();
+        }
+
+        if(walletScript == null || !walletScript.equals(psbtInput.getUtxo().getScript())) {
+            return Set.of();
+        }
+
+        //getPubKeys throws for a singlesig wallet rather than answering with the one key, so ask by policy. Either can
+        //answer with nothing for a node it does not hold, and nothing is the safe answer rather than an exception.
+        Set<ECKey> keys = new LinkedHashSet<>();
+        try {
+            if(ScriptType.P2TR.isScriptType(walletScript)) {
+                //Only the output key can authorise a key path spend, so the untweaked key it was derived from is not
+                //something to accept a signature against
+                keys.add(ScriptType.P2TR.getPublicKeyFromScript(walletScript));
+            } else if(wallet.getPolicyType() == PolicyType.MULTI_HD) {
+                keys.addAll(walletNode.getPubKeys());
+            } else {
+                keys.add(walletNode.getPubKey());
+            }
+        } catch(RuntimeException e) {
+            //A wallet that cannot answer for a node vouches for nothing, which is the safe answer rather than an
+            //exception out of a label
+            return Set.of();
+        }
+        keys.remove(null);
+        return keys;
+    }
+
+    /**
+     * As above, vouching for a set of keys directly rather than through a wallet, for a caller that holds a key no
+     * wallet does. A sweep signs with one such key, though it broadcasts its own transaction rather than showing this.
+     *
+     * The keys are taken on trust, which is the thing the wallet overload exists to avoid. Never pass keys read out of
+     * a PSBT: a partial signature names its own key and a witness is arbitrary pushes, so anyone who wrote the file can
+     * satisfy a check made against them.
+     */
+    public static int[] signatureOptInCounts(PSBT psbt, Collection<ECKey> trustedKeys) {
+        return psbt == null ? new int[] {0, 0, 0} : signatureOptInCounts(psbt, psbtInput -> trustedKeys);
+    }
+
+    /**
+     * The counting itself, over whatever each input's keys are taken to be.
+     */
+    private static int[] signatureOptInCounts(PSBT psbt, Function<PSBTInput, Collection<ECKey>> keysFor) {
+        //Scaled by the inputs there are, because a per transaction ceiling fixed at one input's worth starves ordinary
+        //transactions: a quorum vouches for every key in it, so an eleven of fifteen wallet spends 165 checks on each
+        //input and would stop checking after six of them. The ceiling is here to bound a hostile transaction, not to
+        //ration an honest one, and every input is separately bounded by what one input may ask for.
+        long budget = Math.min((long)MAX_INPUT_SIGNATURE_CHECKS * Math.max(1, psbt.getPsbtInputs().size()), MAX_SIGNATURE_CHECKS);
+
         int optedIn = 0;
+        int verified = 0;
         int total = 0;
+        int checked = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            for(TransactionSignature signature : psbtInput.getSignatures()) {
-                total++;
-                if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
-                    optedIn++;
+            total += psbtInput.getSignatures().size();
+
+            //Each input is capped on its own, and the inputs are not, so a transaction of them is capped here. Every
+            //check builds a message over the whole transaction, and this runs while a screen is being drawn.
+            //Charged for work that can actually happen, and never for work that is refused before it starts. An input
+            //that will do nothing, because it carries more than one input is allowed or because there is no message to
+            //build against, is skipped and charged nothing: otherwise one crafted input would spend the whole
+            //transaction's budget without a single check being made, and silence every honest input after it.
+            Collection<ECKey> keys = keysFor.apply(psbtInput);
+            long wouldCheck = (long)keys.size() * psbtInput.getSignatures().size();
+
+            try {
+                //Inside the guard, because working out whether this input can be checked reads the script it would be
+                //checked against, and that reading can fail on a PSBT written to make it fail
+                boolean canCheck = wouldCheck > 0 && wouldCheck <= MAX_INPUT_SIGNATURE_CHECKS
+                        && psbtInput.getUtxo() != null && psbtInput.getSigningScript() != null;
+                if(!canCheck || checked + wouldCheck > budget) {
+                    keys = List.of();
+                    wouldCheck = 0;
                 }
+                checked += (int)wouldCheck;
+
+                for(TransactionSignature signature : psbtInput.getVerifiedSignatures(keys)) {
+                    verified++;
+                    if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
+                        optedIn++;
+                    }
+                }
+            } catch(RuntimeException e) {
+                //A check that cannot run must not read as a check that failed, and must not take the screen with it:
+                //a missing native signature library is the case that reaches this
+                log.warn("Could not check the signatures on an input for the opt-in", e);
             }
         }
 
-        return new int[] {optedIn, total};
+        return new int[] {optedIn, verified, total};
     }
+
+    /**
+     * What one input may ask for, matching the ceiling drongo applies to it, and what a whole transaction may, which is
+     * a multiple of it. At the tens of microseconds a signature check takes, the transaction ceiling is a fraction of a
+     * second of drawing time in the worst case, and orders of magnitude above anything an honest wallet asks for.
+     */
+    private static final int MAX_INPUT_SIGNATURE_CHECKS = 1024;
+    private static final int MAX_SIGNATURE_CHECKS = 16384;
 
     /**
      * How many signatures in this transaction can be lifted out of it and spent against nodes that have not
@@ -1121,6 +1272,14 @@ public class AppServices {
      * useless in any other transaction. A legacy ANYONECANPAY one commits only to its own input and to the outputs,
      * so it can be copied into a transaction that drops the opted-in inputs and spent against a node that never
      * adopted the fork. The transaction is protected; that input is not, and saying only "protected" would hide it.
+     *
+     * Counted from every push that could be a signature rather than only from those that verify, because this reports a
+     * risk: naming one that is not there costs a warning, and missing one that is costs the warning that mattered.
+     *
+     * Pushes that are provably not signatures are still left out. A taproot control block and an uncompressed public
+     * key are both 65 bytes, so both decode as a Schnorr signature carrying whatever byte they end with, and about one
+     * in four lands on Anyone Can Pay without the opt-in. Warning that such a push can be lifted into another
+     * transaction describes nothing at all, and a warning about nothing is how the ones about something get ignored.
      */
     public static int liftableSignatureCount(PSBT psbt) {
         if(psbt == null) {
@@ -1129,7 +1288,7 @@ public class AppServices {
 
         int liftable = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            for(TransactionSignature signature : psbtInput.getSignatures()) {
+            for(TransactionSignature signature : liftableCandidates(psbtInput)) {
                 if((signature.sighashFlags & SigHash.UNIFIED_FLAG) == 0
                         && (signature.sighashFlags & SigHash.ANYONECANPAY.value) != 0) {
                     liftable++;
@@ -1138,6 +1297,34 @@ public class AppServices {
         }
 
         return liftable;
+    }
+
+    /**
+     * The pushes on an input that could be a signature. A partial signature is one by construction, since it is named
+     * by the key that made it. A finalised input carries pushes, and the ones a script puts there for another purpose
+     * are recognisable: a public key, and the control block that ends a taproot script path spend.
+     */
+    private static List<TransactionSignature> liftableCandidates(PSBTInput psbtInput) {
+        if(psbtInput.getFinalScriptSig() == null && psbtInput.getFinalScriptWitness() == null) {
+            return new ArrayList<>(psbtInput.getSignatures());
+        }
+
+        List<ScriptChunk> chunks = new ArrayList<>();
+        if(psbtInput.getFinalScriptSig() != null) {
+            chunks.addAll(psbtInput.getFinalScriptSig().getChunks());
+        }
+        if(psbtInput.getFinalScriptWitness() != null) {
+            chunks.addAll(psbtInput.getFinalScriptWitness().asScriptChunks());
+        }
+
+        List<TransactionSignature> candidates = new ArrayList<>();
+        for(ScriptChunk chunk : chunks) {
+            if(chunk.isSignature() && !chunk.isPubKey() && !chunk.isTaprootControlBlock()) {
+                candidates.add(chunk.getSignature());
+            }
+        }
+
+        return candidates;
     }
 
     /**
