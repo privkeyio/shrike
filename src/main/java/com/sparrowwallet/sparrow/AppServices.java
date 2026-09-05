@@ -1117,9 +1117,22 @@ public class AppServices {
 
         //Which inputs this wallet holds keys for. An input it does not, it cannot vouch for, and a signature it cannot
         //vouch for cannot support the claim: the keys an input carries are written by whoever wrote the input.
-        Map<PSBTInput, WalletNode> signingNodes = wallet == null ? Map.of() : wallet.getSigningNodes(psbt);
+        //
+        //Guarded, because working that out reads derivations the PSBT supplies. One naming this wallet's fingerprint
+        //with a hardened path cannot be derived from a public key and throws, and an exception leaving here would
+        //abandon the label mid update, leaving whatever it said before, which is the one way this can read as
+        //protection that was never checked.
+        Map<PSBTInput, WalletNode> signingNodes;
+        try {
+            signingNodes = wallet == null ? Map.of() : wallet.getSigningNodes(psbt);
+        } catch(RuntimeException e) {
+            log.warn("Could not work out which inputs this wallet signs for", e);
+            signingNodes = Map.of();
+        }
 
-        return signatureOptInCounts(psbt, psbtInput -> trustedKeys(psbtInput, wallet, signingNodes.get(psbtInput)));
+        Map<PSBTInput, WalletNode> nodes = signingNodes;
+
+        return signatureOptInCounts(psbt, psbtInput -> trustedKeys(psbtInput, wallet, nodes.get(psbtInput)));
     }
 
     /**

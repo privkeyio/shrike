@@ -1081,7 +1081,12 @@ public class HeadersController extends TransactionFormController implements Init
         int verifiedSignatures = counts[1];
         int signatures = counts[2];
 
-        OptInStatus status = optInStatus(psbtSigHash, optedInSignatures, verifiedSignatures, signatures,
+        boolean everyInputDeclaresUnified = headersForm.getPsbt() != null
+                && !headersForm.getPsbt().getPsbtInputs().isEmpty()
+                && headersForm.getPsbt().getPsbtInputs().stream()
+                        .allMatch(input -> input.getSigHash() != null && input.getSigHash().isUnified());
+
+        OptInStatus status = optInStatus(everyInputDeclaresUnified, optedInSignatures, verifiedSignatures, signatures,
                 AppServices.liftableSignatureCount(headersForm.getPsbt()));
 
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
@@ -1116,9 +1121,11 @@ public class HeadersController extends TransactionFormController implements Init
         }
     }
 
-    static OptInStatus optInStatus(SigHash psbtSigHash, int optedInSignatures, int verifiedSignatures, int signatures, int liftable) {
-        //Before anything is signed there is nothing to count, so the declared type is what the transaction will be
-        boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
+    static OptInStatus optInStatus(boolean everyInputDeclaresUnified, int optedInSignatures, int verifiedSignatures, int signatures, int liftable) {
+        //Before anything is signed there is nothing to count, so what the inputs declare is what the transaction will
+        //be. Every input, not the first one that declares anything: a PSBT from elsewhere can declare the opt-in on an
+        //input this wallet will never sign and the old type on the ones it will.
+        boolean optedIn = signatures > 0 ? optedInSignatures > 0 : everyInputDeclaresUnified;
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
         OptInLevel level = optedIn ? OptInLevel.PROTECTED

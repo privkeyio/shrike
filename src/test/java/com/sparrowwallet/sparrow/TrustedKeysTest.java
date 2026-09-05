@@ -2,6 +2,8 @@ package com.sparrowwallet.sparrow;
 
 import com.sparrowwallet.drongo.KeyPurpose;
 import com.sparrowwallet.drongo.Network;
+import com.sparrowwallet.drongo.KeyDerivation;
+import com.sparrowwallet.drongo.crypto.ChildNumber;
 import com.sparrowwallet.drongo.crypto.ECKey;
 import com.sparrowwallet.drongo.policy.Policy;
 import com.sparrowwallet.drongo.policy.PolicyType;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -169,6 +172,32 @@ public class TrustedKeysTest {
         Set<ECKey> keys = AppServices.trustedKeys(psbtInput, quorum, node);
         Assertions.assertEquals(3, keys.size(), "every key in the quorum can be the one that signed");
         Assertions.assertTrue(keys.containsAll(node.getPubKeys()));
+    }
+
+    /**
+     * A derivation the PSBT supplies that this wallet cannot follow.
+     *
+     * A path naming this wallet's master fingerprint whose last element is hardened cannot be derived from a public
+     * key, and working out which inputs the wallet signs for reads those paths. Left unguarded it throws out of the
+     * count, which abandons the label mid update and leaves whatever it said before, and what it said before can be
+     * the confident green taken from an unsigned transaction's declaration.
+     */
+    @Test
+    public void a_derivation_this_wallet_cannot_follow_does_not_throw() throws Exception {
+        Script foreign = ScriptType.P2WPKH.getOutputScript(
+                ECKey.fromPrivate(com.sparrowwallet.drongo.Utils.hexToBytes("22".repeat(32))).getPubKey());
+        PSBTInput psbtInput = inputSpending(foreign);
+
+        List<ChildNumber> path = new java.util.ArrayList<>(wallet.getKeystores().get(0).getKeyDerivation().getDerivation());
+        path.add(new ChildNumber(0, false));
+        path.add(new ChildNumber(0, true));
+        psbtInput.getDerivedPublicKeys().put(ECKey.fromPrivate(com.sparrowwallet.drongo.Utils.hexToBytes("33".repeat(32))),
+                new KeyDerivation(wallet.getKeystores().get(0).getKeyDerivation().getMasterFingerprint(),
+                        KeyDerivation.writePath(path)));
+
+        int[] counts = Assertions.assertDoesNotThrow(() -> AppServices.signatureOptInCounts(lastPsbt, wallet),
+                "a derivation this wallet cannot follow must not leave the count");
+        Assertions.assertEquals(0, counts[0], "and nothing about it can be read as an opt-in");
     }
 
     /**

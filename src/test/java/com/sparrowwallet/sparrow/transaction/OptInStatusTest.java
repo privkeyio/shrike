@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
  */
 public class OptInStatusTest {
     private HeadersController.OptInStatus status(SigHash declared, int optedIn, int verified, int signatures, int liftable) {
-        return HeadersController.optInStatus(declared, optedIn, verified, signatures, liftable);
+        return HeadersController.optInStatus(declared != null && declared.isUnified(), optedIn, verified, signatures, liftable);
     }
 
     /** Nothing signed yet, so the declared type is the whole answer. */
@@ -30,6 +30,8 @@ public class OptInStatusTest {
                 "nothing was checked because nothing is there, which is not the same as something unreadable");
 
         Assertions.assertFalse(status(null, 0, 0, 0, 0).optedIn(), "a transaction declaring nothing has not opted in");
+        Assertions.assertFalse(HeadersController.optInStatus(false, 0, 0, 0, 0).optedIn(),
+                "an unsigned transaction where any input declares the old type has not opted in");
     }
 
     /** One signature, checked, and it opts in. */
