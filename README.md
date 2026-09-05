@@ -23,7 +23,7 @@ The compiled-in height is cross checked against the connected node where it repo
 
 ## Replay protection
 
-A signature that does not opt in is valid under both rule sets, so it can be replayed against nodes still on the old rules. **Check the send screen before building anything.** The opt-in is selected by default:
+A signature that does not opt in is valid under both rule sets. Where the coins it spends also exist on the SHA256d chain, that makes the transaction replayable there. **Check the send screen before building anything.** The opt-in is selected by default:
 
 ![The send screen reporting a transaction as replay protected](docs/images/send-replay-protected.png)
 
@@ -37,9 +37,9 @@ Where a signer is the reason, tick it in the keystore tab of the wallet settings
 
 **In a multisig** one marked signer is enough. Mark two of a 2-of-3 and every transaction opts in; mark one and the opt-in depends on that signer taking part, which the wallet says rather than promising in advance.
 
-**The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent against nodes still on the old rules, even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
+**The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent on the SHA256d chain, even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
 
-Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting with nodes still on the old rules.
+Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting with anyone on the SHA256d chain.
 
 ## Building
 
