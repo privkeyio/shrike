@@ -2903,12 +2903,12 @@ public class AppController implements Initializable {
                 }
 
                 Notifications notificationBuilder = Notifications.create()
-                        .title("Sparrow - " + walletName)
+                        .title(SparrowWallet.APP_NAME + " - " + walletName)
                         .text(text)
                         .graphic(new DialogImage(DialogImage.Type.SPARROW))
                         .hideAfter(Duration.seconds(15))
                         .position(Pos.TOP_RIGHT)
-                        .threshold(5, Notifications.create().title("Sparrow").text("Multiple new wallet transactions").graphic(new DialogImage(DialogImage.Type.SPARROW)))
+                        .threshold(5, Notifications.create().title(SparrowWallet.APP_NAME).text("Multiple new wallet transactions").graphic(new DialogImage(DialogImage.Type.SPARROW)))
                         .onAction(e -> selectTab(event.getWallet()));
 
                 //If controlsfx can't find our window, we must set the window ourselves (unfortunately notification is then shown within this window)
