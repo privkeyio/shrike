@@ -1099,7 +1099,9 @@ public class AppServices {
      *
      * The first two are counted differently from the third, and deliberately so, because they are claimed in opposite
      * directions.
-     * The first says a protection is present, so it counts only signatures that verify against a key the input names: a
+     * The first says a protection is present, so it counts only signatures that verify against a key the caller vouches
+     * for, which for a wallet means a key it derives itself. A key the input names proves nothing, because whoever wrote
+     * the input wrote those too. On top of that, a
      * push is taken for a signature when it merely decodes as one, and any 64 or 65 byte push decodes as a Schnorr
      * signature whose hash type is its own last byte, so a taproot control block or an uncompressed public key sitting
      * in a witness would otherwise report an opt-in that nothing made. The last is the denominator of that claim, so it
@@ -1139,7 +1141,15 @@ public class AppServices {
             return Set.of();
         }
 
-        Script walletScript = wallet.getOutputScript(walletNode);
+        Script walletScript;
+        try {
+            walletScript = wallet.getOutputScript(walletNode);
+        } catch(RuntimeException e) {
+            //A wallet that cannot derive for a node vouches for nothing. Deriving reaches the keystores, so it can
+            //throw for the same reasons asking for the keys can, and no exception may leave a label.
+            return Set.of();
+        }
+
         if(walletScript == null || !walletScript.equals(psbtInput.getUtxo().getScript())) {
             return Set.of();
         }
@@ -1155,7 +1165,6 @@ public class AppServices {
             } else if(wallet.getPolicyType() == PolicyType.MULTI_HD) {
                 keys.addAll(walletNode.getPubKeys());
             } else {
-                //getPubKeys throws for a singlesig wallet rather than answering with the one key, so ask by policy
                 keys.add(walletNode.getPubKey());
             }
         } catch(RuntimeException e) {
@@ -1170,6 +1179,10 @@ public class AppServices {
     /**
      * As above, vouching for a set of keys directly rather than through a wallet, for a caller that holds a key no
      * wallet does. A sweep signs with one such key, though it broadcasts its own transaction rather than showing this.
+     *
+     * The keys are taken on trust, which is the thing the wallet overload exists to avoid. Never pass keys read out of
+     * a PSBT: a partial signature names its own key and a witness is arbitrary pushes, so anyone who wrote the file can
+     * satisfy a check made against them.
      */
     public static int[] signatureOptInCounts(PSBT psbt, Collection<ECKey> trustedKeys) {
         return psbt == null ? new int[] {0, 0, 0} : signatureOptInCounts(psbt, psbtInput -> trustedKeys);
@@ -1188,8 +1201,17 @@ public class AppServices {
 
             //Each input is capped on its own, and the inputs are not, so a transaction of them is capped here. Every
             //check builds a message over the whole transaction, and this runs while a screen is being drawn.
-            Collection<ECKey> keys = checked < MAX_SIGNATURE_CHECKS ? keysFor.apply(psbtInput) : List.of();
-            checked += keys.size() * psbtInput.getSignatures().size();
+            //Charged for work that is actually asked for, and never for work refused. An input carrying more than the
+            //budget on its own is skipped rather than charged: otherwise one crafted input carrying thousands of
+            //signature shaped pushes would spend the whole transaction's budget without a single check being made, and
+            //silence every honest input after it.
+            Collection<ECKey> keys = keysFor.apply(psbtInput);
+            long wouldCheck = (long)keys.size() * psbtInput.getSignatures().size();
+            if(wouldCheck > MAX_SIGNATURE_CHECKS || checked + wouldCheck > MAX_SIGNATURE_CHECKS) {
+                keys = List.of();
+                wouldCheck = 0;
+            }
+            checked += (int)wouldCheck;
 
             try {
                 for(TransactionSignature signature : psbtInput.getVerifiedSignatures(keys)) {

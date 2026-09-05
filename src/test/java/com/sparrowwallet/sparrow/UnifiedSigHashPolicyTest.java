@@ -27,6 +27,9 @@ import com.sparrowwallet.sparrow.wallet.SendController;
 import java.util.Arrays;
 import java.util.List;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Whether a transaction being sent opts in to the unified signature hash.
  *
@@ -611,6 +614,75 @@ public class UnifiedSigHashPolicyTest {
      * than something the wallet has been shown to do, and the difference matters because a PSBT declaring a hash
      * type only some signers can produce is exactly the thing that could fail at finalisation.
      */
+    /**
+     * More signers than the quorum needs, where the one that opts in is the one finalising leaves out.
+     *
+     * A quorum is finalised by taking signatures in key order up to its threshold, so a 2-of-3 that collected three
+     * keeps two and discards the third. Where the discarded one is the only signature that opted in, the transaction
+     * that broadcasts carries no replay protection, and anything read before finalising said it did.
+     */
+    @Test
+    public void testFinalisingCanDropTheOnlySignatureThatOptedIn() throws Exception {
+        String[] mnemonics = {
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor",
+                "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle",
+                "vault cruise pistol trigger pilot scan hidden major fringe course fiber quiz"};
+
+        Wallet wallet = new Wallet();
+        wallet.setPolicyType(PolicyType.MULTI_HD);
+        wallet.setScriptType(ScriptType.P2WSH);
+        for(String mnemonic : mnemonics) {
+            DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+            wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, ScriptType.P2WSH.getDefaultDerivation()));
+        }
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), 2));
+        wallet.getNode(KeyPurpose.RECEIVE);
+
+        WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script spk = wallet.getOutputScript(receiveNode);
+
+        //Finalising sorts by key, so the keystore whose key sorts last is the one that will be dropped
+        List<ECKey> ordered = new ArrayList<>(receiveNode.getPubKeys());
+        ordered.sort(new ECKey.LexicographicECKeyComparator());
+        ECKey droppedKey = ordered.get(ordered.size() - 1);
+        int droppedKeystore = receiveNode.getPubKeys().indexOf(droppedKey);
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        transaction.addInput(Sha256Hash.ZERO_HASH, 0, new Script(new byte[0]));
+        transaction.addOutput(90000L, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
+        psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(2, receiveNode.getPubKeys()));
+
+        //Everyone signs, which a quorum of two does not need but nothing stops. Signed key by key rather than through
+        //Wallet.sign, which stops once the threshold is met and so would never produce the third signature.
+        //Only the one that finalising will drop opts in.
+        for(int i = 0; i < wallet.getKeystores().size(); i++) {
+            psbtInput.setSigHash(i == droppedKeystore ? SigHash.UNIFIED_ALL : SigHash.ALL);
+            Assertions.assertTrue(psbtInput.sign(wallet.getKeystores().get(i).getKey(receiveNode)),
+                    "keystore " + i + " did not sign");
+        }
+        psbtInput.setSigHash(SigHash.ALL);
+
+        Assertions.assertEquals(3, psbtInput.getPartialSignatures().size(), "all three must have signed");
+        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, wallet)[0],
+                "before finalising, one signature opts in");
+
+        wallet.finalise(psbt);
+
+        Assertions.assertEquals(0, AppServices.signatureOptInCounts(psbt, wallet)[0],
+                "finalising dropped the only signature that opted in, so nothing here is protected any more");
+        for(byte[] push : psbt.extractTransaction().getInputs().getFirst().getWitness().getPushes()) {
+            if(push.length >= 70 && push.length <= 73) {
+                Assertions.assertEquals((byte)0x01, push[push.length - 1],
+                        "the signatures that survived are the ones made the old way");
+            }
+        }
+    }
+
     @Test
     public void testAQuorumSignsAndFinalisesAnOptedInSpend() throws Exception {
         String[] mnemonics = {

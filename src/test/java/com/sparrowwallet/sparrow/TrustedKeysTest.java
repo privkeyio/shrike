@@ -105,6 +105,73 @@ public class TrustedKeysTest {
     }
 
     /**
+     * Taproot, where the key that signs is not the key the wallet derives.
+     *
+     * A key path signature verifies against the tweaked output key, so vouching for the untweaked one would verify
+     * nothing and report every taproot spend as unprotected. The output key is taken from the script this wallet
+     * derived, which is the same script the check above just matched.
+     */
+    @Test
+    public void a_taproot_wallet_vouches_for_the_output_key() throws Exception {
+        Wallet taproot = new Wallet();
+        taproot.setPolicyType(PolicyType.SINGLE_HD);
+        taproot.setScriptType(ScriptType.P2TR);
+        DeterministicSeed seed = new DeterministicSeed(
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor", "", 0, DeterministicSeed.Type.BIP39);
+        taproot.getKeystores().add(Keystore.fromSeed(seed, PolicyType.SINGLE_HD, ScriptType.P2TR.getDefaultDerivation()));
+        taproot.setDefaultPolicy(Policy.getPolicy(PolicyType.SINGLE_HD, ScriptType.P2TR, taproot.getKeystores(), null));
+        taproot.getNode(KeyPurpose.RECEIVE);
+        WalletNode node = taproot.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script script = taproot.getOutputScript(node);
+
+        Transaction transaction = new Transaction();
+        transaction.addInput(Sha256Hash.ZERO_HASH, 0, new Script(new byte[0]));
+        transaction.addOutput(90_000L, script);
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().get(0);
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100_000L, script.getProgram()));
+
+        Set<ECKey> keys = AppServices.trustedKeys(psbtInput, taproot, node);
+        Assertions.assertEquals(1, keys.size());
+        Assertions.assertEquals(ScriptType.P2TR.getPublicKeyFromScript(script), keys.iterator().next(),
+                "the key a taproot spend signs against is the one in the output, not the one it was derived from");
+        Assertions.assertNotEquals(ECKey.fromPublicOnly(node.getPubKey()), keys.iterator().next(),
+                "the untweaked key would verify nothing");
+    }
+
+    /** A quorum vouches for every key in it, because any of them may be the one that signed. */
+    @Test
+    public void a_multisig_wallet_vouches_for_the_whole_quorum() throws Exception {
+        String[] mnemonics = {
+                "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor",
+                "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle",
+                "vault cruise pistol trigger pilot scan hidden major fringe course fiber quiz"};
+
+        Wallet quorum = new Wallet();
+        quorum.setPolicyType(PolicyType.MULTI_HD);
+        quorum.setScriptType(ScriptType.P2WSH);
+        for(String mnemonic : mnemonics) {
+            DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
+            quorum.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, ScriptType.P2WSH.getDefaultDerivation()));
+        }
+        quorum.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, quorum.getKeystores(), 2));
+        quorum.getNode(KeyPurpose.RECEIVE);
+        WalletNode node = quorum.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Script script = quorum.getOutputScript(node);
+
+        Transaction transaction = new Transaction();
+        transaction.addInput(Sha256Hash.ZERO_HASH, 0, new Script(new byte[0]));
+        transaction.addOutput(90_000L, script);
+        PSBT psbt = new PSBT(transaction);
+        PSBTInput psbtInput = psbt.getPsbtInputs().get(0);
+        psbtInput.setWitnessUtxo(new TransactionOutput(null, 100_000L, script.getProgram()));
+
+        Set<ECKey> keys = AppServices.trustedKeys(psbtInput, quorum, node);
+        Assertions.assertEquals(3, keys.size(), "every key in the quorum can be the one that signed");
+        Assertions.assertTrue(keys.containsAll(node.getPubKeys()));
+    }
+
+    /**
      * A wallet built out of the PSBT is the case that matters most, because it looks like a wallet and vouches for
      * nothing: it answers for the script with the PSBT's own output and for the keys with the ones the PSBT names, so
      * every check would be the file agreeing with itself.

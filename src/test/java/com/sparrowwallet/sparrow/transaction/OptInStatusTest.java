@@ -115,15 +115,30 @@ public class OptInStatusTest {
     }
 
     /**
-     * Nothing verified at all, which is what a transaction viewed without its wallet looks like. It has to read as
-     * unknown rather than as a finding about how it was signed.
+     * Nothing verified at all, which is what a signed transaction viewed without its wallet looks like, and what every
+     * transaction opened with no matching wallet looks like.
+     *
+     * The summary is still "Not replay protected", because that headline has two states and the safe one is the only
+     * honest choice when nothing is known. The detail is where the difference has to be said, and it must not imply
+     * this looked at the signatures and found them wanting.
      */
     @Test
-    public void a_transaction_with_nothing_checkable_is_not_a_finding() {
+    public void nothing_checkable_says_so_rather_than_implying_it_looked() {
         HeadersController.OptInStatus status = status(SigHash.ALL, 0, 0, 2, 0);
 
         Assertions.assertFalse(status.optedIn());
         Assertions.assertEquals("Not replay protected", status.summary());
+        Assertions.assertTrue(status.detail().startsWith("None of these signatures could be checked against a key this wallet holds"),
+                "with nothing checked, the detail cannot claim anything about how they were made");
+        Assertions.assertFalse(status.detail().contains("none of the ones that could"),
+                "there were no ones that could");
+    }
+
+    /** Some checked, some not, which is a different sentence again. */
+    @Test
+    public void partly_checkable_says_that() {
+        HeadersController.OptInStatus status = status(SigHash.ALL, 0, 1, 2, 0);
+
         Assertions.assertTrue(status.detail().startsWith("Not all of these signatures could be checked"));
     }
 

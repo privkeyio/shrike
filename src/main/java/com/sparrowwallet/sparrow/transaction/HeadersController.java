@@ -1113,12 +1113,14 @@ public class HeadersController extends TransactionFormController implements Init
      */
     private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int verifiedSignatures, int signatures, int liftable) {
         if(!optedIn) {
-            //Hedged where signatures are present, because then this does not know how they were made: an opt-in counts
-            //only where a key this wallet vouches for made it, so nothing counted can mean no wallet to vouch yet, an
-            //input this wallet does not derive, or a message that could not be built. Only the unsigned case is flat.
-            //Two different things to say. Where every signature present was checked, this knows how they were made and
-            //says so. Where something could not be checked, it does not: no wallet to vouch for the keys yet, an input
-            //this wallet does not derive, or a message that could not be built are all read the same from here.
+            //Three different things to say, because they are three different states. Where every signature present was
+            //checked, this knows how they were made. Where none could be checked, it knows nothing about them and must
+            //not imply it looked: no wallet to vouch for the keys, an input this wallet does not derive, or a message
+            //that could not be built all arrive here. Where some could and some could not, it says that.
+            if(verifiedSignatures == 0 && signatures > 0) {
+                return "None of these signatures could be checked against a key this wallet holds, so nothing here says whether they opt in. Treat them as made the way they always have been: they carry no replay protection.";
+            }
+
             return verifiedSignatures < signatures
                     ? "Not all of these signatures could be checked, and none of the ones that could opts in. Treat them as made the way they always have been: they carry no replay protection."
                     : "These signatures are made the way they always have been. They carry no replay protection.";
@@ -1956,6 +1958,11 @@ public class HeadersController extends TransactionFormController implements Init
             if(headersForm.getSigningWallet() != null) {
                 updateSignedKeystores(headersForm.getSigningWallet());
             }
+
+            //Read again, because finalising can drop a signature. A quorum takes the first signatures in key order up to
+            //its threshold, so where more signed than were needed the opted-in one can be the one left out, and this is
+            //the moment the broadcast button appears.
+            refreshOptInStatus();
 
             signButtonBox.setVisible(false);
             broadcastButtonBox.setVisible(true);
