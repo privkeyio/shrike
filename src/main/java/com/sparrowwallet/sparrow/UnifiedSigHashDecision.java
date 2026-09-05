@@ -194,6 +194,22 @@ public enum UnifiedSigHashDecision {
      * As above, for a hash type read back off a PSBT this wallet may not have built.
      */
     public static String summaryFor(boolean optedIn) {
-        return optedIn ? "Replay protected" : "Not replay protected";
+        return summaryFor(optedIn, false);
+    }
+
+    /**
+     * The three things there are to say, in the order they take precedence.
+     *
+     * An opt-in is reported first because it is the stronger claim: the signatures carry the protection themselves, so
+     * it holds for coins that exist before the fork as well as for ones that do not. Nothing to replay is reported next,
+     * where the signatures carry nothing but the coins they spend cannot be reached, which is a fact about those coins
+     * and not a weaker form of the first. What is left is a transaction that could be replayed, and says so.
+     */
+    public static String summaryFor(boolean optedIn, boolean nothingToReplay) {
+        if(optedIn) {
+            return "Replay protected";
+        }
+
+        return nothingToReplay ? PreForkInputs.SUMMARY : "Not replay protected";
     }
 }

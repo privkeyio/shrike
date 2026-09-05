@@ -1131,15 +1131,21 @@ public class SendController extends WalletFormController implements Initializabl
 
         AppServices.UnifiedSigHashStatus status = AppServices.getUnifiedSigHashStatus(walletTransaction.getWallet());
         UnifiedSigHashDecision decision = status.decision();
+        //Only where the transaction will not opt in, because that is the case the warning overstates. Where it does opt
+        //in the signatures carry the protection themselves, which is the stronger thing to report and is reported.
+        boolean nothingToReplay = !decision.isOptedIn() && PreForkInputs.noneReachable(walletTransaction);
         optInStatus.setVisible(true);
-        optInStatus.setText(decision.getSummary());
+        optInStatus.setText(nothingToReplay ? UnifiedSigHashDecision.summaryFor(false, true) : decision.getSummary());
         //The success mark is for an answer that is settled. A conditional opt-in is not one, so it takes the warning
-        //glyph even though it did opt in.
-        optInStatus.setGraphic(decision.isGuaranteed() ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+        //glyph even though it did opt in. Nothing to replay is settled: it is read off the coins being spent, which are
+        //chosen before this is drawn and cannot change without drawing it again.
+        optInStatus.setGraphic(decision.isGuaranteed() || nothingToReplay ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
 
         //The one decision the user can act on is offered here rather than only described: the send screen is where
         //they find out, and a setting reached by leaving the send and hunting through a tab is a setting nobody uses
-        boolean actionable = decision == UnifiedSigHashDecision.EXTERNAL_SIGNER;
+        //Marking a device is the remedy for a missing opt-in, and there is nothing to remedy where nothing can be
+        //replayed, so the offer is not made there.
+        boolean actionable = decision == UnifiedSigHashDecision.EXTERNAL_SIGNER && !nothingToReplay;
         optInStatus.getStyleClass().removeAll("actionable");
         if(actionable) {
             optInStatus.getStyleClass().add("actionable");
@@ -1160,7 +1166,11 @@ public class SendController extends WalletFormController implements Initializabl
             }
         } else {
             detail.append("These signatures will be made the way they always have been, because ").append(decision.getReason()).append(".");
-            if(decision.getRemedy() != null) {
+            if(nothingToReplay) {
+                //Said after the reason rather than instead of it: the signatures really do carry no replay protection,
+                //and a user who later spends a coin that does exist before the fork needs to have been told why.
+                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(PreForkInputs.DETAIL);
+            } else if(decision.getRemedy() != null) {
                 detail.append(System.lineSeparator()).append(System.lineSeparator()).append(decision.getRemedy());
             }
         }

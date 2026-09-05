@@ -15,6 +15,7 @@ import com.sparrowwallet.hummingbird.UR;
 import com.sparrowwallet.hummingbird.registry.CryptoPSBT;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
+import com.sparrowwallet.sparrow.PreForkInputs;
 import com.sparrowwallet.sparrow.UnifiedSigHashDecision;
 import com.sparrowwallet.sparrow.UnitFormat;
 import com.sparrowwallet.sparrow.control.*;
@@ -1078,11 +1079,15 @@ public class HeadersController extends TransactionFormController implements Init
         boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
+        //Read only where nothing opted in, which is the case the warning overstates: an opted-in transaction carries the
+        //protection in its own signatures, which is the stronger thing to say and is what gets said.
+        boolean nothingToReplay = !optedIn && PreForkInputs.noneReachable(headersForm.getPsbt(), headersForm.getSigningWallet());
+
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
-            label.setText(UnifiedSigHashDecision.summaryFor(optedIn));
-            label.setGraphic(optedIn ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
+            label.setText(UnifiedSigHashDecision.summaryFor(optedIn, nothingToReplay));
+            label.setGraphic(optedIn || nothingToReplay ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
             label.setTooltip(new Tooltip(optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures,
-                    AppServices.liftableSignatureCount(headersForm.getPsbt()))));
+                    AppServices.liftableSignatureCount(headersForm.getPsbt()), nothingToReplay)));
         }
     }
 
@@ -1091,9 +1096,12 @@ public class HeadersController extends TransactionFormController implements Init
      * to the transaction and takes one opted-in signature anywhere in it. The second belongs to each signature. Saying
      * only "protected" over a mixed witness would claim the second for signers that did not opt in.
      */
-    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures, int liftable) {
+    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures, int liftable, boolean nothingToReplay) {
         if(!optedIn) {
-            return "These signatures are made the way they always have been. They carry no replay protection.";
+            String detail = "These signatures are made the way they always have been. They carry no replay protection.";
+            //Both, in that order. The signatures are unprotected however unreachable the coins are, and a user who
+            //later spends a coin that does exist before the fork needs to have been told which of the two this was.
+            return nothingToReplay ? detail + " " + PreForkInputs.DETAIL : detail;
         }
 
         if(everySignature || signatures == 0) {
