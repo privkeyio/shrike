@@ -27,7 +27,7 @@ public class MixedWitnessCombineTest {
         Network.set(Network.MAINNET);
         PSBT psbt = mixedWitnessPsbt(SigHash.UNIFIED_ALL, SigHash.ALL);
 
-        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, fixtureWallet)[1], "both keys must have signed");
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, fixtureWallet)[2], "both keys must have signed");
         Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, fixtureWallet)[0], "one of them opted in");
 
         //The combine path and the parse path both run this. It must not reject a witness the finalise
@@ -98,7 +98,7 @@ public class MixedWitnessCombineTest {
         PSBT psbt = mixedWitnessPsbt(SigHash.ALL, SigHash.NONE);
 
         //Both keys signed, over two different output types
-        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, fixtureWallet)[1]);
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, fixtureWallet)[2]);
 
         Assertions.assertThrows(PSBTSignatureException.class, psbt::verifySignatures,
                 "a signature over a type the input never asked for must not verify");

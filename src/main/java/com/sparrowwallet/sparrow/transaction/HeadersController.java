@@ -1078,14 +1078,15 @@ public class HeadersController extends TransactionFormController implements Init
         //was written by whoever wrote the input
         int[] counts = AppServices.signatureOptInCounts(headersForm.getPsbt(), headersForm.getSigningWallet());
         int optedInSignatures = counts[0];
-        int signatures = counts[1];
+        int verifiedSignatures = counts[1];
+        int signatures = counts[2];
 
         //Before anything is signed there is nothing to count, so the declared type is what the transaction will be
         boolean optedIn = signatures > 0 ? optedInSignatures > 0 : psbtSigHash != null && psbtSigHash.isUnified();
         boolean everySignature = signatures > 0 && optedInSignatures == signatures;
 
         //Counted once rather than per label: both read the same PSBT, and the reading now verifies signatures
-        String detail = optedInStatusDetail(optedIn, everySignature, optedInSignatures, signatures,
+        String detail = optedInStatusDetail(optedIn, everySignature, optedInSignatures, verifiedSignatures, signatures,
                 AppServices.liftableSignatureCount(headersForm.getPsbt()));
 
         for(Label label : List.of(signingWalletOptIn, signaturesOptIn)) {
@@ -1100,13 +1101,16 @@ public class HeadersController extends TransactionFormController implements Init
      * to the transaction and takes one opted-in signature anywhere in it. The second belongs to each signature. Saying
      * only "protected" over a mixed witness would claim the second for signers that did not opt in.
      */
-    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int signatures, int liftable) {
+    private static String optedInStatusDetail(boolean optedIn, boolean everySignature, int optedInSignatures, int verifiedSignatures, int signatures, int liftable) {
         if(!optedIn) {
             //Hedged where signatures are present, because then this does not know how they were made: an opt-in counts
             //only where a key this wallet vouches for made it, so nothing counted can mean no wallet to vouch yet, an
             //input this wallet does not derive, or a message that could not be built. Only the unsigned case is flat.
-            return signatures > 0
-                    ? "None of these signatures could be confirmed as opting in, so treat them as made the way they always have been: they carry no replay protection."
+            //Two different things to say. Where every signature present was checked, this knows how they were made and
+            //says so. Where something could not be checked, it does not: no wallet to vouch for the keys yet, an input
+            //this wallet does not derive, or a message that could not be built are all read the same from here.
+            return verifiedSignatures < signatures
+                    ? "Not all of these signatures could be checked, and none of the ones that could opts in. Treat them as made the way they always have been: they carry no replay protection."
                     : "These signatures are made the way they always have been. They carry no replay protection.";
         }
 

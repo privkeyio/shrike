@@ -965,7 +965,7 @@ public class UnifiedSigHashPolicyTest {
         psbtInput.setSigHash(SigHash.UNIFIED_ALL);
 
         Assertions.assertTrue(psbtInput.getSigHash().isUnified(), "the declaration claims the opt-in");
-        Assertions.assertArrayEquals(new int[] {0, 1}, AppServices.signatureOptInCounts(psbt, wallet),
+        Assertions.assertArrayEquals(new int[] {0, 1, 1}, AppServices.signatureOptInCounts(psbt, wallet),
                 "but nothing signed opted in, so no protection may be reported");
     }
 
@@ -1012,7 +1012,7 @@ public class UnifiedSigHashPolicyTest {
         wallet.sign(psbt);
         wallet.getKeystores().getFirst().setSeed(first);
 
-        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, wallet)[1], "both keys must have signed");
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, wallet)[2], "both keys must have signed");
         return AppServices.liftableSignatureCount(psbt);
     }
 
@@ -1083,7 +1083,7 @@ public class UnifiedSigHashPolicyTest {
         psbtInput.setWitnessUtxo(new TransactionOutput(null, 100000L, spk.getProgram()));
         psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(2, receiveNode.getPubKeys()));
 
-        Assertions.assertArrayEquals(new int[] {0, 0}, AppServices.signatureOptInCounts(psbt, wallet), "nothing signed yet");
+        Assertions.assertArrayEquals(new int[] {0, 0, 0}, AppServices.signatureOptInCounts(psbt, wallet), "nothing signed yet");
 
         //One key signs the opted-in message, the other the legacy one, which is what per-device PSBTs produce
         DeterministicSeed second = wallet.getKeystores().get(1).getSeed();
@@ -1099,7 +1099,7 @@ public class UnifiedSigHashPolicyTest {
         wallet.getKeystores().getFirst().setSeed(first);
 
         int[] counts = AppServices.signatureOptInCounts(psbt, wallet);
-        Assertions.assertEquals(2, counts[1], "both keys signed");
+        Assertions.assertEquals(2, counts[2], "both keys signed");
         Assertions.assertEquals(1, counts[0], "exactly one of them opted in");
     }
 

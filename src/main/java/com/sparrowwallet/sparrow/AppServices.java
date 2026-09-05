@@ -1095,17 +1095,22 @@ public class AppServices {
      * Read off the signatures rather than the declared hash type, because a transaction assembled from per-device
      * PSBTs carries signatures the declaration does not describe.
      *
-     * The two numbers are counted differently, and deliberately so, because they are claimed in opposite directions.
+     * Three numbers: how many signatures opt in, how many could be checked at all, and how many are there.
+     *
+     * The first two are counted differently from the third, and deliberately so, because they are claimed in opposite
+     * directions.
      * The first says a protection is present, so it counts only signatures that verify against a key the input names: a
      * push is taken for a signature when it merely decodes as one, and any 64 or 65 byte push decodes as a Schnorr
      * signature whose hash type is its own last byte, so a taproot control block or an uncompressed public key sitting
-     * in a witness would otherwise report an opt-in that nothing made. The second is the denominator of that claim, so
-     * it counts everything that looks like a signature: a signature this cannot check has to make the claim weaker, not
-     * disappear from the count and make it look complete.
+     * in a witness would otherwise report an opt-in that nothing made. The last is the denominator of that claim, so it
+     * counts everything that looks like a signature: a signature this cannot check has to make the claim weaker, not
+     * disappear from the count and make it look complete. The middle one separates the two reasons a signature does not
+     * opt in, which read very differently to someone deciding whether to broadcast: this checked it and it does not, or
+     * this could not check it.
      */
     public static int[] signatureOptInCounts(PSBT psbt, Wallet wallet) {
         if(psbt == null) {
-            return new int[] {0, 0};
+            return new int[] {0, 0, 0};
         }
 
         //Which inputs this wallet holds keys for. An input it does not, it cannot vouch for, and a signature it cannot
@@ -1167,7 +1172,7 @@ public class AppServices {
      * wallet does. A sweep signs with one such key, though it broadcasts its own transaction rather than showing this.
      */
     public static int[] signatureOptInCounts(PSBT psbt, Collection<ECKey> trustedKeys) {
-        return psbt == null ? new int[] {0, 0} : signatureOptInCounts(psbt, psbtInput -> trustedKeys);
+        return psbt == null ? new int[] {0, 0, 0} : signatureOptInCounts(psbt, psbtInput -> trustedKeys);
     }
 
     /**
@@ -1175,6 +1180,7 @@ public class AppServices {
      */
     private static int[] signatureOptInCounts(PSBT psbt, Function<PSBTInput, Collection<ECKey>> keysFor) {
         int optedIn = 0;
+        int verified = 0;
         int total = 0;
         int checked = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
@@ -1187,6 +1193,7 @@ public class AppServices {
 
             try {
                 for(TransactionSignature signature : psbtInput.getVerifiedSignatures(keys)) {
+                    verified++;
                     if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
                         optedIn++;
                     }
@@ -1198,7 +1205,7 @@ public class AppServices {
             }
         }
 
-        return new int[] {optedIn, total};
+        return new int[] {optedIn, verified, total};
     }
 
     /**

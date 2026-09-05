@@ -35,7 +35,7 @@ public class SweptKeyOptInTest {
         //The swept key is the whole of what there is to vouch for, since it belongs to no wallet
         int[] counts = AppServices.signatureOptInCounts(psbt,
                 java.util.List.of(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
-        Assertions.assertEquals(1, counts[1], "the key signed");
+        Assertions.assertEquals(1, counts[2], "the key signed");
         Assertions.assertEquals(1, counts[0], "and it opted in");
 
         //The signature has to verify against the digest its own byte names, or the node would refuse it

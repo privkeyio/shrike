@@ -83,7 +83,7 @@ public class SignatureOptInCountTest {
         PSBT psbt = signed((byte)(SigHash.UNIFIED_FLAG | SigHash.ALL.byteValue()));
 
         Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, trusted())[0]);
-        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, trusted())[1]);
+        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, trusted())[2]);
     }
 
     @Test
@@ -91,7 +91,7 @@ public class SignatureOptInCountTest {
         PSBT psbt = signed(SigHash.ALL.byteValue());
 
         Assertions.assertEquals(0, AppServices.signatureOptInCounts(psbt, trusted())[0]);
-        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, trusted())[1]);
+        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, trusted())[2]);
     }
 
     /**
@@ -106,7 +106,7 @@ public class SignatureOptInCountTest {
 
         int[] counts = AppServices.signatureOptInCounts(psbt, trusted());
         Assertions.assertEquals(0, counts[0], "a push that verifies against nothing claimed the protection");
-        Assertions.assertEquals(2, counts[1], "the denominator counts what is present, so the claim reads as incomplete");
+        Assertions.assertEquals(2, counts[2], "the denominator counts what is present, so the claim reads as incomplete");
     }
 
     /**
@@ -120,7 +120,28 @@ public class SignatureOptInCountTest {
 
         int[] counts = AppServices.signatureOptInCounts(psbt, trusted());
         Assertions.assertEquals(1, counts[0]);
-        Assertions.assertEquals(2, counts[1], "the push is still counted, so one of two opted in rather than all of them");
+        Assertions.assertEquals(2, counts[2], "the push is still counted, so one of two opted in rather than all of them");
+    }
+
+    /**
+     * The two reasons a transaction does not opt in, which the numbers have to keep apart because they read very
+     * differently to someone deciding whether to broadcast.
+     *
+     * A stock signer produces a signature this wallet checks and finds is simply the old kind. A push that is not a
+     * signature is something this wallet cannot check at all. Reporting the second as though it were the first would
+     * tell a user their own signature could not be confirmed, which is both wrong and alarming.
+     */
+    @Test
+    public void a_signature_checked_and_found_legacy_is_not_the_same_as_one_that_could_not_be_checked() {
+        int[] stockSigner = AppServices.signatureOptInCounts(signed(SigHash.ALL.byteValue()), trusted());
+        Assertions.assertArrayEquals(new int[] {0, 1, 1}, stockSigner,
+                "the signature was checked, so nothing here is unknown");
+
+        PSBT withJunk = signed(SigHash.ALL.byteValue());
+        finaliseWith(withJunk, junk());
+        int[] somethingUnreadable = AppServices.signatureOptInCounts(withJunk, trusted());
+        Assertions.assertArrayEquals(new int[] {0, 1, 2}, somethingUnreadable,
+                "one of the two could not be checked, and the count has to show that");
     }
 
     /**
