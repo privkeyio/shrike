@@ -56,7 +56,15 @@ import java.util.stream.Stream;
 public class ElectrumServer {
     private static final Logger log = LoggerFactory.getLogger(ElectrumServer.class);
 
-    static final String[] SUPPORTED_VERSIONS = new String[]{"1.3", "1.4.2"};
+    /**
+     * The range this client negotiates. The maximum is 1.8 because a server on a chain with v2 headers refuses to negotiate below it: a client that
+     * assumes an eighty byte header computes the wrong hash for every block past the activation and fails to link the chain, which reads as a sync
+     * problem rather than as the incompatibility it is, so the server declines rather than serving headers it would be misread.
+     *
+     * Asking for 1.8 also changes the form of a blockchain.block.headers response from any server capping between the old maximum and this one,
+     * which BlockHeaders reads either way.
+     */
+    static final String[] SUPPORTED_VERSIONS = new String[]{"1.3", "1.8"};
 
     private static final Version ELECTRS_MIN_BATCHING_VERSION = new Version("0.9.0");
 
