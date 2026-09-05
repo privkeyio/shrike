@@ -1192,6 +1192,12 @@ public class AppServices {
      * The counting itself, over whatever each input's keys are taken to be.
      */
     private static int[] signatureOptInCounts(PSBT psbt, Function<PSBTInput, Collection<ECKey>> keysFor) {
+        //Scaled by the inputs there are, because a per transaction ceiling fixed at one input's worth starves ordinary
+        //transactions: a quorum vouches for every key in it, so an eleven of fifteen wallet spends 165 checks on each
+        //input and would stop checking after six of them. The ceiling is here to bound a hostile transaction, not to
+        //ration an honest one, and every input is separately bounded by what one input may ask for.
+        long budget = Math.min((long)MAX_INPUT_SIGNATURE_CHECKS * Math.max(1, psbt.getPsbtInputs().size()), MAX_SIGNATURE_CHECKS);
+
         int optedIn = 0;
         int verified = 0;
         int total = 0;
@@ -1201,13 +1207,15 @@ public class AppServices {
 
             //Each input is capped on its own, and the inputs are not, so a transaction of them is capped here. Every
             //check builds a message over the whole transaction, and this runs while a screen is being drawn.
-            //Charged for work that is actually asked for, and never for work refused. An input carrying more than the
-            //budget on its own is skipped rather than charged: otherwise one crafted input carrying thousands of
-            //signature shaped pushes would spend the whole transaction's budget without a single check being made, and
-            //silence every honest input after it.
+            //Charged for work that can actually happen, and never for work that is refused before it starts. An input
+            //that will do nothing, because it carries more than one input is allowed or because there is no message to
+            //build against, is skipped and charged nothing: otherwise one crafted input would spend the whole
+            //transaction's budget without a single check being made, and silence every honest input after it.
             Collection<ECKey> keys = keysFor.apply(psbtInput);
             long wouldCheck = (long)keys.size() * psbtInput.getSignatures().size();
-            if(wouldCheck > MAX_SIGNATURE_CHECKS || checked + wouldCheck > MAX_SIGNATURE_CHECKS) {
+            boolean canCheck = wouldCheck > 0 && wouldCheck <= MAX_INPUT_SIGNATURE_CHECKS
+                    && psbtInput.getUtxo() != null && psbtInput.getSigningScript() != null;
+            if(!canCheck || checked + wouldCheck > budget) {
                 keys = List.of();
                 wouldCheck = 0;
             }
@@ -1231,9 +1239,12 @@ public class AppServices {
     }
 
     /**
-     * The most signature checks worth making for one transaction, matching what one input is allowed on its own.
+     * What one input may ask for, matching the ceiling drongo applies to it, and what a whole transaction may, which is
+     * a multiple of it. At the tens of microseconds a signature check takes, the transaction ceiling is a fraction of a
+     * second of drawing time in the worst case, and orders of magnitude above anything an honest wallet asks for.
      */
-    private static final int MAX_SIGNATURE_CHECKS = 1024;
+    private static final int MAX_INPUT_SIGNATURE_CHECKS = 1024;
+    private static final int MAX_SIGNATURE_CHECKS = 16384;
 
     /**
      * How many signatures in this transaction can be lifted out of it and spent against nodes that have not

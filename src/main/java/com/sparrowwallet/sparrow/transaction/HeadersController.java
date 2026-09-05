@@ -1154,7 +1154,12 @@ public class HeadersController extends TransactionFormController implements Init
             return "These signatures are made the way they always have been. They carry no replay protection.";
         }
 
-        if(everySignature || signatures == 0) {
+        if(signatures == 0) {
+            //Nothing is signed yet, so this describes what the transaction will be rather than what it is
+            return "These signatures will not be valid under the pre-fork rules, so this transaction will not be replayable against nodes that have not adopted the fork, and each signature will commit to the amount it spends.";
+        }
+
+        if(everySignature) {
             //"the amount it spends" rather than "the amounts they spend": an Anyone Can Pay signature commits to its
             //own input's amount and no other, so the blanket claim was not true of one.
             return "These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes that have not adopted the fork, and each commits to the amount it spends.";
@@ -1174,9 +1179,13 @@ public class HeadersController extends TransactionFormController implements Init
         //types it survives being lifted into a transaction that drops the inputs which opted in. The transaction is
         //protected either way, so this is the one case where the headline is true and still not the whole answer.
         if(liftable > 0) {
+            //Read from every push that looks like a signature rather than only from those that verify, because this
+            //reports a risk. Where something could not be checked, the risk is stated as one that may be there.
+            String signs = verifiedSignatures < signatures ? "may sign" : "signs";
+            String sign = verifiedSignatures < signatures ? "may sign" : "sign";
             detail += System.lineSeparator() + System.lineSeparator()
-                    + (liftable == 1 ? "One of those signs Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs."
-                                     : liftable + " of those sign Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs.")
+                    + (liftable == 1 ? "One of those " + signs + " Anyone Can Pay, so it commits only to its own input and to the outputs. That input alone can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs."
+                                     : liftable + " of those " + sign + " Anyone Can Pay, so each commits only to its own input and to the outputs. Those inputs can be lifted into another transaction and spent against nodes that have not adopted the fork, paying these same outputs.")
                     + " Have those signers opt in too, or sign the whole transaction with All, to close that.";
         }
 

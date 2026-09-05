@@ -144,6 +144,96 @@ public class SignatureOptInCountTest {
                 "one of the two could not be checked, and the count has to show that");
     }
 
+    /** A transaction of many inputs, each signed for real by the one key this fixture vouches for. */
+    private PSBT manyInputs(int inputs, byte sigHashType) {
+        ECKey outputKey = ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, key());
+        Script spk = ScriptType.P2WPKH.getOutputScript(PolicyType.SINGLE_HD, key());
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        for(int i = 0; i < inputs; i++) {
+            transaction.addInput(Sha256Hash.ZERO_HASH, i, new Script(new byte[0]));
+        }
+        transaction.addOutput(VALUE - 10_000, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        //Every spent output first: the unified message commits to all of them, so none can be signed until all are set
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            psbtInput.setWitnessUtxo(new TransactionOutput(null, VALUE, spk.getProgram()));
+            psbtInput.setSigHash(SigHash.fromByte(sigHashType));
+        }
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            psbtInput.sign(outputKey);
+        }
+
+        return psbt;
+    }
+
+    /**
+     * An ordinary transaction of many inputs is checked to the end. A ceiling meant to bound a hostile transaction must
+     * not ration an honest one, which is what a per transaction ceiling the size of one input's would do.
+     */
+    @Test
+    public void every_input_of_an_ordinary_transaction_is_checked() {
+        byte unifiedAll = (byte)(SigHash.UNIFIED_FLAG | SigHash.ALL.byteValue());
+        PSBT psbt = manyInputs(200, unifiedAll);
+
+        int[] counts = AppServices.signatureOptInCounts(psbt, trusted());
+        Assertions.assertEquals(200, counts[0], "every input opted in and every one should have been checked");
+        Assertions.assertEquals(200, counts[1]);
+        Assertions.assertEquals(200, counts[2]);
+    }
+
+    /**
+     * Inputs that cannot be checked must cost the transaction nothing.
+     *
+     * Each is refused before a single check runs, because it carries more pushes than one input may ask for. If the
+     * budget were charged for that refused work, enough of them would exhaust it and the honest input at the end would
+     * go unchecked, which suppresses exactly the signal this reports. The count of crafted inputs here is chosen so
+     * that charging for them would overrun the budget and skipping them does not.
+     */
+    @Test
+    public void inputs_that_cannot_be_checked_do_not_silence_the_honest_one() {
+        byte unifiedAll = (byte)(SigHash.UNIFIED_FLAG | SigHash.ALL.byteValue());
+        //Chosen so that charging for the crafted inputs would consume the transaction's budget exactly, leaving the
+        //honest input nothing: nine inputs allow 9216 checks, and eight refused inputs of 1152 pushes come to 9216.
+        int crafted = 8;
+        int pushesEach = 1152;
+
+        ECKey outputKey = ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, key());
+        Script spk = ScriptType.P2WPKH.getOutputScript(PolicyType.SINGLE_HD, key());
+
+        Transaction transaction = new Transaction();
+        transaction.setVersion(2);
+        for(int i = 0; i <= crafted; i++) {
+            transaction.addInput(Sha256Hash.ZERO_HASH, i, new Script(new byte[0]));
+        }
+        transaction.addOutput(VALUE - 10_000, spk);
+
+        PSBT psbt = new PSBT(transaction);
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            psbtInput.setWitnessUtxo(new TransactionOutput(null, VALUE, spk.getProgram()));
+            psbtInput.setSigHash(SigHash.fromByte(unifiedAll));
+        }
+
+        //The honest input is last, so anything the crafted ones consume is consumed before it is reached
+        PSBTInput honest = psbt.getPsbtInputs().get(crafted);
+        Assertions.assertTrue(honest.sign(outputKey), "the honest input must be signed");
+
+        for(int i = 0; i < crafted; i++) {
+            List<byte[]> pushes = new ArrayList<>();
+            for(int j = 0; j < pushesEach; j++) {
+                pushes.add(junk());
+            }
+            psbt.getPsbtInputs().get(i).setFinalScriptWitness(new TransactionWitness(null, pushes));
+        }
+
+        int[] counts = AppServices.signatureOptInCounts(psbt, trusted());
+        Assertions.assertEquals(1, counts[0], "the honest input was never checked, so a crafted one silenced it");
+        Assertions.assertEquals(1, counts[1]);
+        Assertions.assertEquals(crafted * pushesEach + 1, counts[2], "everything present is still counted");
+    }
+
     /**
      * The risk count is read the other way round, from everything that looks like a signature, because naming a risk
      * that is not there costs a warning and missing one costs the warning that mattered.
