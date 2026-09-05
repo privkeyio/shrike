@@ -903,7 +903,7 @@ public class UnifiedSigHashPolicyTest {
      * Counted off the signatures, and only the ones that can actually be lifted. An opted-in ANYONECANPAY signature is
      * invalid under the pre-fork rules to begin with, and a legacy ALL commits to every input, so neither counts.
      * Proven against a node in anyonecanpay_lift.py, where the lifted signature was mined by a node that had
-     * not adopted the fork.
+     * stopped at the activation height.
      */
     @Test
     public void testOnlyALegacyAnyonecanpaySignatureIsCountedAsLiftable() throws Exception {

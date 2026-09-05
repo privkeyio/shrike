@@ -1,6 +1,6 @@
 # Shrike
 
-Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows the BLAKE2b proof-of-work hardfork of Bitcoin and signs with the unified opt-in signature hash. It is not affiliated with the Sparrow project. Upstream Sparrow has not adopted the fork, so use it instead if that is what you want.
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows the BLAKE2b proof-of-work hardfork of Bitcoin and signs with the unified opt-in signature hash. It is not affiliated with the Sparrow project. Upstream Sparrow has not added support for it, so use it instead if that is what you want.
 
 > **Not audited. Use at your own risk, and no warranty of any kind, see the [Apache 2.0 license](LICENSE).** Everything below the divider is upstream's documentation and describes Sparrow rather than Shrike.
 
@@ -9,7 +9,7 @@ Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/spar
 - **BLAKE2b proof of work.** Validates the 164 byte v2 block header and takes the BLAKE2b hash as the block id past activation. Implemented in the [drongo](https://github.com/privkeyio/drongo) submodule.
 - **Unified opt-in signature hash.** Signs with hash type `0x21` past activation, which is invalid under the pre-fork rules and is what makes it unreplayable. Where it cannot opt in, the wallet signs the legacy way and says so on the send screen.
 - **Per-keystore opt-in.** Nothing a device or a watch only keystore reports says what will sign for it, so each is marked by hand under Replay protection. A keystore holding its own key needs no mark. One marked signer is enough, and unmarked signers still sign: each is handed the hash type it can produce.
-- **Only services that have adopted the fork are offered.** Fee rates, explorer links and broadcast use mempool.guide; the preconfigured public Electrum servers are gone, because none of them have. Connect a Knots node, or your own Electrum server indexing one.
+- **Only services that kept up are offered.** Fee rates, explorer links and broadcast use mempool.guide; the preconfigured public Electrum servers are gone, because they stopped at the activation height. Connect a Knots node, or your own Electrum server indexing one.
 - **Separate application identity.** Installs alongside an existing Sparrow without sharing state: `~/.shrike`, its own packages, desktop entries, MIME types and macOS bundle identifier.
 
 ## Activation
@@ -23,7 +23,7 @@ The compiled-in height is cross checked against the connected node where it repo
 
 ## Replay protection
 
-A signature that does not opt in is valid under both rule sets, so it can be replayed against nodes that have not adopted the fork. **Check the send screen before building anything.** The opt-in is selected by default:
+A signature that does not opt in is valid under both rule sets, so it can be replayed against nodes still on the old rules. **Check the send screen before building anything.** The opt-in is selected by default:
 
 ![The send screen reporting a transaction as replay protected](docs/images/send-replay-protected.png)
 
@@ -37,9 +37,9 @@ Where a signer is the reason, tick it in the keystore tab of the wallet settings
 
 **In a multisig** one marked signer is enough. Mark two of a 2-of-3 and every transaction opts in; mark one and the opt-in depends on that signer taking part, which the wallet says rather than promising in advance.
 
-**The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent against nodes that have not adopted the fork, even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
+**The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent against nodes still on the old rules, even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
 
-Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting with nodes that have not adopted the fork.
+Coins held across activation are only separated once spent with an opted-in signature, and a spend covers only the inputs it consumes, so sweep every pre-fork UTXO to yourself before transacting with nodes still on the old rules.
 
 ## Building
 

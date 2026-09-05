@@ -29,7 +29,7 @@ public class PublicElectrumDialog extends ServerProxyDialog {
 
         mainPanel.addComponent(new Label("URL"));
         url = new ComboBox<>();
-        //No public server has adopted the fork, so this list is empty and the dialog is not offered. Reachable
+        //No public server kept up, so this list is empty and the dialog is not offered. Reachable
         //only from a stored config naming the type from before it was withdrawn, and indexing an empty list
         //here would throw rather than say so.
         List<PublicElectrumServer> servers = PublicElectrumServer.getServers();

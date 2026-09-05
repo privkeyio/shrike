@@ -136,7 +136,7 @@ public class Config {
     /**
      * Corrects a stored server type that names an option this build no longer has.
      *
-     * No public Electrum server has adopted the fork. Left alone, a config written before the option was
+     * No public Electrum server kept up. Left alone, a config written before the option was
      * withdrawn connects to one at startup, from AppServices.start, well before any settings screen could
      * correct it, and shows blocks and balances that diverge past the activation height. Done once here
      * rather than in the accessor so that reading the type still returns what was set.
