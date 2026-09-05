@@ -1152,7 +1152,7 @@ public class SendController extends WalletFormController implements Initializabl
 
         StringBuilder detail = new StringBuilder();
         if(decision.isOptedIn()) {
-            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed against nodes still on the old rules, and each commits to the amount it spends.");
+            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed onto the SHA256d chain, and each commits to the amount it spends.");
             //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
             //partially marked multisig has two, and the one the headline dropped is the actionable one
             for(String caveat : status.caveats()) {

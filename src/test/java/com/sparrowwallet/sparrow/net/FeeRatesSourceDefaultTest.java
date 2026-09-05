@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The default source has to be one that kept up.
  *
- * mempool.space stayed on the old rules, so past the activation height it holds neither this wallet's blocks
+ * mempool.space stayed on the SHA256d chain, so past the activation height it holds neither this wallet's blocks
  * nor its mempool, so it answers 404 for a block that exists and prices transactions against a mempool
  * this wallet never broadcasts into. Both were reached with the source left unset, which is the state every
  * new install starts in, so the default is the thing worth pinning.
@@ -120,7 +120,7 @@ public class FeeRatesSourceDefaultTest {
     public void testEveryBroadcastSourceHasAdoptedTheFork() {
         for(BroadcastSource source : BroadcastSource.values()) {
             Assertions.assertEquals(BroadcastSource.MEMPOOL_GUIDE, source,
-                    source + " would offer a transaction to nodes still on the old rules");
+                    source + " would offer a transaction to the SHA256d chain");
         }
     }
 
