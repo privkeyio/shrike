@@ -35,6 +35,12 @@ Where a signer is the reason, tick it in the keystore tab of the wallet settings
 
 ![The Replay protection field in the keystore tab, marked as supported by this device](docs/images/keystore-replay-protection.png)
 
+Opening the transaction afterwards answers in two steps, because it looks at the signatures that are actually on it. Before anyone has signed there is nothing to look at yet, so it tells you what the transaction will be:
+
+![The transaction tab reporting that a transaction will be replay protected once signed](docs/images/will-be-replay-protected.png)
+
+After signing, the wallet checks each signature against its own keys and tells you what the transaction is. A question mark means not checked yet, not unprotected. Until the wallet can check for itself it will not say either way, because a transaction file can claim anything about itself: open one without its wallet, or with signatures this wallet cannot read, and it stays unchecked rather than guessed at.
+
 **In a multisig** one marked signer is enough. Mark two of a 2-of-3 and every transaction opts in; mark one and the opt-in depends on that signer taking part, which the wallet says rather than promising in advance.
 
 **The exception is Anyone Can Pay**, which commits only to its own input and the outputs, so that input can be lifted out and spent on the SHA256d chain, even though the transaction cannot. The send screen names such signatures. Shrike never selects it by itself.
