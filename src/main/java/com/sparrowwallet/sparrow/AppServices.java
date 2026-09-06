@@ -18,6 +18,8 @@ import com.sparrowwallet.sparrow.control.WalletPasswordDialog;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.net.Auth47;
 import com.sparrowwallet.drongo.policy.Policy;
+import com.sparrowwallet.drongo.protocol.Script;
+import com.sparrowwallet.drongo.protocol.ScriptChunk;
 import com.sparrowwallet.drongo.protocol.BlockHeader;
 import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.protocol.Sha256Hash;
@@ -77,6 +79,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.sparrowwallet.sparrow.AppController.CONNECTION_FAILED_PREFIX;
@@ -1026,7 +1029,7 @@ public class AppServices {
      *
      * A PSBT carries one hash type for every signer, so opting in needs enough of them marked to meet the threshold.
      */
-    static UnifiedSigHashDecision keystoreDecision(Wallet wallet) {
+    public static UnifiedSigHashDecision keystoreDecision(Wallet wallet) {
         if(wallet == null || wallet.getKeystores().isEmpty()) {
             return UnifiedSigHashDecision.NO_SIGNING_KEYS;
         }
@@ -1092,35 +1095,203 @@ public class AppServices {
      *
      * Read off the signatures rather than the declared hash type, because a transaction assembled from per-device
      * PSBTs carries signatures the declaration does not describe.
+     *
+     * How many signatures opt in, how many could be checked, and how many are there.
+     *
+     * The first two count only signatures verified against a key the caller vouches for, since any 64 or 65 byte
+     * push decodes as a Schnorr signature carrying whatever byte it ends with. The third counts everything signature
+     * shaped, so one that could not be checked weakens the claim rather than vanishing from it.
      */
-    public static int[] signatureOptInCounts(PSBT psbt) {
+    public static int[] signatureOptInCounts(PSBT psbt, Wallet wallet) {
         if(psbt == null) {
-            return new int[] {0, 0};
+            return new int[] {0, 0, 0};
         }
 
-        int optedIn = 0;
-        int total = 0;
-        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            for(TransactionSignature signature : psbtInput.getSignatures()) {
-                total++;
-                if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
-                    optedIn++;
-                }
+        //Guarded: a derivation naming this wallet's fingerprint with a hardened path throws, and an exception
+        //here would abandon the update and leave the label saying whatever it said before.
+        Map<PSBTInput, WalletNode> signingNodes;
+        try {
+            signingNodes = wallet == null ? Map.of() : wallet.getSigningNodes(psbt);
+        } catch(RuntimeException e) {
+            log.warn("Could not work out which inputs this wallet signs for", e);
+            signingNodes = Map.of();
+        }
+
+        Map<PSBTInput, WalletNode> nodes = signingNodes;
+
+        //Answered once per node rather than once per input. Working out what a wallet vouches for derives a key for
+        //every keystore, twice, and nothing bounds how many inputs ask: a PSBT that repeats one script this wallet
+        //owns across ten thousand inputs fits under a megabyte and asked for three hundred thousand derivations
+        //before any of the ceilings below could apply. The answer is a property of the node, so the inputs after the
+        //first cost nothing.
+        Map<WalletNode, Collection<ECKey>> byNode = new HashMap<>();
+
+        return signatureOptInCounts(psbt, psbtInput -> {
+            WalletNode node = nodes.get(psbtInput);
+            if(node == null) {
+                return Set.of();
             }
-        }
 
-        return new int[] {optedIn, total};
+            return byNode.computeIfAbsent(node, vouchedFor -> trustedKeys(psbtInput, wallet, vouchedFor));
+        });
     }
 
     /**
-     * How many signatures in this transaction can be lifted out of it and spent against nodes that have not
-     * kept up.
+     * The keys this wallet will stand behind for an input, or none.
      *
-     * One opted-in signature makes the whole transaction invalid under the pre-fork rules, but the legacy signatures
-     * inside it stay individually valid there. A legacy ALL or SINGLE signature commits to every input, so it is
-     * useless in any other transaction. A legacy ANYONECANPAY one commits only to its own input and to the outputs,
-     * so it can be copied into a transaction that drops the opted-in inputs and spent against a node that never
-     * kept up. The transaction is protected; that input is not, and saying only "protected" would hide it.
+     * The spent output must be the one this wallet derives for that node: the message is built entirely from the
+     * PSBT, amount included, so otherwise a stranger chose the message the signature verifies over.
+     */
+    static Set<ECKey> trustedKeys(PSBTInput psbtInput, Wallet wallet, WalletNode walletNode) {
+        if(wallet == null || walletNode == null || psbtInput.getUtxo() == null) {
+            return Set.of();
+        }
+
+        //The node's own wallet, which for a nested one is a child: the outer wallet's script type would answer
+        //for a script nobody holds
+        wallet = walletNode.getWallet() != null ? walletNode.getWallet() : wallet;
+
+        //A wallet built out of the PSBT vouches for nothing: every check below would be the file agreeing with itself
+        if(wallet instanceof FinalizingPSBTWallet) {
+            return Set.of();
+        }
+
+        Script walletScript;
+        try {
+            walletScript = wallet.getOutputScript(walletNode);
+        } catch(RuntimeException e) {
+            //Deriving reaches the keystores and can throw; no exception may leave a label
+            return Set.of();
+        }
+
+        if(walletScript == null || !walletScript.equals(psbtInput.getUtxo().getScript())) {
+            return Set.of();
+        }
+
+        //getPubKeys throws for a singlesig wallet rather than answering with the one key, so ask by policy
+        Set<ECKey> keys = new LinkedHashSet<>();
+        try {
+            if(ScriptType.P2TR.isScriptType(walletScript)) {
+                //Only the output key authorises a key path spend, not the untweaked key it came from
+                keys.add(ScriptType.P2TR.getPublicKeyFromScript(walletScript));
+            } else if(wallet.getPolicyType() == PolicyType.MULTI_HD) {
+                keys.addAll(walletNode.getPubKeys());
+            } else {
+                keys.add(walletNode.getPubKey());
+            }
+        } catch(RuntimeException e) {
+            //A wallet that cannot answer for a node vouches for nothing
+            return Set.of();
+        }
+        keys.remove(null);
+        return keys;
+    }
+
+    /**
+     * As above, vouching for a set of keys directly rather than through a wallet.
+     *
+     * Deliberately not public: the keys are taken on trust. Never pass keys read out of a PSBT, or whoever wrote
+     * the file can satisfy the check.
+     */
+    static int[] signatureOptInCounts(PSBT psbt, Collection<ECKey> trustedKeys) {
+        return psbt == null ? new int[] {0, 0, 0} : signatureOptInCounts(psbt, psbtInput -> trustedKeys);
+    }
+
+    private static int[] signatureOptInCounts(PSBT psbt, Function<PSBTInput, Collection<ECKey>> keysFor) {
+        //Two ceilings, because the two costs are not the same. getVerifiedSignatures builds one message per distinct
+        //hash type and keeps it, so an input costs one message however many keys vouch for it, and verifying against
+        //a key is constant time after that. Messages are charged by what they hash and checks against a flat ceiling.
+        //Charging checks against the message budget was what left a 2 of 3 consolidation reading "not checked": it
+        //paid six times what it spends, and stopped a third of the way through.
+        int inputCount = Math.max(1, psbt.getPsbtInputs().size());
+        long checkBudget = Math.min((long)MAX_INPUT_SIGNATURE_CHECKS * inputCount, MAX_SIGNATURE_CHECKS);
+
+        int optedIn = 0;
+        int verified = 0;
+        int total = 0;
+        int checked = 0;
+        for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
+            //Charged only for work that can happen. An input refused before any check runs costs nothing, or crafted
+            //inputs would spend the budget and silence every honest input after them.
+            //Refused before anything is parsed. Every other ceiling here counts signatures, and a witness may carry
+            //any number of pushes that are not signature shaped: each is still parsed and offered to the signature
+            //decoder, three times over, and a hundred inputs of a hundred thousand of them measured two and a half
+            //minutes. No spend needs anything like this many, and the count is already to hand.
+            if(pushCount(psbtInput) > MAX_INPUT_PUSHES) {
+                //Present and unreadable, which is the answer this owes for an input it will not look at
+                total += MAX_INPUT_PUSHES;
+                continue;
+            }
+
+            Collection<ECKey> keys = keysFor.apply(psbtInput);
+            //A partial signature names the key that made it, so an input still carrying them costs one check each
+            //rather than a check against every key. Asked of the input rather than worked out again here, because
+            //this has to predict what getVerifiedSignatures will do and the two drifting is how a foreign input came
+            //to be charged for checks nobody was going to make.
+            boolean namesItsKeys = psbtInput.namesItsKeys();
+            //Read once: on a finalised input this parses the witness and tries to decode every push
+            Collection<TransactionSignature> signatures = psbtInput.getSignatures();
+            //Nothing vouched for is nothing to check, and must cost nothing. Dropping the keys factor for an input
+            //that names its keys dropped the reason this was zero for a foreign input, so enough of them ahead of the
+            //wallet's own spent the budget without a check being made, which is the silencing this guards against.
+            long wouldCheck = keys.isEmpty() ? 0
+                    : (namesItsKeys ? signatures.size() : (long)keys.size() * signatures.size());
+            //Taproot script path signatures can never be verified here, since the leaf script is not parsed, so they
+            //only hold the answer open. Bounded, but deliberately not narrowed to taproot or unfinalised inputs:
+            //isTaproot needs a spent output the PSBT may omit, and either narrowing drops an entry from both counts,
+            //letting a transaction read as fully checked while carrying something nobody looked at.
+            int unverifiable = Math.min(psbtInput.getTapScriptSignatures().size(), MAX_INPUT_SIGNATURE_CHECKS);
+            int inputTotal = signatures.size() + unverifiable;
+
+            try {
+                //Inside the guard: working out whether this input can be checked reads a script that can fail to read
+                boolean canCheck = wouldCheck > 0 && wouldCheck <= MAX_INPUT_SIGNATURE_CHECKS
+                        && psbtInput.getUtxo() != null && psbtInput.getSigningScript() != null;
+                if(!canCheck || checked + wouldCheck > checkBudget) {
+                    keys = List.of();
+                    wouldCheck = 0;
+                }
+                checked += (int)wouldCheck;
+
+                List<TransactionSignature> verifiedHere = psbtInput.getVerifiedSignatures(keys);
+
+                //Counted from what could be a signature, not every push that decodes as one: an uncompressed public
+                //key and a control block are both 65 bytes. Only where this input was checked, or the filter drops a
+                //skipped input from both counts and settles on "not protected" over something never looked at.
+                if(!keys.isEmpty()) {
+                    inputTotal = Math.max(verifiedHere.size(), liftableCandidates(psbtInput).size()) + unverifiable;
+                }
+
+                for(TransactionSignature signature : verifiedHere) {
+                    verified++;
+                    if((signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0) {
+                        optedIn++;
+                    }
+                }
+            } catch(RuntimeException e) {
+                //A check that cannot run must not read as one that failed, nor take the screen with it
+                log.warn("Could not check the signatures on an input for the opt-in", e);
+            }
+
+            total += inputTotal;
+        }
+
+        return new int[] {optedIn, verified, total};
+    }
+
+    /** What one input may ask for, matching drongo's own ceiling, and what a whole transaction may. */
+    private static final int MAX_INPUT_SIGNATURE_CHECKS = 1024;
+    //Measured at about 52 microseconds a verify, so this is a fifth of a second in the worst case a crafted PSBT can
+    //arrange, on the thread that is drawing. It was 16384, which measured 855ms and froze the window.
+    private static final int MAX_SIGNATURE_CHECKS = 4096;
+
+
+    /**
+     * Signatures that can be lifted out of this transaction and spent on the SHA256d chain.
+     *
+     * Counted from every push that could be a signature rather than only those that verify, because this reports a
+     * risk: naming one that is not there costs a warning, missing one that is costs the warning that mattered.
+     * Pushes provably not signatures are still left out, or the warnings about something get ignored too.
      */
     public static int liftableSignatureCount(PSBT psbt) {
         if(psbt == null) {
@@ -1128,16 +1299,112 @@ public class AppServices {
         }
 
         int liftable = 0;
+        int examined = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            for(TransactionSignature signature : psbtInput.getSignatures()) {
+            //Bounded, because the pushes are the PSBT's to choose and nothing else here caps them: four million of
+            //them measured two seconds on the thread that draws, and reported a count no sentence should carry.
+            //Stopping early can only leave a warning unsaid, and a transaction that reaches this cap is already
+            //reading as not checked from the counts, which is the stronger thing to say about it.
+            if(examined >= MAX_LIFTABLE_PUSHES) {
+                break;
+            }
+
+            //As in the counting, and for the same reason: the walk below is per push, not per signature
+            if(pushCount(psbtInput) > MAX_INPUT_PUSHES) {
+                continue;
+            }
+
+            for(TransactionSignature signature : liftableCandidates(psbtInput)) {
+                if(++examined > MAX_LIFTABLE_PUSHES) {
+                    break;
+                }
+
                 if((signature.sighashFlags & SigHash.UNIFIED_FLAG) == 0
                         && (signature.sighashFlags & SigHash.ANYONECANPAY.value) != 0) {
+                    liftable++;
+                }
+            }
+
+            //And the script path ones, which liftableCandidates does not reach: those travel in a field of their own
+            //Capped as the denominator caps them, so the two numbers a sentence quotes cannot disagree
+            int scriptPath = 0;
+            for(String signature : psbtInput.getTapScriptSignatures().values()) {
+                if(++examined > MAX_LIFTABLE_PUSHES || ++scriptPath > MAX_INPUT_SIGNATURE_CHECKS) {
+                    break;
+                }
+
+                //64 bytes carries no hash type byte at all, which is the default type, and that commits to every input
+                if(signature.length() != 130) {
+                    continue;
+                }
+
+                int sighashFlags = Integer.parseInt(signature.substring(128), 16);
+                if((sighashFlags & SigHash.UNIFIED_FLAG) == 0 && (sighashFlags & SigHash.ANYONECANPAY.value) != 0) {
                     liftable++;
                 }
             }
         }
 
         return liftable;
+    }
+
+    /**
+     * How many pushes an input carries, without parsing any of them. A witness holds its pushes as a list already,
+     * and a script its chunks, so both are to hand: what costs is offering each of them to the signature decoder.
+     */
+    private static int pushCount(PSBTInput psbtInput) {
+        int pushes = psbtInput.getFinalScriptWitness() == null ? 0 : psbtInput.getFinalScriptWitness().getPushes().size();
+        return pushes + (psbtInput.getFinalScriptSig() == null ? 0 : psbtInput.getFinalScriptSig().getChunks().size());
+    }
+
+    /**
+     * The most pushes an input is worth reading. A twenty of twenty multisig witness carries twenty three, and
+     * consensus will not check more keys than that, so anything past this is not a spend.
+     */
+    private static final int MAX_INPUT_PUSHES = 1024;
+
+    /**
+     * How many pushes the liftable warning will look at across a transaction. Measured at about a third of a
+     * microsecond each, so this is a small fraction of a second on the drawing thread.
+     */
+    private static final int MAX_LIFTABLE_PUSHES = 50_000;
+
+    /**
+     * The pushes on an input that could be a signature. A partial signature is one by construction; on a finalised
+     * input the pushes a script puts there for another purpose, a public key and a control block, are excluded.
+     */
+    private static List<TransactionSignature> liftableCandidates(PSBTInput psbtInput) {
+        if(psbtInput.getFinalScriptSig() == null && psbtInput.getFinalScriptWitness() == null) {
+            return new ArrayList<>(psbtInput.getSignatures());
+        }
+
+        List<ScriptChunk> chunks = new ArrayList<>();
+        if(psbtInput.getFinalScriptSig() != null) {
+            chunks.addAll(psbtInput.getFinalScriptSig().getChunks());
+        }
+        if(psbtInput.getFinalScriptWitness() != null) {
+            chunks.addAll(psbtInput.getFinalScriptWitness().asScriptChunks());
+        }
+
+        List<TransactionSignature> candidates = new ArrayList<>();
+        for(int i = 0; i < chunks.size(); i++) {
+            ScriptChunk chunk = chunks.get(i);
+            if(!chunk.isSignature()) {
+                continue;
+            }
+
+            //Both are shape tests, and a Schnorr signature meets one about three times in 256: 65 bytes beginning
+            //0xc0 or 0xc1 reads as a control block, 65 beginning 0x04 as an uncompressed key. Applied by shape alone
+            //they discard the single push a taproot key path spend finalises to. Those pushes sit last, after the
+            //signatures, so only there is the shape worth believing.
+            if(i == chunks.size() - 1 && chunks.size() > 1 && (chunk.isPubKey() || chunk.isTaprootControlBlock())) {
+                continue;
+            }
+
+            candidates.add(chunk.getSignature());
+        }
+
+        return candidates;
     }
 
     /**
@@ -1325,6 +1592,46 @@ public class AppServices {
      * The decision and everything qualifying it, taken from one reading of the chain tip so the two agree.
      */
     public record UnifiedSigHashStatus(UnifiedSigHashDecision decision, List<String> caveats) {
+    }
+
+    /**
+     * What the chain has to say about an opt-in, for a caller whose headline is about the signers.
+     *
+     * Only a keystore mark strips a hash type a PSBT already declares, so keystoreDecision answers that on its own.
+     * The chain answers whether this wallet would opt in at all, which explains nothing about what signs anything,
+     * and is said separately rather than dropped.
+     */
+    public static List<String> chainQualifications() {
+        ChainTip tip = decisionTip();
+        return chainQualifications(chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header()));
+    }
+
+    /**
+     * The rule itself, taking the decision so it can be exercised without a chain, as chainDecision is.
+     *
+     * Only ever a chainDecision. Handed a keystore decision it would say the chain declined for a reason belonging to
+     * the signers, which is the splice the two are kept apart to prevent.
+     */
+    static List<String> chainQualifications(UnifiedSigHashDecision chain) {
+        if(chain.isOptedIn()) {
+            return chain.getCaveat() == null ? List.of() : List.of(chain.getCaveat());
+        }
+
+        List<String> qualifications = new ArrayList<>();
+        qualifications.add("Separately, " + chain.getReason() + ", so this wallet would not itself opt in as things stand.");
+        if(chain.getRemedy() != null) {
+            qualifications.add(chain.getRemedy());
+        }
+
+        return List.copyOf(qualifications);
+    }
+
+    /**
+     * What qualifies the signers' answer, with the marked signers named, which is the half a reader can act on.
+     */
+    public static String keystoreCaveat(Wallet wallet) {
+        UnifiedSigHashDecision keystores = keystoreDecision(wallet);
+        return keystores.getCaveat() == null ? null : keystores.getCaveat() + markedSignerSuffix(wallet);
     }
 
     /**
