@@ -27,8 +27,8 @@ public class MixedWitnessCombineTest {
         Network.set(Network.MAINNET);
         PSBT psbt = mixedWitnessPsbt(SigHash.UNIFIED_ALL, SigHash.ALL);
 
-        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt)[1], "both keys must have signed");
-        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt)[0], "one of them opted in");
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, fixtureWallet)[2], "both keys must have signed");
+        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, fixtureWallet)[0], "one of them opted in");
 
         //The combine path and the parse path both run this. It must not reject a witness the finalise
         //path is happy to build.
@@ -40,7 +40,7 @@ public class MixedWitnessCombineTest {
         Network.set(Network.MAINNET);
         PSBT psbt = mixedWitnessPsbt(SigHash.ALL, SigHash.UNIFIED_ALL);
 
-        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt)[0], "one of them opted in");
+        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, fixtureWallet)[0], "one of them opted in");
         psbt.verifySignatures();
     }
 
@@ -98,7 +98,7 @@ public class MixedWitnessCombineTest {
         PSBT psbt = mixedWitnessPsbt(SigHash.ALL, SigHash.NONE);
 
         //Both keys signed, over two different output types
-        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt)[1]);
+        Assertions.assertEquals(2, AppServices.signatureOptInCounts(psbt, fixtureWallet)[2]);
 
         Assertions.assertThrows(PSBTSignatureException.class, psbt::verifySignatures,
                 "a signature over a type the input never asked for must not verify");
@@ -209,9 +209,13 @@ public class MixedWitnessCombineTest {
         return psbt;
     }
 
+    /** The wallet the last fixture was built from, which is what vouches for the keys when counting. */
+    private Wallet fixtureWallet;
+
     /** A real 2-of-2 P2WSH signed once per hash type, the way per-device PSBTs combine. */
     private PSBT mixedWitnessPsbt(SigHash firstType, SigHash secondType) throws Exception {
         Wallet wallet = twoOfTwo();
+        fixtureWallet = wallet;
         PSBT psbt = psbtFor(wallet);
         PSBTInput psbtInput = psbt.getPsbtInputs().getFirst();
 

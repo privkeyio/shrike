@@ -32,8 +32,13 @@ public class SweptKeyOptInTest {
         Assertions.assertEquals(SigHash.UNIFIED_ALL, psbtInput.getSigHash());
         Assertions.assertTrue(psbtInput.sign(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
 
-        int[] counts = AppServices.signatureOptInCounts(psbt);
-        Assertions.assertEquals(1, counts[1], "the key signed");
+        //The swept key is the whole of what there is to vouch for, since it belongs to no wallet. Read through the
+        //input itself rather than the wallet path, which has no wallet here to ask.
+        java.util.List<com.sparrowwallet.drongo.protocol.TransactionSignature> verified =
+                psbtInput.getVerifiedSignatures(java.util.List.of(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
+        int[] counts = new int[] {(int)verified.stream().filter(s -> (s.sighashFlags & SigHash.UNIFIED_FLAG) != 0).count(),
+                verified.size(), psbtInput.getSignatures().size()};
+        Assertions.assertEquals(1, counts[2], "the key signed");
         Assertions.assertEquals(1, counts[0], "and it opted in");
 
         //The signature has to verify against the digest its own byte names, or the node would refuse it
@@ -52,7 +57,9 @@ public class SweptKeyOptInTest {
         Assertions.assertNull(psbtInput.getSigHash(), "nothing declared, which signs the default");
         Assertions.assertTrue(psbtInput.sign(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)));
 
-        Assertions.assertEquals(0, AppServices.signatureOptInCounts(psbt)[0], "no signature opted in");
+        Assertions.assertTrue(psbt.getPsbtInputs().getFirst()
+                .getVerifiedSignatures(java.util.List.of(ScriptType.P2WPKH.getOutputKey(PolicyType.SINGLE_HD, privKey)))
+                .stream().noneMatch(s -> (s.sighashFlags & SigHash.UNIFIED_FLAG) != 0), "no signature opted in");
         psbt.verifySignatures();
     }
 

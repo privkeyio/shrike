@@ -227,6 +227,14 @@
     -fx-text-fill: rgb(238, 210, 2);
 }
 
+/* An answer that could not be worked out asks for the same attention as one that came back bad: the shape says which
+   of the two it is, and leaving it in body text made the least readable of the three states the one carrying a
+   warning. send.css styles this class under #transactionDiagram, which nothing there carries today and which would
+   win anyway on specificity. */
+.question-icon {
+    -fx-text-fill: rgb(238, 210, 2);
+}
+
 .root .header-panel {
     -fx-background-color: -fx-box-border, derive(-fx-background, 10%);
 }
