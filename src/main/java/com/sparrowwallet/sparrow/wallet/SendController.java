@@ -1129,6 +1129,24 @@ public class SendController extends WalletFormController implements Initializabl
             return;
         }
 
+        //Said before anything that could fail, so a failure leaves this saying nothing was worked out rather than
+        //whatever it said about an earlier transaction
+        optInStatus.setVisible(true);
+        optInStatus.setText("Replay protection not worked out");
+        optInStatus.setGraphic(GlyphUtils.getQuestionGlyph());
+        optInStatus.setTooltip(new Tooltip("This transaction could not be checked for replay protection."));
+        optInStatus.getStyleClass().removeAll("actionable");
+        optInStatus.setCursor(Cursor.DEFAULT);
+        optInStatus.setOnMouseClicked(null);
+
+        try {
+            renderKnownOptInStatus(walletTransaction);
+        } catch(RuntimeException e) {
+            log.warn("Could not work out the replay protection status of this transaction", e);
+        }
+    }
+
+    private void renderKnownOptInStatus(WalletTransaction walletTransaction) {
         AppServices.UnifiedSigHashStatus status = AppServices.getUnifiedSigHashStatus(walletTransaction.getWallet());
         UnifiedSigHashDecision decision = status.decision();
         optInStatus.setVisible(true);
@@ -1150,24 +1168,43 @@ public class SendController extends WalletFormController implements Initializabl
             optInStatus.setOnMouseClicked(null);
         }
 
-        StringBuilder detail = new StringBuilder();
-        if(decision.isOptedIn()) {
-            detail.append("These signatures are not valid under the pre-fork rules, so they cannot be replayed onto the SHA256d chain, and each commits to the amount it spends.");
-            //Every caveat that applies, not only the one the headline came from: on an Electrum connection a
-            //partially marked multisig has two, and the one the headline dropped is the actionable one
-            for(String caveat : status.caveats()) {
-                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(caveat);
-            }
-        } else {
-            detail.append("These signatures will be made the way they always have been, because ").append(decision.getReason()).append(".");
-            if(decision.getRemedy() != null) {
-                detail.append(System.lineSeparator()).append(System.lineSeparator()).append(decision.getRemedy());
-            }
-        }
-
-        Tooltip tooltip = new Tooltip(detail.toString());
+        Tooltip tooltip = new Tooltip(optInDetail(decision, status.caveats()));
         tooltip.setShowDuration(Duration.INDEFINITE);
         optInStatus.setTooltip(tooltip);
+    }
+
+    /**
+     * What the send screen says these signatures will do, worked out apart from the label so every decision can be
+     * checked. The transaction view had this shape inline and printed the word null for a decision with no reason.
+     */
+    static String optInDetail(UnifiedSigHashDecision decision, List<String> caveats) {
+        StringBuilder detail = new StringBuilder();
+
+        if(decision.isOptedIn()) {
+            //Committing to the spent amounts belongs to each signature, not to the transaction, so it can only be
+            //claimed where every signature will opt in. A partially marked quorum is protected the moment one marked
+            //signer signs, and the unmarked ones still commit to nothing.
+            detail.append(decision.isGuaranteed()
+                    ? "These signatures are not valid under the pre-fork rules, so they cannot be replayed onto the SHA256d chain, and each commits to the amount it spends."
+                    : "This transaction cannot be replayed onto the SHA256d chain if one of the marked signers is among those that sign, because one signature that opts in is enough. Only the signers that opt in commit to the amounts they spend; the others are shown those amounts by this computer.");
+        } else if(decision.getReason() != null) {
+            detail.append("These signatures will be made the way they always have been, because ").append(decision.getReason()).append(".");
+        } else {
+            //No decision declines without a reason today; saying less beats saying the word null
+            detail.append("These signatures will be made the way they always have been.");
+        }
+
+        //Every caveat that applies, not only the one the headline came from: on an Electrum connection a partially
+        //marked multisig has two, and the one the headline dropped is the actionable one
+        for(String caveat : caveats) {
+            detail.append(System.lineSeparator()).append(System.lineSeparator()).append(caveat);
+        }
+
+        if(!decision.isOptedIn() && decision.getRemedy() != null) {
+            detail.append(System.lineSeparator()).append(System.lineSeparator()).append(decision.getRemedy());
+        }
+
+        return detail.toString();
     }
 
     /**

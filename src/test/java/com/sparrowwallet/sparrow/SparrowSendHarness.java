@@ -37,15 +37,26 @@ public class SparrowSendHarness {
      * P2WPKH input takes the implied P2PKH script instead. Every other end to end test here spends
      * P2WPKH, so this is the one that exercises the other branch of that choice.
      */
+    private static final String MNEMONIC3 = "quantum lens tag pencil kingdom obey noise pigeon oyster shoulder ordinary tilt";
+
     private static Wallet multisigWallet() throws Exception {
+        return multisigWallet(false);
+    }
+
+    /** spare = a 2 of 3, so every signer signing leaves one signature more than the threshold needs. */
+    private static Wallet multisigWallet(boolean spare) throws Exception {
+        return multisigWallet(spare, ScriptType.P2WSH);
+    }
+
+    private static Wallet multisigWallet(boolean spare, ScriptType scriptType) throws Exception {
         Wallet wallet = new Wallet();
         wallet.setPolicyType(PolicyType.MULTI_HD);
-        wallet.setScriptType(ScriptType.P2WSH);
-        for(String mnemonic : new String[] {MNEMONIC, MNEMONIC2}) {
+        wallet.setScriptType(scriptType);
+        for(String mnemonic : spare ? new String[] {MNEMONIC, MNEMONIC2, MNEMONIC3} : new String[] {MNEMONIC, MNEMONIC2}) {
             DeterministicSeed seed = new DeterministicSeed(mnemonic, "", 0, DeterministicSeed.Type.BIP39);
             wallet.getKeystores().add(Keystore.fromSeed(seed, PolicyType.MULTI_HD, wallet.getScriptType().getDefaultDerivation()));
         }
-        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, ScriptType.P2WSH, wallet.getKeystores(), 2));
+        wallet.setDefaultPolicy(Policy.getPolicy(PolicyType.MULTI_HD, scriptType, wallet.getKeystores(), 2));
         wallet.getNode(KeyPurpose.RECEIVE);
         return wallet;
     }
@@ -88,15 +99,20 @@ public class SparrowSendHarness {
 
     public static void main(String[] args) throws Exception {
         boolean mixed = args[0].startsWith("mixed-");
+        //forged- adds a signature made by a key of the stranger's over the opted-in message, which is what anyone
+        //handing you a PSBT can do. Finalising drops it, so the transaction that broadcasts carries no opt-in.
+        boolean forged = args[0].startsWith("forged-");
         //watchonly- decides with a marked watch only wallet and signs with a separate one holding the key,
         //which is the wallet-plus-external-signer split this mode exists to prove
         boolean watchOnly = args[0].startsWith("watchonly-") || args[0].startsWith("watchonlyunmarked-");
         boolean watchOnlyMarked = args[0].startsWith("watchonly-");
-        String mode0 = mixed ? args[0].substring("mixed-".length())
+        String mode0 = forged ? args[0].substring("forged-".length())
+                : mixed ? args[0].substring("mixed-".length())
                 : (watchOnlyMarked ? args[0].substring("watchonly-".length())
                 : (watchOnly ? args[0].substring("watchonlyunmarked-".length()) : args[0]));
         boolean multisig = mode0.endsWith("-multi");
-        String mode = multisig ? mode0.substring(0, mode0.length() - "-multi".length()) : mode0;
+        //Stripped only where it is actually there: spare sets multisig without naming the suffix
+        String mode = mode0.endsWith("-multi") ? mode0.substring(0, mode0.length() - "-multi".length()) : mode0;
         Wallet wallet = multisig ? multisigWallet() : (watchOnly ? watchOnlyWallet(watchOnlyMarked) : wallet());
 
         if("scriptpubkey".equals(mode)) {
@@ -130,8 +146,16 @@ public class SparrowSendHarness {
         if(multisig) {
             //A P2WSH input carries the witnessScript; it is also the script code the unified message
             //commits to, where a P2WPKH input uses the implied P2PKH script instead.
-            psbtInput.setWitnessScript(ScriptType.MULTISIG.getOutputScript(
-                    wallet.getDefaultPolicy().getNumSignaturesRequired(), receiveNode.getPubKeys()));
+            Script multisigScript = ScriptType.MULTISIG.getOutputScript(
+                    wallet.getDefaultPolicy().getNumSignaturesRequired(), receiveNode.getPubKeys());
+            if(wallet.getScriptType() == ScriptType.P2SH) {
+                psbtInput.setRedeemScript(multisigScript);
+            } else if(wallet.getScriptType() == ScriptType.P2SH_P2WSH) {
+                psbtInput.setRedeemScript(ScriptType.P2WSH.getOutputScript(multisigScript));
+                psbtInput.setWitnessScript(multisigScript);
+            } else {
+                psbtInput.setWitnessScript(multisigScript);
+            }
         }
         //What PSBT(WalletTransaction) sets for a non-taproot input, which the opt-in is applied on top of
         psbtInput.setSigHash(SigHash.ALL);
@@ -168,14 +192,38 @@ public class SparrowSendHarness {
         } else {
             wallet.sign(psbt);
         }
+
+
+        if(forged) {
+            //Signed the way this wallet signs, then a signature of the stranger's added over the opted-in message.
+            //The label used to read the hash type off that push and report the transaction as protected.
+            com.sparrowwallet.drongo.crypto.ECKey stranger = com.sparrowwallet.drongo.crypto.ECKey.fromPrivate(Utils.hexToBytes("77".repeat(32)));
+            SigHash declared = psbtInput.getSigHash();
+            psbtInput.setSigHash(SigHash.UNIFIED_ALL);
+            psbtInput.sign(stranger);
+            psbtInput.setSigHash(declared);
+
+            //What the transaction view shows for the combined PSBT, which is the moment a user decides to broadcast
+            int[] combined = AppServices.signatureOptInCounts(psbt, wallet);
+            System.out.println("FORGED_PRESENT=" + psbtInput.getPartialSignatures().size());
+            System.out.println("COMBINED_OPTED_IN=" + combined[0]);
+            System.out.println("COMBINED_PRESENT=" + combined[2]);
+        }
+
         if(!watchOnly) {
             wallet.finalise(psbt);
         }
         Transaction finalTx = psbt.extractTransaction();
 
         TransactionWitness witness = finalTx.getInputs().getFirst().getWitness();
+        java.util.List<TransactionSignature> finalSignatures = witness != null && !witness.getPushes().isEmpty()
+                ? witness.getSignatures() : finalTx.getInputs().getFirst().getScriptSig().getSignatures();
+        if(finalSignatures.isEmpty()) {
+            throw new IllegalStateException("No signatures were produced");
+        }
         if(witness == null || witness.getPushes().isEmpty()) {
-            throw new IllegalStateException("No witness was produced");
+            //A legacy P2SH spend carries its signatures in the scriptSig
+            witness = new TransactionWitness(null, java.util.List.of(finalSignatures.getFirst().encodeToBitcoin()));
         }
         //A P2WSH multisig witness starts with the empty element CHECKMULTISIG consumes, and ends with
         //the witnessScript, so take the first push that actually looks like a signature.
@@ -185,6 +233,14 @@ public class SparrowSendHarness {
                 .orElse(witness.getPushes().getFirst());
 
         System.out.println("SIGHASH_BYTE=" + String.format("%02x", signature[signature.length - 1]));
+        //Every hash type the finalised witness kept, so a caller can see whether the opted-in one survived the choice
+        System.out.println("KEPT_SIGHASH_BYTES=" + finalSignatures.stream()
+                .map(kept -> String.format("%02x", kept.sighashFlags)).collect(java.util.stream.Collectors.joining(",")));
+        //What the transaction view counts the replay protection label from, on the PSBT this run actually signed. The
+        //first number is claimed as a protection so it counts only signatures that verify; the second is what is there.
+        int[] counts = AppServices.signatureOptInCounts(psbt, wallet);
+        System.out.println("VERIFIED_OPTED_IN=" + counts[0]);
+        System.out.println("SIGNATURES_PRESENT=" + counts[2]);
         System.out.println("RAWTX=" + Utils.bytesToHex(finalTx.bitcoinSerialize()));
     }
 }

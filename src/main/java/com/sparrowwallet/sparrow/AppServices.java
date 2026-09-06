@@ -1198,25 +1198,20 @@ public class AppServices {
     }
 
     private static int[] signatureOptInCounts(PSBT psbt, Function<PSBTInput, Collection<ECKey>> keysFor) {
-        //Two ceilings, because the two costs are not the same. getVerifiedSignatures builds one message per distinct
-        //hash type and keeps it, so an input costs one message however many keys vouch for it, and verifying against
-        //a key is constant time after that. Messages are charged by what they hash and checks against a flat ceiling.
-        //Charging checks against the message budget was what left a 2 of 3 consolidation reading "not checked": it
-        //paid six times what it spends, and stopped a third of the way through.
+        //Two ceilings on the checks: what one input may ask, matching the one drongo applies to itself, and what a
+        //whole transaction may. Nothing here bounds the cost of a check beyond that, because opening any PSBT already
+        //verifies every partial signature in it with no bound at all, so a ceiling here would guard nothing.
         int inputCount = Math.max(1, psbt.getPsbtInputs().size());
-        long checkBudget = Math.min((long)MAX_INPUT_SIGNATURE_CHECKS * inputCount, MAX_SIGNATURE_CHECKS);
+        long checkBudget = Math.min((long)MAX_INPUT_SIGNATURE_CHECKS * inputCount, MAX_TRANSACTION_SIGNATURE_CHECKS);
 
         int optedIn = 0;
         int verified = 0;
         int total = 0;
         int checked = 0;
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
-            //Charged only for work that can happen. An input refused before any check runs costs nothing, or crafted
-            //inputs would spend the budget and silence every honest input after them.
-            //Refused before anything is parsed. Every other ceiling here counts signatures, and a witness may carry
-            //any number of pushes that are not signature shaped: each is still parsed and offered to the signature
-            //decoder, three times over, and a hundred inputs of a hundred thousand of them measured two and a half
-            //minutes. No spend needs anything like this many, and the count is already to hand.
+            //Refused before anything is parsed. The ceilings above count signatures, and a witness may carry any
+            //number of pushes that are not signature shaped: each is still parsed and offered to the signature
+            //decoder, three times over. No spend needs anything like this many, and the count is already to hand.
             if(pushCount(psbtInput) > MAX_INPUT_PUSHES) {
                 //Present and unreadable, which is the answer this owes for an input it will not look at
                 total += MAX_INPUT_PUSHES;
@@ -1247,6 +1242,8 @@ public class AppServices {
                 //Inside the guard: working out whether this input can be checked reads a script that can fail to read
                 boolean canCheck = wouldCheck > 0 && wouldCheck <= MAX_INPUT_SIGNATURE_CHECKS
                         && psbtInput.getUtxo() != null && psbtInput.getSigningScript() != null;
+                //Charged only for work that can happen. An input refused before any check runs costs nothing, or
+                //crafted inputs would spend the budget and silence every honest input after them.
                 if(!canCheck || checked + wouldCheck > checkBudget) {
                     keys = List.of();
                     wouldCheck = 0;
@@ -1279,12 +1276,14 @@ public class AppServices {
         return new int[] {optedIn, verified, total};
     }
 
-    /** What one input may ask for, matching drongo's own ceiling, and what a whole transaction may. */
+    /**
+     * What one input may ask for, matching the ceiling drongo applies to itself, and what a whole transaction may.
+     * Named apart from drongo's MAX_SIGNATURE_CHECKS, which is the per input one and is a different number.
+     */
     private static final int MAX_INPUT_SIGNATURE_CHECKS = 1024;
     //Measured at about 52 microseconds a verify, so this is a fifth of a second in the worst case a crafted PSBT can
     //arrange, on the thread that is drawing. It was 16384, which measured 855ms and froze the window.
-    private static final int MAX_SIGNATURE_CHECKS = 4096;
-
+    private static final int MAX_TRANSACTION_SIGNATURE_CHECKS = 4096;
 
     /**
      * Signatures that can be lifted out of this transaction and spent on the SHA256d chain.
