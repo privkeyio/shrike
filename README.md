@@ -1,6 +1,6 @@
 # Shrike
 
-Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows the BLAKE2b proof-of-work hardfork of Bitcoin and signs with the unified opt-in signature hash. It is not affiliated with the Sparrow project. Upstream Sparrow has not added support for it, so use it instead if that is what you want.
+Shrike is an unofficial fork of [Sparrow Bitcoin Wallet](https://github.com/sparrowwallet/sparrow) that follows Bitcoin's change of proof-of-work algorithm to BLAKE2b and signs with the unified opt-in signature hash. It is not affiliated with the Sparrow project. Upstream Sparrow has not added support for it, so use it instead if that is what you want.
 
 > **Not audited. Use at your own risk, and no warranty of any kind, see the [Apache 2.0 license](LICENSE).** Everything below the divider is upstream's documentation and describes Sparrow rather than Shrike.
 
