@@ -334,6 +334,11 @@ jlink {
             imageOptions.addAll(['--icon', 'src/main/deploy/package/macos/shrike.icns', '--resource-dir', 'src/main/deploy/package/macos/'])
             installerType = "dmg"
         }
+        //Last, because the headless Linux branch above reassigns installerOptions rather than adding to
+        //it. Without this jpackage falls back to its own default and the Windows installer reports its
+        //publisher as Unknown, in Add/Remove Programs and in the MSI's Manufacturer field, which
+        //src/main/deploy/package/windows/main.wxs reads straight from it.
+        installerOptions.addAll(['--vendor', 'Kyle Santiago'])
     }
     if(os.linux) {
         jpackageImage {
