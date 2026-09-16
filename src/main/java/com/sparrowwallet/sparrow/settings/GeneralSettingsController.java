@@ -21,6 +21,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
+import javafx.scene.control.Tooltip;
 import javafx.util.StringConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -154,6 +155,11 @@ public class GeneralSettingsController extends SettingsDetailController {
         });
 
         updateCurrencies(exchangeSource.getSelectionModel().getSelectedItem());
+
+        //updateCurrencies() already disables fiatCurrency when the source supplies none, so only
+        //the source itself needs disabling here.
+        exchangeSource.setDisable(true);
+        exchangeSource.setTooltip(new Tooltip("No exchange rate is available yet, so no fiat value is shown."));
 
         loadRecentWallets.setSelected(config.isLoadRecentWallets());
         loadRecentWallets.selectedProperty().addListener((observableValue, oldValue, newValue) -> {
