@@ -1567,7 +1567,16 @@ public class AppServices {
         //One read of the tip for both answers. Reading it again for the caveats would let the headline describe one
         //tip and the caveats another, which is the same class of split reading the ChainTip record exists to prevent.
         ChainTip tip = decisionTip();
-        UnifiedSigHashDecision chain = chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header());
+        return unifiedSigHashStatus(wallet, chainDecision(Network.get(), tip == null ? null : tip.height(), tip == null ? null : tip.header()));
+    }
+
+    /**
+     * Assembling the caveats, given what the chain answered.
+     *
+     * Split from the tip read so it can be asked a question with a known answer. A caveat that is written correctly
+     * and never reaches the status reads the same as one that was never written.
+     */
+    static UnifiedSigHashStatus unifiedSigHashStatus(Wallet wallet, UnifiedSigHashDecision chain) {
         UnifiedSigHashDecision decision = combinedDecision(chain, wallet);
 
         if(!decision.isOptedIn()) {
