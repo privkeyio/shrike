@@ -1643,6 +1643,42 @@ public class AppServices {
     }
 
     /**
+     * The PSBT to export, with the opt-in dropped once the transaction no longer needs it declared.
+     *
+     * One opted-in signature makes a transaction unreplayable whatever the rest carry, so once the PSBT holds one,
+     * the declared type has done its work. Clearing it from there lets a signer that cannot produce the opt-in take
+     * its turn: psbtForDevice does the same over USB, and a QR or a file has no device to ask. Krux, which reported
+     * this, has no USB mode at all, so without this a 2-of-3 that loses one marked signer cannot be spent.
+     *
+     * Before that signature exists the declaration is the only thing asking for the opt-in, so it is left alone and
+     * the marked signers go first.
+     */
+    public static PSBT psbtForExport(Wallet wallet, PSBT psbt) {
+        if(wallet == null || psbt == null || wallet.getKeystores() == null) {
+            return psbt;
+        }
+
+        if(wallet.getKeystores().stream().allMatch(AppServices::canKeystoreSignUnified)) {
+            return psbt;
+        }
+
+        //Read off the signatures, not the declaration: the declaration is what is about to be changed.
+        if(signatureOptInCounts(psbt, wallet)[0] == 0) {
+            return psbt;
+        }
+
+        PSBT exportPsbt = psbt.copy();
+        for(PSBTInput psbtInput : exportPsbt.getPsbtInputs()) {
+            SigHash sigHash = psbtInput.getSigHash();
+            if(sigHash != null && sigHash.isUnified()) {
+                psbtInput.setSigHash(sigHash.withoutUnified());
+            }
+        }
+
+        return exportPsbt;
+    }
+
+    /**
      * The signers that can produce the opt-in, appended to the quorum caveat that would otherwise leave the reader to
      * go and find out which ones those are. Belongs to that caveat alone: after any other it names nothing.
      */

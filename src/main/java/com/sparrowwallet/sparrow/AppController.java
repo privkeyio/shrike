@@ -519,6 +519,14 @@ public class AppController implements Initializable {
         }
     }
 
+    /**
+     * The PSBT these export actions hand out. Routed through AppServices so a signer that cannot produce the opt-in
+     * is not locked out of a transaction that is already protected.
+     */
+    private static PSBT exportPsbt(TransactionTabData transactionTabData) {
+        return AppServices.psbtForExport(transactionTabData.getTransactionData().getSigningWallet(), transactionTabData.getPsbt());
+    }
+
     public void showIntroduction(ActionEvent event) {
         WelcomeDialog welcomeDialog = new WelcomeDialog();
         welcomeDialog.initOwner(rootStack.getScene().getWindow());
@@ -864,10 +872,10 @@ public class AppController implements Initializable {
                 try(FileOutputStream outputStream = new FileOutputStream(file)) {
                     if(asText) {
                         PrintWriter writer = new PrintWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
-                        writer.print(transactionTabData.getPsbt().getForExport().toBase64String(includeXpubs));
+                        writer.print(exportPsbt(transactionTabData).getForExport().toBase64String(includeXpubs));
                         writer.flush();
                     } else {
-                        outputStream.write(transactionTabData.getPsbt().getForExport().serialize(includeXpubs, true));
+                        outputStream.write(exportPsbt(transactionTabData).getForExport().serialize(includeXpubs, true));
                     }
                 } catch(IOException e) {
                     log.error("Error saving PSBT", e);
@@ -890,7 +898,8 @@ public class AppController implements Initializable {
         TabData tabData = (TabData)selectedTab.getUserData();
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData)tabData;
-            String data = asBase64 ? transactionTabData.getPsbt().getForExport().toBase64String() : transactionTabData.getPsbt().getForExport().toString();
+            PSBT exportPsbt = exportPsbt(transactionTabData).getForExport();
+            String data = asBase64 ? exportPsbt.toBase64String() : exportPsbt.toString();
 
             ClipboardContent content = new ClipboardContent();
             content.putString(data);
@@ -904,7 +913,7 @@ public class AppController implements Initializable {
         if(tabData.getType() == TabData.TabType.TRANSACTION) {
             TransactionTabData transactionTabData = (TransactionTabData)tabData;
 
-            byte[] psbtBytes = transactionTabData.getPsbt().getForExport().serialize();
+            byte[] psbtBytes = exportPsbt(transactionTabData).getForExport().serialize();
             CryptoPSBT cryptoPSBT = new CryptoPSBT(psbtBytes);
             BBQR bbqr = new BBQR(BBQRType.PSBT, psbtBytes);
             QRDisplayDialog qrDisplayDialog = new QRDisplayDialog(cryptoPSBT.toUR(), bbqr, false, true, QREncoding.UR);
