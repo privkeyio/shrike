@@ -1976,13 +1976,25 @@ public class AppServices {
         stage.getIcons().add(getWindowIcon());
 
         if(stage.getScene() != null) {
-            if(Config.get().getTheme() == Theme.DARK) {
-                stage.getScene().getStylesheets().add(AppServices.class.getResource("darktheme.css").toExternalForm());
-            }
+            applyThemeStylesheet(stage.getScene());
             if(Config.get().isChunkAddresses()) {
                 stage.getScene().getRoot().getStyleClass().add("chunk-addresses");
             }
         }
+    }
+
+    public static String getThemeStylesheet() {
+        return AppServices.class.getResource(Config.get().getTheme() == Theme.DARK ? "darktheme.css" : "lighttheme.css").toExternalForm();
+    }
+
+    public static void applyThemeStylesheet(Scene scene) {
+        applyThemeStylesheet(scene.getStylesheets());
+    }
+
+    //Takes the list rather than the scene so the swap can be exercised without a JavaFX toolkit
+    static void applyThemeStylesheet(List<String> stylesheets) {
+        stylesheets.removeIf(stylesheet -> stylesheet.endsWith("darktheme.css") || stylesheet.endsWith("lighttheme.css"));
+        stylesheets.add(getThemeStylesheet());
     }
 
     public static Window getActiveWindow() {

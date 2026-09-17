@@ -2732,14 +2732,7 @@ public class AppController implements Initializable {
 
     @Subscribe
     public void themeChanged(ThemeChangedEvent event) {
-        String darkCss = getClass().getResource("darktheme.css").toExternalForm();
-        if(event.getTheme() == Theme.DARK) {
-            if(!tabs.getScene().getStylesheets().contains(darkCss)) {
-                tabs.getScene().getStylesheets().add(darkCss);
-            }
-        } else {
-            tabs.getScene().getStylesheets().remove(darkCss);
-        }
+        AppServices.applyThemeStylesheet(tabs.getScene());
 
         for(Tab tab : tabs.getTabs()) {
             if(tab.getUserData() instanceof WalletTabData) {

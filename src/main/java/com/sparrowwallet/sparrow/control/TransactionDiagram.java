@@ -98,9 +98,7 @@ public class TransactionDiagram extends GridPane {
                 }
 
                 scenePane.getStylesheets().add(AppServices.class.getResource("general.css").toExternalForm());
-                if(Config.get().getTheme() == Theme.DARK) {
-                    scenePane.getStylesheets().add(AppServices.class.getResource("darktheme.css").toExternalForm());
-                }
+                scenePane.getStylesheets().add(AppServices.getThemeStylesheet());
                 scenePane.getStylesheets().add(AppServices.class.getResource("wallet/wallet.css").toExternalForm());
                 scenePane.getStylesheets().add(AppServices.class.getResource("wallet/send.css").toExternalForm());
 
