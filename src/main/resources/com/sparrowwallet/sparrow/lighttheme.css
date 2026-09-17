@@ -1,4 +1,4 @@
-/* The dark theme's counterpart. Upstream carries each colour at two shades and puts the brighter on the light
+/* The dark theme's counterpart. Upstream carries each color at two shades and puts the brighter on the light
    ground: its accent is 2.2x brighter in light, its fills 1.5x. These are that pair for the fork's red. */
 .root {
     -fx-accent: #C3402A;

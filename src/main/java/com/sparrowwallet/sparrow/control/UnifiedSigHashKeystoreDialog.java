@@ -91,7 +91,7 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
                 boolean any = capable > 0;
                 boolean guaranteed = any && unmarked < required;
 
-                //Carries the same glyph and colour the send screen uses for the same answer, so the two agree on sight
+                //Carries the same glyph and color the send screen uses for the same answer, so the two agree on sight
                 progress.setGraphic(any ? GlyphUtils.getSuccessGlyph() : GlyphUtils.getWarningGlyph());
                 progress.getStyleClass().removeAll("success", "failure");
                 progress.getStyleClass().add(any ? "success" : "failure");

@@ -382,9 +382,9 @@ CellView > .text-input.text-field {
 }
 
 /* ControlsFX hardcodes a blue for the switched-on state in its own toggleswitch.css, so it is the one
-   control colour the theme cannot reach. Overridden here to the fork's red. The server type switches in
-   welcome.css and settings.css name their own colour with more specificity and are left alone: those say
-   which kind of server is connected, which is not a chrome colour. */
+   control color the theme cannot reach. Overridden here to the fork's red. The server type switches in
+   welcome.css and settings.css name their own color with more specificity and are left alone: those say
+   which kind of server is connected, which is not a chrome color. */
 .toggle-switch:selected .thumb-area {
     -fx-background-color:
             linear-gradient(to bottom, derive(-fx-text-box-border, -20%), derive(-fx-text-box-border, -30%)),

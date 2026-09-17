@@ -58,19 +58,19 @@ public class ThemeStylesheetTest {
             ".root .placeholder .hyperlink|-fx-text-fill");
 
     @Test
-    public void theHyperlinkColourUsesThePropertyThatAppliesIt() throws Exception {
+    public void theHyperlinkColorUsesThePropertyThatAppliesIt() throws Exception {
         //A Hyperlink is a Labeled: -fx-fill does nothing to its text, so the red was declared and never applied and
         //every unvisited link fell back to Modena's blue. The themes now outrank this rule, so a regression here
         //would only show wherever general.css is attached without one.
-        Map<String, String> general = colourDeclarations("general.css");
+        Map<String, String> general = colorDeclarations("general.css");
         Assertions.assertNotNull(general.get(".hyperlink|-fx-text-fill"),
-                "general.css must set the hyperlink colour with -fx-text-fill, not -fx-fill");
+                "general.css must set the hyperlink color with -fx-text-fill, not -fx-fill");
     }
 
     @Test
     public void bothThemesDeclareEveryBrandRule() throws Exception {
-        Map<String, String> light = colourDeclarations("lighttheme.css");
-        Map<String, String> dark = colourDeclarations("darktheme.css");
+        Map<String, String> light = colorDeclarations("lighttheme.css");
+        Map<String, String> dark = colorDeclarations("darktheme.css");
 
         //A rule declared in one theme and not the other is the bug this all started as: the light theme set only the
         //accent, so its links kept Modena's blue while the dark theme's were red, and a user spotted it.
@@ -82,10 +82,10 @@ public class ThemeStylesheetTest {
 
     @Test
     public void lightTakesTheBrighterShadeOfEachBackground() throws Exception {
-        Map<String, String> light = colourDeclarations("lighttheme.css");
-        Map<String, String> dark = colourDeclarations("darktheme.css");
+        Map<String, String> light = colorDeclarations("lighttheme.css");
+        Map<String, String> dark = colorDeclarations("darktheme.css");
 
-        //Upstream carries every colour at two shades and puts the brighter on the light ground. These are its steps,
+        //Upstream carries every color at two shades and puts the brighter on the light ground. These are its steps,
         //which this theme follows with the fork's red in place of Sparrow's blue. Handing light the dark shade makes
         //the menu bar read as a heavy block, which is what happened when this file first copied the dark accent.
         Map<String, Double> upstreamStep = Map.of(".root|-fx-accent", 2.17d, ".root|-fx-default-button", 2.85d);
@@ -100,9 +100,9 @@ public class ThemeStylesheetTest {
 
     @Test
     public void lightThemeTextIsReadableOnItsGround() throws Exception {
-        Map<String, String> light = colourDeclarations("lighttheme.css");
+        Map<String, String> light = colorDeclarations("lighttheme.css");
 
-        //Text shades are per theme rather than shared precisely because a colour readable on charcoal is not readable
+        //Text shades are per theme rather than shared precisely because a color readable on charcoal is not readable
         //on white. Dark's #D65641 reaches only 3.6:1 here, which is why the light theme states its own tone.
         //Modena's -fx-base panel, the darkest ground a light-mode link sits on, so the weakest case rather than a
         //flattering one. Upstream's own light link manages only 3.25:1 here, so this bar is stricter than upstream's.
@@ -115,8 +115,8 @@ public class ThemeStylesheetTest {
         }
     }
 
-    private static double contrastRatio(String colour, String against) {
-        double a = relativeLuminance(colour);
+    private static double contrastRatio(String color, String against) {
+        double a = relativeLuminance(color);
         double b = relativeLuminance(against);
         return (Math.max(a, b) + 0.05d) / (Math.min(a, b) + 0.05d);
     }
@@ -131,8 +131,8 @@ public class ThemeStylesheetTest {
         return 0.2126d * channel[0] + 0.7152d * channel[1] + 0.0722d * channel[2];
     }
 
-    /** Maps "selector|property" to the declared value, for the colour properties the themes share. */
-    private static Map<String, String> colourDeclarations(String stylesheet) throws Exception {
+    /** Maps "selector|property" to the declared value, for the color properties the themes share. */
+    private static Map<String, String> colorDeclarations(String stylesheet) throws Exception {
         String css;
         try(var in = AppServices.class.getResourceAsStream(stylesheet)) {
             Assertions.assertNotNull(in, stylesheet + " is not on the classpath");

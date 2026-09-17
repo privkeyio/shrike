@@ -620,7 +620,7 @@ public class UnifiedSigHashPolicyTest {
      * keeps two and discards the third. Where the discarded one is the only signature that opted in, the transaction
      * that broadcasts carries no replay protection, and anything read before finalising said it did.
      *
-     * The label is right about the result either way, which is why this documents the behaviour rather than failing
+     * The label is right about the result either way, which is why this documents the behavior rather than failing
      * on it: privkeyio/drongo#7 changes the choice, and is held back from this release because it changes multisig
      * finalisation for every wallet while the label is honest without it.
      */
