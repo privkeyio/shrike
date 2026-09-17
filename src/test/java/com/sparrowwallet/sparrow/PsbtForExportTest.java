@@ -263,6 +263,35 @@ public class PsbtForExportTest {
                 "and the protection the first signature bought is still there");
     }
 
+    /**
+     * What the export dialog says, at the moment someone is about to carry this to a device. The send screen says it
+     * too, on hover, while the transaction is being built.
+     */
+    @Test
+    public void testTheExportSaysWhichOfTheTwoItIs() throws Exception {
+        addUnmarkedSigner();
+        PSBT psbt = optedInPsbt();
+
+        String before = AppServices.exportDescription(wallet, psbt);
+        Assertions.assertNotNull(before);
+        Assertions.assertTrue(before.contains("Krux"), before);
+        Assertions.assertTrue(before.contains("cannot produce"), before);
+
+        signOptedIn(psbt);
+        String after = AppServices.exportDescription(wallet, AppServices.psbtForExport(wallet, psbt));
+        Assertions.assertNotNull(after);
+        Assertions.assertTrue(after.contains("Any signer can sign"), after);
+        Assertions.assertTrue(after.contains("Krux"), after);
+        Assertions.assertNotEquals(before, after, "the same button now produces a different export");
+    }
+
+    /** Nothing to explain where every signer can produce the opt-in. */
+    @Test
+    public void testAFullyMarkedWalletIsToldNothing() throws Exception {
+        PSBT psbt = optedInPsbt();
+        Assertions.assertNull(AppServices.exportDescription(wallet, psbt));
+    }
+
     @Test
     public void testNoWalletAndNoPsbtAreNotErrors() {
         Assertions.assertNull(AppServices.psbtForExport(wallet, null));

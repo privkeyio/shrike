@@ -1687,6 +1687,42 @@ public class AppServices {
     }
 
     /**
+     * What to say above an exported PSBT, or null where there is nothing worth saying.
+     *
+     * The send screen says this too, but it says it while the transaction is being built and only on hover. This is
+     * the moment it is acted on: someone is about to carry this to a device. The same button also produces a
+     * different export before and after the first signature, and without a word here that change is invisible.
+     */
+    public static String exportDescription(Wallet wallet, PSBT psbt) {
+        String names = unmarkedSignerNames(wallet);
+        if(names == null || psbt == null) {
+            return null;
+        }
+
+        boolean optedIn = psbt.getPsbtInputs().stream()
+                .anyMatch(psbtInput -> psbtInput.getSigHash() != null && psbtInput.getSigHash().isUnified());
+
+        return optedIn
+                ? "Asks every signer for the unified sighash, which " + names + " cannot produce. Sign with one of the others first."
+                : "Any signer can sign this, including " + names + ".";
+    }
+
+    /** The signers that cannot produce the opt-in, by name, or null where every one of them can. */
+    private static String unmarkedSignerNames(Wallet wallet) {
+        if(wallet == null || wallet.getKeystores() == null) {
+            return null;
+        }
+
+        List<String> names = wallet.getKeystores().stream()
+                .filter(keystore -> !canKeystoreSignUnified(keystore))
+                .map(Keystore::getLabel)
+                .filter(label -> label != null && !label.isBlank())
+                .toList();
+
+        return names.isEmpty() ? null : String.join(", ", names);
+    }
+
+    /**
      * The signers an opted-in transaction cannot be handed as it stands.
      *
      * The declaration asks every signer for the opt-in until one signature carries it, after which psbtForExport
@@ -1698,18 +1734,13 @@ public class AppServices {
             return null;
         }
 
-        List<String> names = wallet.getKeystores().stream()
-                .filter(keystore -> !canKeystoreSignUnified(keystore))
-                .map(Keystore::getLabel)
-                .filter(label -> label != null && !label.isBlank())
-                .toList();
-
-        if(names.isEmpty()) {
+        String names = unmarkedSignerNames(wallet);
+        if(names == null) {
             return null;
         }
 
         return "Sign with a marked signer first. The opt-in is asked for until one signature carries it, and until "
-                + "then a QR or file export is one these will refuse: " + String.join(", ", names) + ".";
+                + "then a QR or file export is one these will refuse: " + names + ".";
     }
 
     /**
