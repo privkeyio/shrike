@@ -110,7 +110,7 @@
 .hyperlink {
     -fx-padding: 0;
     -fx-border-width: 0;
-    -fx-fill: #C3402A;
+    -fx-text-fill: #C3402A;
 }
 
 .hyperlink:visited {
