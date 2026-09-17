@@ -1574,7 +1574,8 @@ public class AppServices {
      * Assembling the caveats, given what the chain answered.
      *
      * Split from the tip read so it can be asked a question with a known answer. A caveat that is written correctly
-     * and never reaches the status reads the same as one that was never written.
+     * and never reaches the status reads the same as one that was never written, which is the failure this feature
+     * has had once already.
      */
     static UnifiedSigHashStatus unifiedSigHashStatus(Wallet wallet, UnifiedSigHashDecision chain) {
         UnifiedSigHashDecision decision = combinedDecision(chain, wallet);
@@ -1591,6 +1592,13 @@ public class AppServices {
         }
         if(chain.getCaveat() != null) {
             caveats.add(chain.getCaveat());
+        }
+        //Only where nothing else has named these signers; the quorum caveat above already does where it fires.
+        if(keystores.getCaveat() == null) {
+            String cannotSign = unmarkedSignerCaveat(wallet);
+            if(cannotSign != null) {
+                caveats.add(cannotSign);
+            }
         }
 
         return new UnifiedSigHashStatus(decision, List.copyOf(caveats));
@@ -1676,6 +1684,32 @@ public class AppServices {
         }
 
         return exportPsbt;
+    }
+
+    /**
+     * The signers an opted-in transaction cannot be handed as it stands.
+     *
+     * The declaration asks every signer for the opt-in until one signature carries it, after which psbtForExport
+     * drops it and these can sign. So the remedy is an order, not a cable: a marked signer first. Independent of
+     * whether the transaction is protected, which is a separate question about who signs.
+     */
+    static String unmarkedSignerCaveat(Wallet wallet) {
+        if(wallet == null || wallet.getKeystores() == null) {
+            return null;
+        }
+
+        List<String> names = wallet.getKeystores().stream()
+                .filter(keystore -> !canKeystoreSignUnified(keystore))
+                .map(Keystore::getLabel)
+                .filter(label -> label != null && !label.isBlank())
+                .toList();
+
+        if(names.isEmpty()) {
+            return null;
+        }
+
+        return "Sign with a marked signer first. The opt-in is asked for until one signature carries it, and until "
+                + "then a QR or file export is one these will refuse: " + String.join(", ", names) + ".";
     }
 
     /**
