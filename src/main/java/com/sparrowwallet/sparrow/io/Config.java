@@ -44,6 +44,7 @@ public class Config {
     private boolean groupByAddress = true;
     private boolean includeMempoolOutputs = true;
     private boolean notifyNewTransactions = true;
+    private boolean checkNewVersions = true;
     private Theme theme;
     private boolean openWalletsInNewWindows = false;
     private boolean chunkAddresses = true;
@@ -298,6 +299,15 @@ public class Config {
 
     public void setTheme(Theme theme) {
         this.theme = theme;
+        flush();
+    }
+
+    public boolean isCheckNewVersions() {
+        return checkNewVersions;
+    }
+
+    public void setCheckNewVersions(boolean checkNewVersions) {
+        this.checkNewVersions = checkNewVersions;
         flush();
     }
 

@@ -57,6 +57,9 @@ public class GeneralSettingsController extends SettingsDetailController {
     private UnlabeledToggleSwitch loadRecentWallets;
 
     @FXML
+    private UnlabeledToggleSwitch checkNewVersions;
+
+    @FXML
     private UnlabeledToggleSwitch validateDerivationPaths;
 
     @FXML
@@ -190,6 +193,11 @@ public class GeneralSettingsController extends SettingsDetailController {
             config.setNotifyNewTransactions(newValue);
         });
 
+        checkNewVersions.setSelected(config.isCheckNewVersions());
+        checkNewVersions.selectedProperty().addListener((observableValue, oldValue, newValue) -> {
+            config.setCheckNewVersions(newValue);
+            EventManager.get().post(new VersionCheckStatusEvent(newValue));
+        });
     }
 
     private static Server getBlockExplorer(String serverUrl) {

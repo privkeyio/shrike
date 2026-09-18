@@ -2773,6 +2773,28 @@ public class AppController implements Initializable {
     }
 
     @Subscribe
+    public void versionUpdated(VersionUpdatedEvent event) {
+        Hyperlink versionUpdateLabel = new Hyperlink("Shrike " + event.getVersion() + " available");
+        versionUpdateLabel.getStyleClass().add("version-hyperlink");
+        versionUpdateLabel.setOnAction(event1 -> {
+            AppServices.get().getApplication().getHostServices().showDocument("https://github.com/privkeyio/shrike/releases/latest");
+        });
+
+        Hyperlink existingUpdateLabel = null;
+        for(Node node : statusBar.getRightItems()) {
+            if(node instanceof Hyperlink) {
+                existingUpdateLabel = (Hyperlink)node;
+            }
+        }
+
+        if(existingUpdateLabel != null) {
+            statusBar.getRightItems().remove(existingUpdateLabel);
+        }
+
+        statusBar.getRightItems().add(0, versionUpdateLabel);
+    }
+
+    @Subscribe
     public void themeChanged(ThemeChangedEvent event) {
         //Owned dialogs follow the main window stylesheets, but these non-modal dialogs have no owner
         List<Scene> scenes = new ArrayList<>(List.of(tabs.getScene()));

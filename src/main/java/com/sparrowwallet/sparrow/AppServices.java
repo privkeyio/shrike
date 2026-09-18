@@ -90,6 +90,7 @@ public class AppServices {
     private static final Logger log = LoggerFactory.getLogger(AppServices.class);
 
     private static final int SERVER_PING_PERIOD_SECS = 60;
+    private static final int VERSION_CHECK_PERIOD_HOURS = 24;
     private static final int PUBLIC_SERVER_RETRY_PERIOD_SECS = 3;
     private static final int PRIVATE_SERVER_RETRY_PERIOD_SECS = 15;
     public static final int ENUMERATE_HW_PERIOD_SECS = 30;
@@ -131,6 +132,8 @@ public class AppServices {
     private ElectrumServer.FeeRatesService feeRatesService;
 
     private Hwi.ScheduledEnumerateService deviceEnumerateService;
+
+    private VersionCheckService versionCheckService;
 
     private TorService torService;
 
@@ -185,6 +188,7 @@ public class AppServices {
             } else {
                 connectionService.cancel();
                 ratesService.cancel();
+                versionCheckService.cancel();
 
                 if(httpClientService != null) {
                     HttpClientService.ShutdownService shutdownService = new HttpClientService.ShutdownService(httpClientService);
@@ -220,6 +224,7 @@ public class AppServices {
         registerHeaderSyncService();
         feeRatesService = createFeeRatesService();
         ratesService = createRatesService(config.getExchangeSource(), config.getFiatCurrency());
+        versionCheckService = createVersionCheckService();
         torService = createTorService();
         preventSleepService = createPreventSleepService();
 
@@ -249,6 +254,10 @@ public class AppServices {
             restartService(ratesService);
         }
 
+        if(config.isCheckNewVersions() && Network.get() == Network.MAINNET && Interface.get() == Interface.DESKTOP) {
+            restartService(versionCheckService);
+        }
+
         if(config.isPreventSleep()) {
             restartService(preventSleepService);
         }
@@ -275,6 +284,10 @@ public class AppServices {
 
         if(ratesService != null) {
             ratesService.cancel();
+        }
+
+        if(versionCheckService != null) {
+            versionCheckService.cancel();
         }
 
         if(httpClientService != null) {
@@ -430,6 +443,32 @@ public class AppServices {
         });
 
         return ratesService;
+    }
+
+    private VersionCheckService createVersionCheckService() {
+        VersionCheckService versionCheckService = new VersionCheckService();
+        versionCheckService.setDelay(Duration.seconds(10));
+        versionCheckService.setPeriod(Duration.hours(VERSION_CHECK_PERIOD_HOURS));
+        versionCheckService.setRestartOnFailure(true);
+
+        versionCheckService.setOnSucceeded(successEvent -> {
+            VersionUpdatedEvent event = versionCheckService.getValue();
+            if(event != null) {
+                EventManager.get().post(event);
+            }
+        });
+
+        return versionCheckService;
+    }
+
+    @Subscribe
+    public void versionCheckStatus(VersionCheckStatusEvent event) {
+        versionCheckService.cancel();
+
+        if(Config.get().getMode() != Mode.OFFLINE && event.isEnabled() && Network.get() == Network.MAINNET) {
+            versionCheckService = createVersionCheckService();
+            versionCheckService.start();
+        }
     }
 
     private Hwi.ScheduledEnumerateService createDeviceEnumerateService() {
