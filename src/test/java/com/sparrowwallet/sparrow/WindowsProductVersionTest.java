@@ -19,11 +19,29 @@ import java.util.regex.Pattern;
 public class WindowsProductVersionTest {
     private static final Path BUILD_GRADLE = Path.of("build.gradle");
 
-    /** Mirrors the derivation in build.gradle: MAJOR.MINOR.(patch * 1000 + release). */
+    /**
+     * Applies the derivation build.gradle declares, reading its multiplier from there rather than restating it.
+     * A copy of the formula here would pass whatever the build did, which is the one thing these tests must not do.
+     */
     private static int[] productVersion(String base, int release) {
         String[] parts = base.split("\\.");
         return new int[] {Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
-                Integer.parseInt(parts[2]) * 1000 + release};
+                Integer.parseInt(parts[2]) * multiplier() + release};
+    }
+
+    private static int multiplier() {
+        Matcher matcher = Pattern.compile("parts\\[2]\\.toInteger\\(\\) \\* (\\d+)").matcher(buildGradle());
+        Assertions.assertTrue(matcher.find(), "could not read the ProductVersion multiplier from build.gradle");
+        return Integer.parseInt(matcher.group(1));
+    }
+
+    private static String buildGradle() {
+        try {
+            Assertions.assertTrue(Files.exists(BUILD_GRADLE), "expected to run from the project root");
+            return Files.readString(BUILD_GRADLE);
+        } catch(IOException e) {
+            throw new AssertionError("could not read build.gradle", e);
+        }
     }
 
     private static int compare(int[] a, int[] b) {
@@ -70,6 +88,26 @@ public class WindowsProductVersionTest {
     }
 
     @Test
+    public void theBuildAndTheApplicationAgreeOnTheBaseVersion() {
+        //The installer is versioned from build.gradle's version, these tests read SparrowWallet's. Nothing else
+        //asserts the two copies agree, so without this they could certify a version the installer never carries.
+        Assertions.assertTrue(buildGradle().contains("version = '" + SparrowWallet.APP_VERSION + "'"),
+                "build.gradle no longer declares version = '" + SparrowWallet.APP_VERSION + "'");
+    }
+
+    @Test
+    public void aReleaseTooLargeForTheSchemeIsRefused() {
+        //Past 999 a release carries into the next patch's range and two different releases derive one version
+        Assertions.assertTrue(buildGradle().contains("release > 999"),
+                "build.gradle no longer refuses a release the ProductVersion scheme cannot carry");
+
+        int[] carried = productVersion("2.5.5", 1001);
+        int[] nextBase = productVersion("2.5.6", 1);
+        Assertions.assertEquals(0, compare(carried, nextBase),
+                "this is the collision the build refuses, and it must stay refused rather than silently ship");
+    }
+
+    @Test
     public void theBuildStillDerivesTheProductVersion() throws IOException {
         //The derivation is only exercised on a Windows runner, so losing it would not fail any other build
         Assertions.assertTrue(Files.exists(BUILD_GRADLE), "expected to run from the project root");
@@ -77,7 +115,7 @@ public class WindowsProductVersionTest {
 
         Assertions.assertTrue(build.contains("ext.windowsProductVersion"),
                 "build.gradle no longer derives a Windows ProductVersion");
-        Assertions.assertTrue(build.contains("appVersion = windowsProductVersion"),
+        Assertions.assertTrue(build.contains("\n            appVersion = windowsProductVersion()"),
                 "the Windows installer no longer takes the derived ProductVersion, so upgrades stop working there");
     }
 

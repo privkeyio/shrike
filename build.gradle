@@ -61,15 +61,21 @@ ext.fullVersion = "${version}-${blake2bRelease}"
  */
 ext.windowsProductVersion = {
     def parts = version.tokenize('.')
-    if(parts.size() != 3) {
-        throw new GradleException("Expected a three part version to derive a ProductVersion from, got ${version}")
+    if(parts.size() != 3 || !parts.every { it ==~ /[0-9]+/ }) {
+        throw new GradleException("Expected a three part numeric version to derive a ProductVersion from, got ${version}")
     }
-    def build = parts[2].toInteger() * 1000 + blake2bRelease.toInteger()
+    def release = blake2bRelease.toInteger()
+    //Past 999 a release would carry into the next patch's range: 2.5.5-blake2b.1001 and 2.5.6-blake2b.1 would both
+    //give 2.5.6001, and jpackage derives the product code from the version, so the two would be the same installer
+    if(release > 999) {
+        throw new GradleException("Release ${release} no longer fits the ProductVersion scheme, which allows 999 per upstream base")
+    }
+    def build = parts[2].toInteger() * 1000 + release
     if(build > 65535) {
         throw new GradleException("ProductVersion build field ${build} exceeds the 65535 an MSI allows")
     }
     return "${parts[0]}.${parts[1]}.${build}"
-}()
+}
 
 repositories {
     mavenCentral()
@@ -344,7 +350,7 @@ jlink {
             imageOptions.addAll(['--icon', 'src/main/deploy/package/windows/shrike.ico'])
             installerType = "msi"
             //Windows decides an upgrade by ProductVersion, and the base version alone never changes between releases
-            appVersion = windowsProductVersion
+            appVersion = windowsProductVersion()
         }
         if(os.linux) {
             if(headless) {
@@ -696,6 +702,6 @@ tasks.register('printFullVersion') {
 //The ProductVersion a Windows installer will report, so a release can be checked without installing it
 tasks.register('printWindowsProductVersion') {
     doLast {
-        println windowsProductVersion
+        println windowsProductVersion()
     }
 }

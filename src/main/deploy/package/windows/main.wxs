@@ -64,6 +64,21 @@
         IncludeMinimum="$(var.JpUpgradeVersionOnlyDetectDowngrade)" />
     </Upgrade>
 
+    <!--
+      Releases up to 2.5.5-blake2b.22 were built before this fork named its publisher, and jpackage derives the
+      upgrade code from the vendor: verified by reading both installers, .22 carries D4237AC6-7723-3EAB-AB2B-1035623A337B
+      and .24 carries the B767346F code above. Without this block an installer would not see a .22 or earlier install
+      at all, and the user would end up with two entries rather than an upgrade.
+    -->
+    <Upgrade Id="D4237AC6-7723-3EAB-AB2B-1035623A337B">
+      <UpgradeVersion
+        OnlyDetect="no"
+        Property="JP_UPGRADABLE_FOUND_UNNAMED_VENDOR"
+        Maximum="$(var.JpAppVersion)"
+        MigrateFeatures="yes"
+        IncludeMaximum="no" />
+    </Upgrade>
+
     <?ifndef JpAllowUpgrades ?>
     <CustomAction Id="JpDisallowUpgrade" Error="!(loc.DisallowUpgradeErrorMessage)" />
     <?endif?>
