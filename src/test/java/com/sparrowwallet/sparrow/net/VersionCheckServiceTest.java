@@ -52,23 +52,57 @@ public class VersionCheckServiceTest {
 
     @Test
     public void aFeedCannotPutItsOwnTextInTheStatusBar() {
-        //The version is rendered into the wallet chrome as "Shrike <version> available", so a feed that smuggles a
-        //tail past the comparison gets attacker-chosen text inside the wallet's own UI. Validating only the numeric
-        //head is not enough: each of these compares as a newer base.
+        //The version is rendered into the wallet chrome as "Shrike <version> available", so anything the feed can
+        //smuggle through becomes wallet-authored text on screen. Validating the numeric head is not enough, and
+        //neither is a permissive suffix alphabet: the last two here read as a version but say what an attacker chose.
         for(String hostile : List.of(
                 "2.5.6 CRITICAL: restore your seed at evil.example",
                 "2.5.6 https://evil.example",
                 "2.5.6\nrestore your seed",
-                "2.5.6-blake2b.25 <b>urgent</b>")) {
+                "2.5.6-blake2b.25 <b>urgent</b>",
+                "2.5.6-seed.shrike.support",
+                "2.5.6-CALL.1800.555.0199")) {
             Assertions.assertFalse(VersionCheckService.isNewer(hostile, "2.5.5-blake2b.24"), "accepted: " + hostile);
             Assertions.assertFalse(VersionCheckService.isWellFormed(hostile), "well formed: " + hostile);
         }
     }
 
     @Test
-    public void anAbsurdlyLongVersionIsRefused() {
-        //Unbounded text in the status bar is its own problem, whatever it says
-        Assertions.assertFalse(VersionCheckService.isWellFormed("2.5.6-blake2b." + "9".repeat(64)));
+    public void onlyTheShapeThisForkPublishesIsAVersion() {
+        //Whitespace, a stray carriage return, a v prefix, non-ASCII digits, and characters that reorder or hide
+        //themselves next to the ones around them
+        for(String refused : List.of(
+                " 2.5.6", "2.5.6 ", "2.5.6\r", "2.5.6\t", "v2.5.6", "2.5.6-", "-2.5.6", "2..5.6", "",
+                "\uFF12.\uFF15.\uFF16", "\u0662.\u0665.\u0666",
+                "2.5.6-blake\u202E2b.25", "2.5.6-blake\u200D2b.25", "2.5.6\u0000",
+                "2.5.6-rc.1", "2.5.6-blake2b.25.1", "2.5.6.7.8-blake2b.1")) {
+            Assertions.assertFalse(VersionCheckService.isWellFormed(refused), "accepted: " + escape(refused));
+            Assertions.assertFalse(VersionCheckService.isNewer(refused, "2.5.5-blake2b.24"), "newer: " + escape(refused));
+        }
+    }
+
+    @Test
+    public void aComponentTooLargeForAnIntIsNotAnUpdate() {
+        //Refused by the shape rather than left to overflow inside the comparison
+        Assertions.assertFalse(VersionCheckService.isWellFormed("2.5.99999999999999999999"));
+        Assertions.assertFalse(VersionCheckService.isNewer("2.5.99999999999999999999", "2.5.5-blake2b.24"));
+    }
+
+    @Test
+    public void theLengthCapIsWhereItSays() {
+        //Shape-valid at both lengths, so only the cap can be what refuses the longer one
+        String atLimit = "999999.999999.999999-blake2b.999";
+        Assertions.assertEquals(32, atLimit.length());
+        Assertions.assertTrue(VersionCheckService.isWellFormed(atLimit), "32 characters must be accepted");
+        Assertions.assertFalse(VersionCheckService.isWellFormed(atLimit + "9"), "33 characters must be refused");
+    }
+
+    private static String escape(String s) {
+        StringBuilder out = new StringBuilder();
+        for(char c : s.toCharArray()) {
+            out.append(c < 0x20 || c > 0x7e ? String.format("\\u%04X", (int)c) : c);
+        }
+        return out.toString();
     }
 
     @Test

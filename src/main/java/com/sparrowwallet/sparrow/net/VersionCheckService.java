@@ -9,17 +9,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
     private static final Logger log = LoggerFactory.getLogger(VersionCheckService.class);
 
     private static final String VERSION_CHECK_URL = "https://shrikewallet.com/version";
 
-    private static final String VERSION_PATTERN = "[0-9]+(\\.[0-9]+)*(-[0-9A-Za-z]+(\\.[0-9A-Za-z]+)*)?";
+    //Exactly what this fork publishes and nothing else. An alphabet wider than this leaves the feed room to choose
+    //its own words: "2.5.6-seed.shrike.support" and "2.5.6-CALL.1800.555.0199" both read as a version otherwise,
+    //and both reach the status bar as "Shrike <version> available". Each component is bounded so that no accepted
+    //version can overflow the int the comparison parses it into.
+    private static final Pattern VERSION_PATTERN = Pattern.compile("[0-9]{1,6}(\\.[0-9]{1,6}){0,3}(-blake2b\\.[0-9]{1,6})?");
 
     private static final int MAX_VERSION_LENGTH = 32;
-
-    private static volatile String version;
 
     @Override
     protected Task<VersionUpdatedEvent> createTask() {
@@ -28,9 +31,8 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
                 try {
                     VersionCheck versionCheck = getVersionCheck();
                     if(versionCheck != null && isWellFormed(versionCheck.version)) {
-                        version = versionCheck.version;
-                        if(isNewer(version, SparrowWallet.APP_VERSION + SparrowWallet.APP_VERSION_SUFFIX)) {
-                            return new VersionUpdatedEvent(version);
+                        if(isNewer(versionCheck.version, SparrowWallet.APP_VERSION + SparrowWallet.APP_VERSION_SUFFIX)) {
+                            return new VersionUpdatedEvent(versionCheck.version);
                         }
                     } else {
                         log.warn("Invalid version check file");
@@ -84,7 +86,7 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
      * at ..." compares as 2.5.6 and carries the rest onto the screen. The whole string has to answer for itself.
      */
     static boolean isWellFormed(String version) {
-        return version != null && version.length() <= MAX_VERSION_LENGTH && version.matches(VERSION_PATTERN);
+        return version != null && version.length() <= MAX_VERSION_LENGTH && VERSION_PATTERN.matcher(version).matches();
     }
 
     static int compare(String a, String b) {
@@ -136,9 +138,6 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
         return 0;
     }
 
-    public static String getVersion() {
-        return version;
-    }
 
     //Package private so a test can serve this shape over a real HTTP server and confirm it parses
     static class VersionCheck {

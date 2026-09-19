@@ -1,5 +1,6 @@
 package com.sparrowwallet.sparrow.net;
 
+import com.sparrowwallet.tern.http.client.HttpResponseException;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -76,15 +77,16 @@ public class VersionFeedRoundTripTest {
         server.start();
         String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/version";
 
-        Assertions.assertThrows(Exception.class, () -> request(url), "a 404 must surface rather than parse as a version");
+        Assertions.assertThrows(HttpResponseException.class, () -> request(url), "a 404 must surface rather than parse as a version");
     }
 
     @Test
     public void anHtmlErrorPageIsNotAVersion() throws Exception {
-        //What a misconfigured host or a captive portal serves instead of the feed
+        //What a misconfigured host or a captive portal serves instead of the feed. tern refuses the response
+        //outright on its content type rather than trying to read a version out of it.
         String url = serve("/version", "text/html", "<html><body>Not found</body></html>");
 
-        Assertions.assertThrows(Exception.class, () -> request(url));
+        Assertions.assertThrows(HttpResponseException.class, () -> request(url));
     }
 
     @Test
