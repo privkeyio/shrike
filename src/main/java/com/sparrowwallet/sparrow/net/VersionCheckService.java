@@ -15,7 +15,11 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
 
     private static final String VERSION_CHECK_URL = "https://shrikewallet.com/version";
 
-    private static String version;
+    private static final String VERSION_PATTERN = "[0-9]+(\\.[0-9]+)*(-[0-9A-Za-z]+(\\.[0-9A-Za-z]+)*)?";
+
+    private static final int MAX_VERSION_LENGTH = 32;
+
+    private static volatile String version;
 
     @Override
     protected Task<VersionUpdatedEvent> createTask() {
@@ -23,10 +27,10 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
             protected VersionUpdatedEvent call() {
                 try {
                     VersionCheck versionCheck = getVersionCheck();
-                    if(versionCheck != null && versionCheck.version != null) {
+                    if(versionCheck != null && isWellFormed(versionCheck.version)) {
                         version = versionCheck.version;
-                        if(isNewer(versionCheck.version, SparrowWallet.APP_VERSION + SparrowWallet.APP_VERSION_SUFFIX)) {
-                            return new VersionUpdatedEvent(versionCheck.version);
+                        if(isNewer(version, SparrowWallet.APP_VERSION + SparrowWallet.APP_VERSION_SUFFIX)) {
+                            return new VersionUpdatedEvent(version);
                         }
                     } else {
                         log.warn("Invalid version check file");
@@ -61,12 +65,26 @@ public class VersionCheckService extends ScheduledService<VersionUpdatedEvent> {
      * is read here, under the base version rather than instead of it: 2.5.6-blake2b.1 is newer than 2.5.5-blake2b.30.
      */
     static boolean isNewer(String candidate, String current) {
+        if(!isWellFormed(candidate)) {
+            log.warn("Ignoring malformed version from the version check file");
+            return false;
+        }
+
         try {
             return compare(candidate, current) > 0;
         } catch(IllegalArgumentException e) {
             log.error("Invalid versions to compare: " + candidate + " to " + current, e);
             return false;
         }
+    }
+
+    /**
+     * The version is rendered into the status bar as "Shrike <version> available", so anything the feed sends ends up
+     * in the wallet's own chrome. Validating only the numeric head would let a tail through: "2.5.6 restore your seed
+     * at ..." compares as 2.5.6 and carries the rest onto the screen. The whole string has to answer for itself.
+     */
+    static boolean isWellFormed(String version) {
+        return version != null && version.length() <= MAX_VERSION_LENGTH && version.matches(VERSION_PATTERN);
     }
 
     static int compare(String a, String b) {

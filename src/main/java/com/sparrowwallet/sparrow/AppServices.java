@@ -465,7 +465,10 @@ public class AppServices {
     public void versionCheckStatus(VersionCheckStatusEvent event) {
         versionCheckService.cancel();
 
-        if(Config.get().getMode() != Mode.OFFLINE && event.isEnabled() && Network.get() == Network.MAINNET) {
+        //Upstream omits the interface check here that its own startup path applies, which would start the service on
+        //a terminal interface the moment the setting was toggled
+        if(Config.get().getMode() != Mode.OFFLINE && event.isEnabled() && Network.get() == Network.MAINNET
+                && Interface.get() == Interface.DESKTOP) {
             versionCheckService = createVersionCheckService();
             versionCheckService.start();
         }

@@ -5,6 +5,8 @@ import com.sparrowwallet.sparrow.SparrowWallet;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 public class VersionCheckServiceTest {
     @Test
     public void aLaterCounterIsNewer() {
@@ -46,6 +48,34 @@ public class VersionCheckServiceTest {
         String current = SparrowWallet.APP_VERSION + SparrowWallet.APP_VERSION_SUFFIX;
         Assertions.assertFalse(VersionCheckService.isNewer(current, current),
                 "the running version must never advertise itself as an update");
+    }
+
+    @Test
+    public void aFeedCannotPutItsOwnTextInTheStatusBar() {
+        //The version is rendered into the wallet chrome as "Shrike <version> available", so a feed that smuggles a
+        //tail past the comparison gets attacker-chosen text inside the wallet's own UI. Validating only the numeric
+        //head is not enough: each of these compares as a newer base.
+        for(String hostile : List.of(
+                "2.5.6 CRITICAL: restore your seed at evil.example",
+                "2.5.6 https://evil.example",
+                "2.5.6\nrestore your seed",
+                "2.5.6-blake2b.25 <b>urgent</b>")) {
+            Assertions.assertFalse(VersionCheckService.isNewer(hostile, "2.5.5-blake2b.24"), "accepted: " + hostile);
+            Assertions.assertFalse(VersionCheckService.isWellFormed(hostile), "well formed: " + hostile);
+        }
+    }
+
+    @Test
+    public void anAbsurdlyLongVersionIsRefused() {
+        //Unbounded text in the status bar is its own problem, whatever it says
+        Assertions.assertFalse(VersionCheckService.isWellFormed("2.5.6-blake2b." + "9".repeat(64)));
+    }
+
+    @Test
+    public void theVersionsWeActuallyPublishAreAccepted() {
+        for(String good : List.of("2.5.5", "2.5.5-blake2b.24", "2.5.6-blake2b.1", "2.5.5-blake2b.100")) {
+            Assertions.assertTrue(VersionCheckService.isWellFormed(good), "refused: " + good);
+        }
     }
 
     @Test

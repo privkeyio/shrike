@@ -114,8 +114,9 @@ public class DownloadVerifierDialog extends Dialog<ButtonBar.ButtonData> {
         filesFieldset.setText("Files");
         filesFieldset.setSpacing(10);
 
-        //This build's own version rather than the update check's, which is disabled here and would leave every
-        //example filename reading x.x.x
+        //This build's own version rather than the update check's. The check reports the latest release, which would
+        //name the wrong file for someone verifying an older download, and reports nothing at all until its first
+        //request has succeeded, which would leave every example filename reading x.x.x
         String version = SparrowWallet.APP_VERSION;
 
         Field signatureField = setupField(signature, "Signature", SIGNATURE_EXTENSIONS, false, SPARROW_MANIFEST_NAME, null);

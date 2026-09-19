@@ -69,7 +69,26 @@ public class VersionFeedRoundTripTest {
     }
 
     @Test
-    public void afieldTheFeedDoesNotCarryIsIgnored() throws Exception {
+    public void aMissingFeedIsNotAnUpdate() throws Exception {
+        //The state at merge time until the site publishes the feed, and any time the site is down
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/version", exchange -> exchange.sendResponseHeaders(404, -1));
+        server.start();
+        String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/version";
+
+        Assertions.assertThrows(Exception.class, () -> request(url), "a 404 must surface rather than parse as a version");
+    }
+
+    @Test
+    public void anHtmlErrorPageIsNotAVersion() throws Exception {
+        //What a misconfigured host or a captive portal serves instead of the feed
+        String url = serve("/version", "text/html", "<html><body>Not found</body></html>");
+
+        Assertions.assertThrows(Exception.class, () -> request(url));
+    }
+
+    @Test
+    public void aFieldTheFeedDoesNotCarryIsIgnored() throws Exception {
         //The site may add fields later; an older client must not fail on them
         String url = serve("/version.json", "application/json",
                 "{\"version\":\"2.5.5-blake2b.99\",\"notes\":\"https://example.invalid\",\"signatures\":{}}");
