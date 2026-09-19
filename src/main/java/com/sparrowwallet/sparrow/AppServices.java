@@ -2576,6 +2576,7 @@ public class AppServices {
         Platform.runLater(() -> {
             connectionService.cancel();
             ratesService.cancel();
+            versionCheckService.cancel();
         });
     }
 
