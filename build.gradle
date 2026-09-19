@@ -429,7 +429,11 @@ tasks.register('removeGroupWritePermission', Exec) {
 tasks.register('nameInstallerByRelease') {
     doLast {
         def dir = layout.buildDirectory.dir('jpackage').get().asFile
-        def installers = dir.listFiles({ File f -> f.name ==~ /.+\.(msi|exe|rpm)$/ } as FileFilter)
+        //Only the msi. A deb is already named by --linux-app-release, and an rpm carries its release and arch in
+        //the name jpackage gives it, so renaming one to Shrike-<fullVersion>.rpm would drop the arch and collide
+        //the two builds this fix exists to keep apart. listFiles returns null when jpackage failed before creating
+        //the directory, and a finalizer still runs then.
+        def installers = dir.listFiles({ File f -> f.name ==~ /.+\.msi$/ } as FileFilter) ?: []
         installers.each { File installer ->
             def suffix = installer.name.substring(installer.name.lastIndexOf('.'))
             def renamed = new File(dir, "Shrike-${fullVersion}${suffix}")

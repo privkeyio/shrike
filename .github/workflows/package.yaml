@@ -44,6 +44,23 @@ jobs:
           apple-id: ${{ secrets.MACOS_NOTARIZATION_APPLE_ID }}
           team-id: ${{ secrets.MACOS_NOTARIZATION_TEAM_ID }}
           notarization-password: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+
+      # The signing action derives its own version by grepping build.gradle, so it names the dmg for the upstream
+      # base alone and two fork releases would collide. It is pinned third party code, so the name is corrected here
+      # rather than in it. Dormant while no certificate is configured, and wrong the first release after one is.
+      - name: Name the signed macOS distribution by the release
+        if: ${{ runner.os == 'macOS' && env.HAS_MACOS_CERT == 'true' }}
+        run: |
+          set -euo pipefail
+          version=$(./gradlew -q printFullVersion | tail -n1)
+          shopt -s nullglob
+          for dmg in build/jpackage/Shrike-*.dmg; do
+            renamed="build/jpackage/Shrike-${version}-$(uname -m).dmg"
+            [ "$dmg" = "$renamed" ] && continue
+            mv "$dmg" "$renamed"
+            echo "Renamed $(basename "$dmg") to $(basename "$renamed")"
+          done
+
       - name: Package unsigned macOS distribution
         if: ${{ runner.os == 'macOS' && env.HAS_MACOS_CERT != 'true' }}
         run: |
@@ -51,7 +68,7 @@ jobs:
           cd build/jpackage
           # hdiutil ships with macOS; create-dmg would need a brew install that is not available here.
           # Asked of gradle rather than parsed again here, so the dmg carries the same version as every other artifact
-          VERSION=$(cd ../.. && ./gradlew -q printFullVersion)
+          VERSION=$(cd ../.. && ./gradlew -q printFullVersion | tail -n1)
           DMG="Shrike-${VERSION}-$(uname -m)-unsigned.dmg"
 
           # hdiutil create intermittently fails with "Resource busy", twice in the runs behind this change and
@@ -159,7 +176,7 @@ jobs:
 
           echo "$(wc -l < SHA256SUMS) entries"
           cat SHA256SUMS
-      - name: Verify the manifest covers every platform
+      - name: Verify the manifest covers every platform and names the release
         shell: bash
         run: ./.github/scripts/verify-manifest.sh SHA256SUMS
       - name: Upload SHA256SUMS

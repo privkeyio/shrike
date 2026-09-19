@@ -21,6 +21,10 @@ expect() {
     fi
 }
 
+# The fixtures describe release 14, so pin it rather than letting the script read whatever this working tree is
+# on: otherwise every version bump would break these cases for a reason that has nothing to do with them.
+export RELEASE=2.5.5-14
+
 expect 0 "a complete manifest is accepted"           "$here/fixtures/manifest-complete"
 expect 1 "a manifest missing one dmg is refused"     "$here/fixtures/manifest-missing-dmg"
 expect 1 "a manifest missing windows is refused"     "$here/fixtures/manifest-missing-windows"
@@ -28,6 +32,7 @@ expect 1 "an empty manifest is refused"              "$here/fixtures/manifest-em
 expect 1 "a manifest that does not exist is refused" "$here/fixtures/manifest-nonexistent"
 expect 1 "a directory is refused"                    "$here/fixtures"
 expect 1 "an unexpected artifact type is refused"    "$here/fixtures/manifest-unexpected-type"
+expect 1 "a manifest whose names omit the release is refused" "$here/fixtures/manifest-unreleased-names"
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures case(s) failed" >&2

@@ -54,6 +54,34 @@ while read -r name; do
     esac
 done < <(awk '{print $2}' "$manifest")
 
+# Every artifact has to name the release it came from. Only the deb revision used to, so .23 and .24 published
+# byte-different files called Shrike-2.5.5.msi, and anyone holding both got a checksum mismatch on a download
+# they had done nothing wrong with. The counts above cannot see that, and neither can the duplicate-name guard in
+# the workflow, which only compares names within a single run.
+#
+# Read from the same file build.gradle reads, rather than by running gradle: this also runs in the checksums job,
+# which checks the source out but sets up no JDK.
+if [ -z "${RELEASE:-}" ]; then
+    source_file="$(dirname "$0")/../../src/main/java/com/sparrowwallet/sparrow/SparrowWallet.java"
+    if [ -r "$source_file" ]; then
+        base=$(sed -n 's/.*APP_VERSION = "\([^"]*\)".*/\1/p' "$source_file" | head -n1)
+        number=$(sed -n 's/.*APP_VERSION_SUFFIX = "-blake2b\.\([0-9][0-9]*\)".*/\1/p' "$source_file" | head -n1)
+        if [ -n "$base" ] && [ -n "$number" ]; then
+            RELEASE="${base}-${number}"
+        fi
+    fi
+fi
+
+if [ -n "${RELEASE:-}" ]; then
+    while read -r name; do
+        [ -z "$name" ] && continue
+        case "$name" in
+            *"-${RELEASE}"*|*"_${RELEASE}"*) ;;
+            *) echo "manifest carries ${name}, which does not name the release ${RELEASE}" >&2; short=1 ;;
+        esac
+    done < <(awk '{print $2}' "$manifest")
+fi
+
 if [ "$short" -ne 0 ]; then
     echo "" >&2
     echo "The manifest does not cover every platform, which means a build job failed and this ran anyway." >&2
