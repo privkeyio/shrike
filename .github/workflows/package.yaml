@@ -50,7 +50,8 @@ jobs:
           set -euo pipefail
           cd build/jpackage
           # hdiutil ships with macOS; create-dmg would need a brew install that is not available here.
-          VERSION=$(grep -m1 "^version" ../../build.gradle | cut -d"'" -f2)
+          # Asked of gradle rather than parsed again here, so the dmg carries the same version as every other artifact
+          VERSION=$(cd ../.. && ./gradlew -q printFullVersion)
           DMG="Shrike-${VERSION}-$(uname -m)-unsigned.dmg"
 
           # hdiutil create intermittently fails with "Resource busy", twice in the runs behind this change and

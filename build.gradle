@@ -39,6 +39,14 @@ ext.blake2bRelease = {
     return matcher.group(1)
 }()
 
+/*
+    The version every release artifact is named by. Only the Debian revision carried the fork release number, so
+    .23 and .24 both produced Shrike-2.5.5.msi, Shrike-2.5.5.zip and shrike-2.5.5-x86_64.tar.gz: the same filename
+    for different bytes. Two of them in one folder is a silent SHA256SUMS mismatch, which is exactly what someone
+    checking a download is trying to rule out. Derived here rather than restated, for the reason above.
+ */
+ext.fullVersion = "${version}-${blake2bRelease}"
+
 repositories {
     mavenCentral()
     maven { url = uri('https://code.sparrowwallet.com/api/packages/sparrowwallet/maven') }
@@ -413,8 +421,36 @@ tasks.register('removeGroupWritePermission', Exec) {
     commandLine 'chmod', '-R', 'g-w', "$buildDir/jpackage/Shrike"
 }
 
+/*
+    jpackage names an installer <name>-<appVersion>, and appVersion cannot carry the fork release: a Windows MSI
+    ProductVersion is MAJOR.MINOR.BUILD and 2.5.5 already uses all three, so jpackage refuses a fourth part. The
+    installer is renamed after the fact instead, leaving the version inside the package as jpackage set it.
+ */
+tasks.register('nameInstallerByRelease') {
+    doLast {
+        def dir = layout.buildDirectory.dir('jpackage').get().asFile
+        def installers = dir.listFiles({ File f -> f.name ==~ /.+\.(msi|exe|rpm)$/ } as FileFilter)
+        installers.each { File installer ->
+            def suffix = installer.name.substring(installer.name.lastIndexOf('.'))
+            def renamed = new File(dir, "Shrike-${fullVersion}${suffix}")
+            if(installer.name == renamed.name) {
+                return
+            }
+            if(renamed.exists() && !renamed.delete()) {
+                throw new GradleException("Could not replace ${renamed}")
+            }
+            if(!installer.renameTo(renamed)) {
+                throw new GradleException("Could not rename ${installer} to ${renamed}")
+            }
+            logger.lifecycle("Renamed ${installer.name} to ${renamed.name}")
+        }
+    }
+}
+
+tasks.named('jpackage') { finalizedBy('nameInstallerByRelease') }
+
 tasks.register('packageZipDistribution', Zip) {
-    archiveFileName = "Shrike-${version}.zip"
+    archiveFileName = "Shrike-${fullVersion}.zip"
     destinationDirectory = file("$buildDir/jpackage")
     preserveFileTimestamps = os.macOsX
     from("$buildDir/jpackage/") {
@@ -425,7 +461,7 @@ tasks.register('packageZipDistribution', Zip) {
 
 tasks.register('packageTarDistribution', Tar) {
     dependsOn removeGroupWritePermission
-    archiveFileName = "shrike${headless ? 'server': ''}-${version}-${releaseArch}.tar.gz"
+    archiveFileName = "shrike${headless ? 'server': ''}-${fullVersion}-${releaseArch}.tar.gz"
     destinationDirectory = file("$buildDir/jpackage")
     compression = Compression.GZIP
     from("$buildDir/jpackage/") {
@@ -618,4 +654,11 @@ kmpTorResourceFilterJar {
 // Prints the test runtime classpath so an external harness can be launched against the built classes
 tasks.register('printTestClasspath') {
     doLast { println sourceSets.test.runtimeClasspath.asPath }
+}
+
+//So packaging steps outside gradle name their output the same way, rather than parsing the version again
+tasks.register('printFullVersion') {
+    doLast {
+        println fullVersion
+    }
 }
