@@ -47,6 +47,30 @@ ext.blake2bRelease = {
  */
 ext.fullVersion = "${version}-${blake2bRelease}"
 
+/*
+    What a Windows installer reports as its ProductVersion, which is how Windows decides whether installing one
+    release over another is an upgrade. Upstream never needs this: its own version moves every release, so the
+    appVersion jpackage is given already changes. This fork pins version to the upstream base it is built on, so
+    appVersion stood still and installing .24 over .23 was not an upgrade at all, the same way every build once
+    declared Debian revision 1.
+
+    A ProductVersion is MAJOR.MINOR.BUILD and the base already uses all three fields, so the release is folded into
+    BUILD as patch*1000 + release. That keeps rising whether the release counter keeps counting across a rebase or
+    restarts at one: 2.5.5-blake2b.99 gives 2.5.5099 and 2.5.6-blake2b.1 gives 2.5.6001. It also beats the 2.5.5
+    every existing install reports, so the first build under this scheme upgrades them.
+ */
+ext.windowsProductVersion = {
+    def parts = version.tokenize('.')
+    if(parts.size() != 3) {
+        throw new GradleException("Expected a three part version to derive a ProductVersion from, got ${version}")
+    }
+    def build = parts[2].toInteger() * 1000 + blake2bRelease.toInteger()
+    if(build > 65535) {
+        throw new GradleException("ProductVersion build field ${build} exceeds the 65535 an MSI allows")
+    }
+    return "${parts[0]}.${parts[1]}.${build}"
+}()
+
 repositories {
     mavenCentral()
     maven { url = uri('https://code.sparrowwallet.com/api/packages/sparrowwallet/maven') }
@@ -319,6 +343,8 @@ jlink {
             installerOptions.addAll(['--win-per-user-install', '--win-menu', '--win-menu-group', 'Shrike', '--win-shortcut', '--resource-dir', 'src/main/deploy/package/windows/'])
             imageOptions.addAll(['--icon', 'src/main/deploy/package/windows/shrike.ico'])
             installerType = "msi"
+            //Windows decides an upgrade by ProductVersion, and the base version alone never changes between releases
+            appVersion = windowsProductVersion
         }
         if(os.linux) {
             if(headless) {
@@ -422,9 +448,9 @@ tasks.register('removeGroupWritePermission', Exec) {
 }
 
 /*
-    jpackage names an installer <name>-<appVersion>, and appVersion cannot carry the fork release: a Windows MSI
-    ProductVersion is MAJOR.MINOR.BUILD and 2.5.5 already uses all three, so jpackage refuses a fourth part. The
-    installer is renamed after the fact instead, leaving the version inside the package as jpackage set it.
+    jpackage names an installer <name>-<appVersion>, and on Windows appVersion is the ProductVersion, which folds
+    the release into its build field and so reads 2.5.5024 rather than 2.5.5-24. The installer is renamed after the
+    fact to the name the other artifacts use, leaving the version inside the package as jpackage set it.
  */
 tasks.register('nameInstallerByRelease') {
     doLast {
@@ -664,5 +690,12 @@ tasks.register('printTestClasspath') {
 tasks.register('printFullVersion') {
     doLast {
         println fullVersion
+    }
+}
+
+//The ProductVersion a Windows installer will report, so a release can be checked without installing it
+tasks.register('printWindowsProductVersion') {
+    doLast {
+        println windowsProductVersion
     }
 }
