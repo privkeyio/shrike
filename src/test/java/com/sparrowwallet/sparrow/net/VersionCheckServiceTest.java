@@ -97,6 +97,44 @@ public class VersionCheckServiceTest {
         Assertions.assertFalse(VersionCheckService.isWellFormed(atLimit + "9"), "33 characters must be refused");
     }
 
+    /**
+     * The property behind every case above: an accepted version can carry no character an attacker chose. Hand
+     * picked hostile strings were twice not enough here, so this sweeps the whole BMP a character at a time and
+     * asserts that nothing outside this fork's own shape survives, whatever it is.
+     */
+    @Test
+    public void noAcceptedVersionCanCarryAChosenCharacter() {
+        String valid = "2.5.5-blake2b.24";
+
+        for(int c = 0; c <= 0xFFFF; c++) {
+            String ch = String.valueOf((char)c);
+
+            //Appended, prepended, and substituted into the middle of an otherwise valid version
+            for(String candidate : List.of(valid + ch, ch + valid, valid.substring(0, 6) + ch + valid.substring(6))) {
+                if(VersionCheckService.isWellFormed(candidate)) {
+                    Assertions.assertTrue(candidate.matches("[0-9.]*(-blake2b\\.[0-9]+)?[0-9.]*"),
+                            "accepted a version carrying U+" + String.format("%04X", c) + ": " + escape(candidate));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void everyAcceptedVersionIsMadeOfDigitsDotsAndTheWordBlake2b() {
+        //Whatever the feed sends, what reaches the status bar is drawn from this alphabet only
+        for(String candidate : List.of(
+                "2.5.5", "2.5.5-blake2b.24", "2.5.6-blake2b.1", "999999.999999.999999-blake2b.999",
+                "2.5.6-seed.shrike.support", "2.5.6-CALL.1800.555.0199", "2.5.6 restore your seed",
+                "2.5.6-rc.1", "v2.5.6", "2.5.6-BLAKE2B.1", "2.5.6-blake2b", "2.5.6-blake2b.")) {
+            if(VersionCheckService.isWellFormed(candidate)) {
+                //Remove the one literal word the shape allows; what remains must be digits, dots and the hyphen
+                String remainder = candidate.replace("blake2b", "");
+                Assertions.assertTrue(remainder.matches("[0-9.\\-]*"),
+                        "accepted a version with characters outside the published shape: " + candidate);
+            }
+        }
+    }
+
     private static String escape(String s) {
         StringBuilder out = new StringBuilder();
         for(char c : s.toCharArray()) {
