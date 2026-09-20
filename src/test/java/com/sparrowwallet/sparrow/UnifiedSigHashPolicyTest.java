@@ -606,26 +606,16 @@ public class UnifiedSigHashPolicyTest {
     }
 
     /**
-     * The whole point of the quorum rule, carried through to a signed transaction: a 2-of-3 where the third signer
-     * holds no key at all still produces a valid spend, and every signature in it opts in.
+     * More signers than the quorum needs, where the one that opts in is the one key order left out.
      *
-     * This is what the threshold rule asserts is possible. Without it the rule is an argument about consensus rather
-     * than something the wallet has been shown to do, and the difference matters because a PSBT declaring a hash
-     * type only some signers can produce is exactly the thing that could fail at finalisation.
-     */
-    /**
-     * More signers than the quorum needs, where the one that opts in is the one finalising leaves out.
-     *
-     * A quorum is finalised by taking signatures in key order up to its threshold, so a 2-of-3 that collected three
-     * keeps two and discards the third. Where the discarded one is the only signature that opted in, the transaction
-     * that broadcasts carries no replay protection, and anything read before finalising said it did.
-     *
-     * The label is right about the result either way, which is why this documents the behavior rather than failing
-     * on it: privkeyio/drongo#7 changes the choice, and is held back from this release because it changes multisig
-     * finalisation for every wallet while the label is honest without it.
+     * A quorum that collected more signatures than its threshold has to drop some, and taking them in key order made
+     * that choice by accident: a 2-of-3 whose marked device sorts last kept the two that do not opt in, and the
+     * transaction broadcast carrying no replay protection having had it. The label was right about the result, so
+     * nobody was misled; they simply lost protection that was already in hand. Finalising now prefers the signature
+     * that opts in, and this asserts it end to end, through the same count the status bar reads.
      */
     @Test
-    public void testFinalisingCanDropTheOnlySignatureThatOptedIn() throws Exception {
+    public void testFinalisingKeepsTheOnlySignatureThatOptedIn() throws Exception {
         String[] mnemonics = {
                 "absent essay fox snake vast pumpkin height crouch silent bulb excuse razor",
                 "sample vibrant sound quantum ripple hidden pluck raven mirror ocean fabric noodle",
@@ -644,11 +634,11 @@ public class UnifiedSigHashPolicyTest {
         WalletNode receiveNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
         Script spk = wallet.getOutputScript(receiveNode);
 
-        //Finalising sorts by key, so the keystore whose key sorts last is the one that will be dropped
+        //Key order drops whichever key sorts last, so that keystore is the one this has to be shown to keep
         List<ECKey> ordered = new ArrayList<>(receiveNode.getPubKeys());
         ordered.sort(new ECKey.LexicographicECKeyComparator());
-        ECKey droppedKey = ordered.get(ordered.size() - 1);
-        int droppedKeystore = receiveNode.getPubKeys().indexOf(droppedKey);
+        ECKey lastKey = ordered.get(ordered.size() - 1);
+        int lastKeystore = receiveNode.getPubKeys().indexOf(lastKey);
 
         Transaction transaction = new Transaction();
         transaction.setVersion(2);
@@ -662,9 +652,9 @@ public class UnifiedSigHashPolicyTest {
 
         //Everyone signs, which a quorum of two does not need but nothing stops. Signed key by key rather than through
         //Wallet.sign, which stops once the threshold is met and so would never produce the third signature.
-        //Only the one that finalising will drop opts in.
+        //Only the one key order would have dropped opts in.
         for(int i = 0; i < wallet.getKeystores().size(); i++) {
-            psbtInput.setSigHash(i == droppedKeystore ? SigHash.UNIFIED_ALL : SigHash.ALL);
+            psbtInput.setSigHash(i == lastKeystore ? SigHash.UNIFIED_ALL : SigHash.ALL);
             Assertions.assertTrue(psbtInput.sign(wallet.getKeystores().get(i).getKey(receiveNode)),
                     "keystore " + i + " did not sign");
         }
@@ -676,16 +666,25 @@ public class UnifiedSigHashPolicyTest {
 
         wallet.finalise(psbt);
 
-        Assertions.assertEquals(0, AppServices.signatureOptInCounts(psbt, wallet)[0],
-                "finalising dropped the only signature that opted in, so nothing here is protected any more");
+        Assertions.assertEquals(1, AppServices.signatureOptInCounts(psbt, wallet)[0],
+                "finalising dropped the only signature that opted in, so nothing broadcast here is protected");
+        int optedIn = 0;
         for(byte[] push : psbt.extractTransaction().getInputs().getFirst().getWitness().getPushes()) {
-            if(push.length >= 70 && push.length <= 73) {
-                Assertions.assertEquals((byte)0x01, push[push.length - 1],
-                        "the signatures that survived are the ones made the old way");
+            if(push.length >= 70 && push.length <= 73 && push[push.length - 1] == (byte)0x21) {
+                optedIn++;
             }
         }
+        Assertions.assertEquals(1, optedIn, "the signature that opts in has to be one of the two that survived");
     }
 
+    /**
+     * The whole point of the quorum rule, carried through to a signed transaction: a 2-of-3 where the third signer
+     * holds no key at all still produces a valid spend, and every signature in it opts in.
+     *
+     * This is what the threshold rule asserts is possible. Without it the rule is an argument about consensus rather
+     * than something the wallet has been shown to do, and the difference matters because a PSBT declaring a hash
+     * type only some signers can produce is exactly the thing that could fail at finalisation.
+     */
     @Test
     public void testAQuorumSignsAndFinalisesAnOptedInSpend() throws Exception {
         String[] mnemonics = {

@@ -1283,8 +1283,12 @@ public class AppServices {
             //Nothing vouched for is nothing to check, and must cost nothing. Dropping the keys factor for an input
             //that names its keys dropped the reason this was zero for a foreign input, so enough of them ahead of the
             //wallet's own spent the budget without a check being made, which is the silencing this guards against.
+            //Counted off the partial signatures rather than off getSignatures, because those are what the naming
+            //path walks. They are the same collection unless the input also carries a taproot key path field, which
+            //is not this input's own signature and which getSignatures answers with in place of them: reading the
+            //count from there charged one check for an input that was about to have every partial signature checked.
             long wouldCheck = keys.isEmpty() ? 0
-                    : (namesItsKeys ? signatures.size() : (long)keys.size() * signatures.size());
+                    : (namesItsKeys ? psbtInput.getPartialSignatures().size() : (long)keys.size() * signatures.size());
             //Taproot script path signatures can never be verified here, since the leaf script is not parsed, so they
             //only hold the answer open. Bounded, but deliberately not narrowed to taproot or unfinalised inputs:
             //isTaproot needs a spent output the PSBT may omit, and either narrowing drops an entry from both counts,

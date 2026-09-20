@@ -114,3 +114,22 @@ java -cp "$CP" com.sparrowwallet.drongo.psbt.UnifiedSignHarness sign \
 ```
 
 Fund the printed scriptPubKey on the regtest chain, sign its output with the second command, and hand the result to `cli testmempoolaccept`. Passing a different digest byte as a ninth argument stamps `21` on a signature made over the legacy message, which must be rejected for a signature failure rather than for missing inputs.
+
+## The quorum finalise check
+
+A multisig that collects more signatures than its threshold needs has to drop some, and which ones it keeps decides whether what broadcasts still opts in. `SpareQuorumSpend` builds a 2-of-3 for each script type a quorum can be spent by, has all three sign with only the one that sorts last opting in, finalises, and prints the result:
+
+```
+cd drongo
+./gradlew testClasses
+DEPS=$(./gradlew -q printTestClasspath | tail -1)
+CP="build/classes/java/test:build/classes/java/main:build/resources/main:$DEPS"
+
+java -cp "$CP" com.sparrowwallet.drongo.wallet.SpareQuorumSpend addresses
+java -cp "$CP" com.sparrowwallet.drongo.wallet.SpareQuorumSpend spend \
+    <scriptType> <prevTxid> <prevVout> <prevValue> 1
+```
+
+Fund each printed address on the regtest chain, spend it with the second command, and hand the result to `cli testmempoolaccept`. All three accept, and the signatures in each carry `01` and `21`: the one that opts in is kept rather than dropped for sorting last, which is the whole point of the choice. Raising the last argument opts more of the three in; the quorum still keeps exactly two.
+
+The same transactions are refused by a node started without `-testactivationheight=blake2b`, for `Signature opts in to the hardfork, which is not active here`. That is the protection being kept, stated by the node: one opted-in signature is enough to stop the whole transaction replaying, because CHECKMULTISIG needs every signature it is given to verify.
