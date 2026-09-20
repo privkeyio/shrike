@@ -40,4 +40,8 @@ public class AboutController {
         stage.close();
     }
 
+    public void openDonate(ActionEvent event) {
+        AppServices.get().getApplication().getHostServices().showDocument("https://shrikewallet.com/donate");
+    }
+
 }

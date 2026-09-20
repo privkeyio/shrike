@@ -597,7 +597,9 @@ public class AppController implements Initializable {
             stage.setOnShowing(event -> {
                 //The macOS application menu reuses a single About stage, so the theme may have changed since it was created
                 controller.refreshTheme();
-                AppServices.moveToActiveWindowScreen(stage, 600, 460);
+                //Taller than upstream because this fork says more here, and AboutLayoutHarness reports the last
+                //line clipped at upstream's 460
+                AppServices.moveToActiveWindowScreen(stage, 600, 500);
             });
 
             return stage;
