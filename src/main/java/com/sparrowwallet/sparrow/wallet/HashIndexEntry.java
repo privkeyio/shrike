@@ -3,6 +3,7 @@ package com.sparrowwallet.sparrow.wallet;
 import com.sparrowwallet.drongo.KeyPurpose;
 import com.sparrowwallet.drongo.wallet.BlockTransaction;
 import com.sparrowwallet.drongo.wallet.BlockTransactionHashIndex;
+import com.sparrowwallet.drongo.wallet.CoinbaseTxoFilter;
 import com.sparrowwallet.drongo.wallet.Status;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.sparrow.EventManager;
@@ -61,7 +62,11 @@ public class HashIndexEntry extends Entry implements Comparable<HashIndexEntry> 
     }
 
     public boolean isSpendable() {
-        return !isSpent() && (hashIndex.getHeight() > 0 || Config.get().isIncludeMempoolOutputs()) && (hashIndex.getStatus() == null || hashIndex.getStatus() != Status.FROZEN);
+        //A coinbase not yet deep enough is held the same way a frozen output is, and asked of the filter that decides
+        //what a transaction may be built from, so what the screen offers and what can be spent stay the same thing
+        return !isSpent() && (hashIndex.getHeight() > 0 || Config.get().isIncludeMempoolOutputs())
+                && (hashIndex.getStatus() == null || hashIndex.getStatus() != Status.FROZEN)
+                && new CoinbaseTxoFilter(getWallet()).isEligible(hashIndex);
     }
 
     @Override

@@ -26,6 +26,11 @@ public class TransactionsDialog extends WalletDialog {
     private final Label fiatBalance;
     private final Label mempoolBalance;
     private final Label fiatMempoolBalance;
+    private final Panel labelPanel;
+    private boolean immatureShown;
+    private final Label immatureLabel;
+    private final Label immatureBalance;
+    private final Label fiatImmatureBalance;
     private final Label transactionCount;
     private final Table<TableCell> transactions;
 
@@ -35,7 +40,7 @@ public class TransactionsDialog extends WalletDialog {
         super(walletForm.getWallet().getFullDisplayName() + " Transactions", walletForm);
 
         setHints(List.of(Hint.CENTERED, Hint.EXPANDED));
-        Panel labelPanel = new Panel(new GridLayout(3).setHorizontalSpacing(5).setVerticalSpacing(0));
+        labelPanel = new Panel(new GridLayout(3).setHorizontalSpacing(5).setVerticalSpacing(0));
 
         WalletTransactionsEntry walletTransactionsEntry = getWalletForm().getWalletTransactionsEntry();
 
@@ -46,6 +51,10 @@ public class TransactionsDialog extends WalletDialog {
         labelPanel.addComponent(new Label("Mempool"));
         mempoolBalance = new Label("").addTo(labelPanel);
         fiatMempoolBalance = new Label("").addTo(labelPanel);
+
+        immatureLabel = new Label("Immature");
+        immatureBalance = new Label("");
+        fiatImmatureBalance = new Label("");
 
         labelPanel.addComponent(new Label("Transactions"));
         transactionCount = new Label("").addTo(labelPanel);
@@ -89,10 +98,34 @@ public class TransactionsDialog extends WalletDialog {
         return tableModel;
     }
 
+    //Shown only when there is something in it, as on the other screens
+    private void updateImmatureBalance() {
+        long immature = getWalletForm().getWallet().getImmatureBalance();
+        //Added and removed rather than hidden, since a hidden component still holds its row in the grid
+        if(immature > 0 && !immatureShown) {
+            labelPanel.addComponent(6, immatureLabel);
+            labelPanel.addComponent(7, immatureBalance);
+            labelPanel.addComponent(8, fiatImmatureBalance);
+            immatureShown = true;
+        } else if(immature <= 0 && immatureShown) {
+            labelPanel.removeComponent(immatureLabel);
+            labelPanel.removeComponent(immatureBalance);
+            labelPanel.removeComponent(fiatImmatureBalance);
+            immatureShown = false;
+        }
+        immatureBalance.setText(formatBitcoinValue(immature, true));
+        if(immature > 0 && AppServices.getFiatCurrencyExchangeRate() != null && Config.get().getExchangeSource() != ExchangeSource.NONE) {
+            fiatImmatureBalance.setText(formatFiatValue(getFiatValue(immature, AppServices.getFiatCurrencyExchangeRate())));
+        } else {
+            fiatImmatureBalance.setText("");
+        }
+    }
+
     private void updateLabels(WalletTransactionsEntry walletTransactionsEntry) {
         SparrowTerminal.get().getGuiThread().invokeLater(() -> {
             balance.setText(formatBitcoinValue(walletTransactionsEntry.getBalance(), true));
             mempoolBalance.setText(formatBitcoinValue(walletTransactionsEntry.getMempoolBalance(), true));
+            updateImmatureBalance();
 
             if(AppServices.getFiatCurrencyExchangeRate() != null && Config.get().getExchangeSource() != ExchangeSource.NONE) {
                 fiatBalance.setText(formatFiatValue(getFiatValue(walletTransactionsEntry.getBalance(), AppServices.getFiatCurrencyExchangeRate())));

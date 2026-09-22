@@ -32,6 +32,7 @@ import com.sparrowwallet.drongo.dns.DnsPaymentResolver;
 import com.sparrowwallet.sparrow.paynym.PayNym;
 import com.sparrowwallet.sparrow.paynym.PayNymDialog;
 import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -436,6 +437,9 @@ public class PaymentController extends WalletFormController implements Initializ
             maxButton.setText("Max" + newValue);
         });
         amountStatus.managedProperty().bind(amountStatus.visibleProperty());
+        //Recomputed as the state changes, so the immature amount is named rather than the money read as missing
+        amountStatus.textProperty().bind(Bindings.createStringBinding(
+                () -> "Insufficient funds" + sendController.getImmatureNote(), sendController.insufficientInputsProperty()));
         amountStatus.visibleProperty().bind(sendController.insufficientInputsProperty().and(dustAmountProperty.not()).and(emptyAmountProperty.not()));
         dustStatus.managedProperty().bind(dustStatus.visibleProperty());
         dustStatus.visibleProperty().bind(dustAmountProperty);
@@ -546,7 +550,7 @@ public class PaymentController extends WalletFormController implements Initializ
                 Validator.createEmptyValidator("Label is required")
         ));
         validationSupport.registerValidator(amount, Validator.combine(
-                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Insufficient Inputs", getRecipientValueSats() != null && sendController.isInsufficientInputs()),
+                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Insufficient Inputs" + sendController.getImmatureNote(), getRecipientValueSats() != null && sendController.isInsufficientInputs()),
                 (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Insufficient Value", getRecipientValueSats() != null && getRecipientValueSats() < getRecipientDustThreshold())
         ));
     }

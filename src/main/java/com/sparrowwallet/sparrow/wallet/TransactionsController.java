@@ -4,6 +4,7 @@ import com.google.common.eventbus.Subscribe;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
 import com.sparrowwallet.sparrow.control.*;
+import tornadofx.control.Field;
 import com.sparrowwallet.sparrow.event.*;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.io.WalletTransactions;
@@ -50,6 +51,15 @@ public class TransactionsController extends WalletFormController implements Init
     private FiatLabel fiatMempoolBalance;
 
     @FXML
+    private Field immatureField;
+
+    @FXML
+    private CopyableCoinLabel immatureBalance;
+
+    @FXML
+    private FiatLabel fiatImmatureBalance;
+
+    @FXML
     private CopyableLabel transactionCount;
 
     @FXML
@@ -85,7 +95,11 @@ public class TransactionsController extends WalletFormController implements Init
         mempoolBalance.valueProperty().addListener((observable, oldValue, newValue) -> {
             setFiatBalance(fiatMempoolBalance, AppServices.getFiatCurrencyExchangeRate(), newValue.longValue());
         });
+        immatureBalance.valueProperty().addListener((observable, oldValue, newValue) -> {
+            setFiatBalance(fiatImmatureBalance, AppServices.getFiatCurrencyExchangeRate(), newValue.longValue());
+        });
         mempoolBalance.setValue(walletTransactionsEntry.getMempoolBalance());
+        updateImmatureBalance();
         setTransactionCount(walletTransactionsEntry);
         balanceChart.initialize(walletTransactionsEntry);
 
@@ -99,6 +113,14 @@ public class TransactionsController extends WalletFormController implements Init
         transactionsMasterDetail.setShowDetailNode(Config.get().isShowLoadingLog());
         loadingLog.appendText("Wallet loading history for " + getWalletForm().getWallet().getFullDisplayName());
         loadingLog.setEditable(false);
+    }
+
+    //Shown only when there is something in it, since a wallet that has never held a coinbase has nothing to say here
+    private void updateImmatureBalance() {
+        long immature = getWalletForm().getWallet().getImmatureBalance();
+        immatureBalance.setValue(immature);
+        immatureField.setVisible(immature > 0);
+        immatureField.setManaged(immature > 0);
     }
 
     private void setTransactionCount(WalletTransactionsEntry walletTransactionsEntry) {
@@ -154,6 +176,7 @@ public class TransactionsController extends WalletFormController implements Init
             transactionsTable.updateAll(walletTransactionsEntry);
             balance.setValue(walletTransactionsEntry.getBalance());
             mempoolBalance.setValue(walletTransactionsEntry.getMempoolBalance());
+        updateImmatureBalance();
             balanceChart.update(walletTransactionsEntry);
             setTransactionCount(walletTransactionsEntry);
         }
@@ -170,6 +193,7 @@ public class TransactionsController extends WalletFormController implements Init
             transactionsTable.updateHistory();
             balance.setValue(walletTransactionsEntry.getBalance());
             mempoolBalance.setValue(walletTransactionsEntry.getMempoolBalance());
+        updateImmatureBalance();
             balanceChart.update(walletTransactionsEntry);
             setTransactionCount(walletTransactionsEntry);
         }
@@ -191,6 +215,7 @@ public class TransactionsController extends WalletFormController implements Init
         balanceChart.setUnitFormat(getWalletForm().getWallet(), event.getUnitFormat(), event.getBitcoinUnit());
         balance.refresh(event.getUnitFormat(), event.getBitcoinUnit());
         mempoolBalance.refresh(event.getUnitFormat(), event.getBitcoinUnit());
+        immatureBalance.refresh(event.getUnitFormat(), event.getBitcoinUnit());
         fiatBalance.refresh(event.getUnitFormat());
         fiatMempoolBalance.refresh(event.getUnitFormat());
     }
@@ -201,6 +226,7 @@ public class TransactionsController extends WalletFormController implements Init
         balanceChart.refreshAxisLabels();
         balance.refresh();
         mempoolBalance.refresh();
+        immatureBalance.refresh();
         fiatBalance.refresh();
         fiatMempoolBalance.refresh();
     }
