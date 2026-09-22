@@ -71,6 +71,12 @@ jobs:
           VERSION=$(cd ../.. && ./gradlew -q printFullVersion | tail -n1)
           DMG="Shrike-${VERSION}-$(uname -m)-unsigned.dmg"
 
+          # Laid out as upstream's is, so there is something to drag the app onto. ditto carries a bundle's
+          # symlinks and permissions across where cp does not.
+          STAGE=$(mktemp -d)
+          ditto Shrike.app "$STAGE/Shrike.app"
+          ln -s /Applications "$STAGE/Applications"
+
           # hdiutil create intermittently fails with "Resource busy", twice in the runs behind this change and
           # on both macOS arms. It succeeds on a retry. Left unhandled it fails the build, and the checksums
           # job then writes a manifest without this platform's dmg in it.
@@ -79,7 +85,7 @@ jobs:
           # mount alongside it at /Volumes/Shrike 1 rather than clearing what blocked the first.
           ATTEMPTS=5
           for attempt in $(seq "$ATTEMPTS"); do
-            if hdiutil create -volname Shrike -srcfolder Shrike.app -ov -format UDZO "$DMG"; then
+            if hdiutil create -volname Shrike -srcfolder "$STAGE" -ov -format UDZO "$DMG"; then
               break
             fi
             if [ "$attempt" -eq "$ATTEMPTS" ]; then
