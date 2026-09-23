@@ -1707,18 +1707,7 @@ public class AppServices {
      * protocol aims at rather than what it reaches, so the figure is rounded to whole days and hedged to say so.
      */
     public static String immatureDuration(Wallet wallet) {
-        int blocks = wallet.getImmatureBlocksRemaining();
-        if(blocks <= 0) {
-            return "";
-        }
-
-        long minutes = blocks * 10L;
-        if(minutes < 60 * 24) {
-            return "less than a day";
-        }
-
-        long days = Math.round(minutes / (60.0 * 24));
-        return "about " + days + " day" + (days == 1 ? "" : "s");
+        return MaturityEstimate.describe(wallet.getImmatureBlocksRemaining());
     }
 
     /**
