@@ -1701,6 +1701,27 @@ public class AppServices {
     }
 
     /**
+     * How long the immature balance still has to wait, or an empty string where nothing is waiting.
+     *
+     * The rule counts blocks, so any time put on it rests on how fast they arrive. Ten minutes a block is what the
+     * protocol aims at rather than what it reaches, so the figure is rounded to whole days and hedged to say so.
+     */
+    public static String immatureDuration(Wallet wallet) {
+        int blocks = wallet.getImmatureBlocksRemaining();
+        if(blocks <= 0) {
+            return "";
+        }
+
+        long minutes = blocks * 10L;
+        if(minutes < 60 * 24) {
+            return "less than a day";
+        }
+
+        long days = Math.round(minutes / (60.0 * 24));
+        return "about " + days + " day" + (days == 1 ? "" : "s");
+    }
+
+    /**
      * What qualifies the signers' answer, with the marked signers named, which is the half a reader can act on.
      */
     public static String keystoreCaveat(Wallet wallet) {

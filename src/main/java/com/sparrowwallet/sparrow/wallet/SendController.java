@@ -504,7 +504,8 @@ public class SendController extends WalletFormController implements Initializabl
         }
 
         return " (" + Config.get().getUnitFormat().formatBtcValue(immature) + " "
-                + BitcoinUnit.BTC.getLabel() + " immature, see the UTXOs tab)";
+                + BitcoinUnit.BTC.getLabel() + " immature for " + AppServices.immatureDuration(getWalletForm().getWallet())
+                + ", see the UTXOs tab)";
     }
 
     private void addValidation() {

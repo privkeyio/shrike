@@ -21,6 +21,7 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.control.TreeItem;
 import javafx.stage.FileChooser;
@@ -60,6 +61,9 @@ public class UtxosController extends WalletFormController implements Initializab
 
     @FXML
     private FiatLabel fiatImmatureBalance;
+
+    @FXML
+    private Label immatureDuration;
 
     @FXML
     private CopyableLabel utxoCount;
@@ -127,6 +131,7 @@ public class UtxosController extends WalletFormController implements Initializab
         immatureBalance.setValue(immature);
         immatureField.setVisible(immature > 0);
         immatureField.setManaged(immature > 0);
+        immatureDuration.setText(immature > 0 ? AppServices.immatureDuration(getWalletForm().getWallet()) : "");
     }
 
     private void updateUtxoCount(WalletUtxosEntry walletUtxosEntry) {

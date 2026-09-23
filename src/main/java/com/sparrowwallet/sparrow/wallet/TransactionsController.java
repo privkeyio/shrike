@@ -16,6 +16,7 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TreeItem;
 import javafx.stage.FileChooser;
@@ -58,6 +59,9 @@ public class TransactionsController extends WalletFormController implements Init
 
     @FXML
     private FiatLabel fiatImmatureBalance;
+
+    @FXML
+    private Label immatureDuration;
 
     @FXML
     private CopyableLabel transactionCount;
@@ -121,6 +125,7 @@ public class TransactionsController extends WalletFormController implements Init
         immatureBalance.setValue(immature);
         immatureField.setVisible(immature > 0);
         immatureField.setManaged(immature > 0);
+        immatureDuration.setText(immature > 0 ? AppServices.immatureDuration(getWalletForm().getWallet()) : "");
     }
 
     private void setTransactionCount(WalletTransactionsEntry walletTransactionsEntry) {

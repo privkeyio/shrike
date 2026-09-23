@@ -150,6 +150,7 @@ public class UtxosDialog extends WalletDialog {
             labelPanel.removeComponent(fiatImmatureBalance);
             immatureShown = false;
         }
+        immatureLabel.setText("Immature" + (immature > 0 ? " (" + AppServices.immatureDuration(getWalletForm().getWallet()) + ")" : ""));
         immatureBalance.setText(formatBitcoinValue(immature, true));
         if(immature > 0 && AppServices.getFiatCurrencyExchangeRate() != null && Config.get().getExchangeSource() != ExchangeSource.NONE) {
             fiatImmatureBalance.setText(formatFiatValue(getFiatValue(immature, AppServices.getFiatCurrencyExchangeRate())));
