@@ -1,6 +1,7 @@
 package com.sparrowwallet.sparrow.control;
 
 import com.sparrowwallet.drongo.BitcoinUnit;
+import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.OsType;
 import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.wallet.BlockTransactionHash;
@@ -172,11 +173,17 @@ class CoinCell extends TreeTableCell<Entry, Number> implements ConfirmationsList
             int confirmations = confirmationsProperty.get();
             if(confirmations == 0) {
                 return "Unconfirmed in mempool";
-            } else if(confirmations < BlockTransactionHash.BLOCKS_TO_FULLY_CONFIRM) {
-                return confirmations + " confirmation" + (confirmations == 1 ? "" : "s") + (isCoinbase ? ", immature coinbase" : "");
-            } else {
-                return BlockTransactionHash.BLOCKS_TO_FULLY_CONFIRM + "+ confirmations";
             }
+
+            //A coinbase now stays immature well past the depth that fully confirms an ordinary output, so the two are
+            //asked separately. Said only while it is still immature, and at any depth, rather than only under the
+            //hundred that used to be both answers at once
+            String coinbase = isCoinbase && confirmations < Network.get().getCoinbaseMaturity() ? ", immature coinbase" : "";
+            if(confirmations < BlockTransactionHash.BLOCKS_TO_FULLY_CONFIRM) {
+                return confirmations + " confirmation" + (confirmations == 1 ? "" : "s") + coinbase;
+            }
+
+            return BlockTransactionHash.BLOCKS_TO_FULLY_CONFIRM + "+ confirmations" + coinbase;
         }
     }
 
