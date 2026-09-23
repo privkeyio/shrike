@@ -40,6 +40,9 @@
                         <Field text="Mempool:">
                             <CopyableCoinLabel fx:id="mempoolBalance" /><Region HBox.hgrow="ALWAYS"/><FiatLabel fx:id="fiatMempoolBalance" minWidth="110" />
                         </Field>
+                        <Field fx:id="immatureField" text="Immature:" visible="false" managed="false">
+                            <CopyableCoinLabel fx:id="immatureBalance" /><Label fx:id="immatureDuration" styleClass="help-label" /><Region HBox.hgrow="ALWAYS"/><FiatLabel fx:id="fiatImmatureBalance" minWidth="110" />
+                        </Field>
                         <Field text="Transactions:">
                             <CopyableLabel fx:id="transactionCount" />
                             <Button fx:id="exportCsv" maxHeight="25" onAction="#exportCSV" translateY="-1" styleClass="icon-button">

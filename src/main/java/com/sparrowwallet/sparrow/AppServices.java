@@ -1701,6 +1701,16 @@ public class AppServices {
     }
 
     /**
+     * How long the immature balance still has to wait, or an empty string where nothing is waiting.
+     *
+     * The rule counts blocks, so any time put on it rests on how fast they arrive. Ten minutes a block is what the
+     * protocol aims at rather than what it reaches, so the figure is rounded to whole days and hedged to say so.
+     */
+    public static String immatureDuration(Wallet wallet) {
+        return MaturityEstimate.describe(wallet.getImmatureBlocksRemaining());
+    }
+
+    /**
      * What qualifies the signers' answer, with the marked signers named, which is the half a reader can act on.
      */
     public static String keystoreCaveat(Wallet wallet) {

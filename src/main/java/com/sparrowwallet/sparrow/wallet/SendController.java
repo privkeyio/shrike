@@ -493,11 +493,26 @@ public class SendController extends WalletFormController implements Initializabl
         return validationSupport;
     }
 
+    /**
+     * Names the immature amount where there is one, since those coins are held rather than missing and the balance
+     * still counts them. Without it the only thing said is that the money is not there.
+     */
+    public String getImmatureNote() {
+        long immature = getWalletForm().getWallet().getImmatureBalance();
+        if(immature <= 0) {
+            return "";
+        }
+
+        return " (" + Config.get().getUnitFormat().formatBtcValue(immature) + " "
+                + BitcoinUnit.BTC.getLabel() + " immature for " + AppServices.immatureDuration(getWalletForm().getWallet())
+                + ", see the UTXOs tab)";
+    }
+
     private void addValidation() {
         validationSupport = new ValidationSupport();
         validationSupport.setValidationDecorator(new StyleClassValidationDecoration());
         validationSupport.registerValidator(fee, Validator.combine(
-                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Insufficient Inputs", userFeeSet.get() && insufficientInputsProperty.get()),
+                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Insufficient Inputs" + getImmatureNote(), userFeeSet.get() && insufficientInputsProperty.get()),
                 (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Insufficient Fee Rate", isInsufficientFeeRate())
         ));
 
