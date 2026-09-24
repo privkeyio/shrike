@@ -1,0 +1,80 @@
+name: Bug report
+description: Something in Shrike does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [latest release](https://github.com/privkeyio/shrike/releases/latest) first. Several reports have turned out to be fixed already.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The exact string from **Help > About**, or **Shrike > About Shrike** on macOS. For example `2.5.5-blake2b.27`. "Latest" is not enough, since releases are frequent.
+      placeholder: 2.5.5-blake2b.27
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os_detail
+    attributes:
+      label: Version and architecture
+      description: For example `macOS 26.1, Apple silicon` or `Debian 13, x86_64`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      description: Shown under **Settings > Server**. Several problems turn out to be the server rather than the wallet.
+      options:
+        - Bitcoin Knots
+        - Private Electrum
+        - Public Electrum
+        - Not connected
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        Open **Help > Show Log File**, or find it at `~/.shrike/shrike.log`. Paste the part around the failure.
+        Check it first: a log can contain your addresses and transaction ids.
+      render: text
+    validations:
+      required: false
