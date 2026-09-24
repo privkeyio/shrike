@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Bug in Sparrow itself
+    url: https://github.com/sparrowwallet/sparrow/issues
+    about: Anything not specific to this fork belongs upstream, where it reaches far more users.
+  - name: Verifying a download
+    url: https://github.com/privkeyio/shrike#releases
+    about: How to check SHA256SUMS and the signature.
