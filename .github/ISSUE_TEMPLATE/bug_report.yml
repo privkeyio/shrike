@@ -7,6 +7,19 @@ body:
       value: |
         Please check the [latest release](https://github.com/privkeyio/shrike/releases/latest) first. Several reports have turned out to be fixed already.
 
+        Shrike is Sparrow with a small set of changes: BLAKE2b block headers and proof of work, the opt-in replay protection, coinbase maturity, and its own packaging. Everything else is Sparrow's code unchanged, so if Sparrow does the same thing, please report it [upstream](https://github.com/sparrowwallet/sparrow/issues), where it gets fixed for everyone.
+
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Does the same thing happen in Sparrow?
+      options:
+        - No, only in Shrike
+        - Yes, Sparrow does it too
+        - Haven't checked
+    validations:
+      required: true
+
   - type: input
     id: version
     attributes:
