@@ -21,7 +21,25 @@ public class MaturityEstimate {
             return "less than a day";
         }
 
-        long days = Math.round((double)minutes / MINUTES_PER_DAY);
+        long days = days(blocks);
         return "about " + days + " day" + (days == 1 ? "" : "s");
+    }
+
+    /** A wait for several coinbases, given as a range where the first comes free sooner than the last. */
+    public static String describe(int firstBlocks, int lastBlocks) {
+        String first = describe(firstBlocks);
+        String last = describe(lastBlocks);
+        if(first.equals(last)) {
+            return last;
+        }
+        if(firstBlocks * MINUTES_PER_BLOCK < MINUTES_PER_DAY) {
+            return "up to " + last;
+        }
+
+        return "about " + days(firstBlocks) + " to " + days(lastBlocks) + " days";
+    }
+
+    private static long days(int blocks) {
+        return Math.round((double)(blocks * MINUTES_PER_BLOCK) / MINUTES_PER_DAY);
     }
 }
