@@ -1185,6 +1185,8 @@ public class SendController extends WalletFormController implements Initializabl
         }
 
         Tooltip tooltip = new Tooltip(optInDetail(decision, status.caveats()));
+        tooltip.setWrapText(true);
+        tooltip.setMaxWidth(640);
         tooltip.setShowDuration(Duration.INDEFINITE);
         optInStatus.setTooltip(tooltip);
     }
