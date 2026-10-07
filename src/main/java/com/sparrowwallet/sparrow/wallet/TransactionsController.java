@@ -55,6 +55,9 @@ public class TransactionsController extends WalletFormController implements Init
     private Field immatureField;
 
     @FXML
+    private Field maturesField;
+
+    @FXML
     private CopyableCoinLabel immatureBalance;
 
     @FXML
@@ -126,6 +129,8 @@ public class TransactionsController extends WalletFormController implements Init
         immatureField.setVisible(immature > 0);
         immatureField.setManaged(immature > 0);
         immatureDuration.setText(immature > 0 ? AppServices.immatureDuration(getWalletForm().getWallet()) : "");
+        maturesField.setVisible(!immatureDuration.getText().isEmpty());
+        maturesField.setManaged(!immatureDuration.getText().isEmpty());
     }
 
     private void setTransactionCount(WalletTransactionsEntry walletTransactionsEntry) {

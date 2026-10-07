@@ -57,6 +57,9 @@ public class UtxosController extends WalletFormController implements Initializab
     private Field immatureField;
 
     @FXML
+    private Field maturesField;
+
+    @FXML
     private CopyableCoinLabel immatureBalance;
 
     @FXML
@@ -132,6 +135,8 @@ public class UtxosController extends WalletFormController implements Initializab
         immatureField.setVisible(immature > 0);
         immatureField.setManaged(immature > 0);
         immatureDuration.setText(immature > 0 ? AppServices.immatureDuration(getWalletForm().getWallet()) : "");
+        maturesField.setVisible(!immatureDuration.getText().isEmpty());
+        maturesField.setManaged(!immatureDuration.getText().isEmpty());
     }
 
     private void updateUtxoCount(WalletUtxosEntry walletUtxosEntry) {
