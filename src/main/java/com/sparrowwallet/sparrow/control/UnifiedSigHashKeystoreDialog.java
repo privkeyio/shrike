@@ -7,6 +7,7 @@ import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import javafx.geometry.Insets;
 import javafx.scene.control.*;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import org.controlsfx.glyphfont.Glyph;
 
@@ -43,9 +44,9 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
         dialogPane.getStylesheets().add(AppServices.class.getResource("general.css").toExternalForm());
         dialogPane.getButtonTypes().addAll(ButtonType.CANCEL);
         dialogPane.setPrefWidth(560);
-        //Sized for the header, a line per keystore and the line counting them, so nothing is clipped and nothing
-        //is left as empty space below the buttons
-        dialogPane.setPrefHeight(255 + (wallet.getKeystores().size() * 30));
+        //Sized to its content rather than to a line count, since the line counting the signers wraps to a second line
+        //in some states and a fixed height cut it off mid sentence
+        dialogPane.setMinHeight(Region.USE_PREF_SIZE);
         AppServices.moveToActiveWindowScreen(this);
 
         Glyph lock = new Glyph(FontAwesome5.FONT_NAME, FontAwesome5.Glyph.LOCK);
@@ -99,6 +100,9 @@ public class UnifiedSigHashKeystoreDialog extends Dialog<List<Keystore>> {
                         : any ? "Transactions opt in when a signer that can opt in takes part. " : "Transactions will not opt in. ")
                         + capable + " of " + wallet.getKeystores().size() + " signers can opt in"
                         + (threshold == null ? "." : ", " + threshold + " needed to sign."));
+                if(dialogPane.getScene() != null && dialogPane.getScene().getWindow() != null) {
+                    dialogPane.getScene().getWindow().sizeToScene();
+                }
             };
             marks.values().forEach(mark -> mark.selectedProperty().addListener((observable, was, is) -> update.run()));
             update.run();

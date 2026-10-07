@@ -27,6 +27,9 @@ public class UnifiedSigHashStatusLabel extends Label {
     }
 
     public void update(UnifiedSigHashScheduleEvent event) {
-        setTooltip(new Tooltip(event.getDescription()));
+        Tooltip tooltip = new Tooltip(event.getDescription());
+        tooltip.setWrapText(true);
+        tooltip.setMaxWidth(640);
+        setTooltip(tooltip);
     }
 }

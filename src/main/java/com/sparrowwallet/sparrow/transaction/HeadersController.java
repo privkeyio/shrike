@@ -1151,6 +1151,8 @@ public class HeadersController extends TransactionFormController implements Init
         //Everything built before anything is written, so the two labels cannot end up disagreeing with each other
         List<Glyph> glyphs = List.of(glyphFor(status.level()), glyphFor(status.level()));
         Tooltip tooltip = new Tooltip(status.detail());
+        tooltip.setWrapText(true);
+        tooltip.setMaxWidth(640);
 
         signingWalletOptIn.setText(status.summary());
         signingWalletOptIn.setGraphic(glyphs.get(0));
