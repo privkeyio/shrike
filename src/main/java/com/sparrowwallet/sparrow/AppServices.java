@@ -1707,7 +1707,7 @@ public class AppServices {
      * protocol aims at rather than what it reaches, so the figure is rounded to whole days and hedged to say so.
      */
     public static String immatureDuration(Wallet wallet) {
-        return MaturityEstimate.describe(wallet.getImmatureBlocksRemaining());
+        return MaturityEstimate.describe(wallet.getImmatureBlocksUntilFirst(), wallet.getImmatureBlocksRemaining());
     }
 
     /**

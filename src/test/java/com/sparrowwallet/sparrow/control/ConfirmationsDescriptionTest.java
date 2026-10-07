@@ -79,4 +79,15 @@ public class ConfirmationsDescriptionTest {
         Assertions.assertEquals("about 1 day", MaturityEstimate.describe(144));
         Assertions.assertEquals("about 45 days", MaturityEstimate.describe(6479));
     }
+
+    /** Coinbases mined at different heights come free at different times, so the wait is given as a range. */
+    @Test
+    public void a_spread_of_waits_is_a_range() {
+        Assertions.assertEquals("about 39 to 45 days", MaturityEstimate.describe(5616, 6479));
+        Assertions.assertEquals("up to about 45 days", MaturityEstimate.describe(1, 6479));
+        Assertions.assertEquals("about 1 to 45 days", MaturityEstimate.describe(144, 6479));
+        Assertions.assertEquals("about 45 days", MaturityEstimate.describe(6470, 6479));
+        Assertions.assertEquals("about 45 days", MaturityEstimate.describe(6479, 6479));
+        Assertions.assertEquals("", MaturityEstimate.describe(0, 0));
+    }
 }
