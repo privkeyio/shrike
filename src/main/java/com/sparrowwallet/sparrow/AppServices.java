@@ -1844,9 +1844,9 @@ public class AppServices {
      * that does not know the byte will refuse a transaction this wallet considered safe, and a legacy
      * signature is always valid.
      *
-     * It is deliberately not a bare toggle. Off means the signature verifies under both rule sets, so the
-     * transaction can be replayed on the chain that did not fork, which is the protection being given up
-     * and has to be said rather than implied.
+     * It is deliberately not a bare toggle. Off means the signature verifies under both rule sets, so where
+     * its inputs also exist on the SHA256d chain the transaction can be replayed there, which is the protection
+     * being given up and has to be said rather than implied.
      *
      * Nor is the wallet always better informed. Where this build ships no height for the network the
      * decision declines however far past activation the chain is, which is a stale table rather than a
