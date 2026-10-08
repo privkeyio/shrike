@@ -1147,6 +1147,12 @@ public class HeadersController extends TransactionFormController implements Init
                 "This transaction could not be checked for replay protection. Open it with the wallet that holds the keys, and until then treat it as carrying no replay protection.");
     }
 
+    /** What the labels say over a final transaction, whose signatures are only checked while it is a PSBT. */
+    private static OptInStatus finalTransactionStatus() {
+        return new OptInStatus(OptInLevel.UNCHECKED, "Replay protection not checked",
+                "Replay protection is checked on a PSBT, and this is a final transaction. Open the signed PSBT with the wallet that holds the keys to check it, and until then treat it as carrying no replay protection.");
+    }
+
     private void applyOptInStatus(OptInStatus status) {
         //Everything built before anything is written, so the two labels cannot end up disagreeing with each other
         List<Glyph> glyphs = List.of(glyphFor(status.level()), glyphFor(status.level()));
@@ -2083,7 +2089,7 @@ public class HeadersController extends TransactionFormController implements Init
             //A transaction that is not a PSBT has nothing for this to read, and an empty field beside the label is worse
             //than one saying it was not checked
             if(headersForm.getPsbt() == null) {
-                applyOptInStatus(uncheckedStatus());
+                applyOptInStatus(finalTransactionStatus());
             }
 
             if(headersForm.getSigningWallet() == null) {
