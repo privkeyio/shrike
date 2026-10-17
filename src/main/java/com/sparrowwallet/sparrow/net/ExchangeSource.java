@@ -2,6 +2,7 @@ package com.sparrowwallet.sparrow.net;
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.SparrowWallet;
 import com.sparrowwallet.sparrow.event.ExchangeRatesUpdatedEvent;
@@ -19,7 +20,9 @@ import java.net.URL;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -266,7 +269,70 @@ public enum ExchangeSource {
 
             return historicalRates;
         }
+    },
+    NEOXA("Neoxa", "USD only, historical rates from Sep 2026") {
+        //Neoxa quotes this chain's coin against USDC only, so USD is the one currency offered
+        @Override
+        public List<Currency> getSupportedCurrencies() {
+            return List.of(USD);
+        }
+
+        @Override
+        public Double getExchangeRate(Currency currency) {
+            if(!USD.equals(currency)) {
+                return null;
+            }
+
+            String url = NEOXA_URL + "/api/exchange/ticker/" + NEOXA_PAIR;
+
+            if(log.isInfoEnabled()) {
+                log.info("Requesting exchange rates from " + url);
+            }
+
+            HttpClientService httpClientService = AppServices.getHttpClientService();
+            try {
+                return toValidRate(httpClientService.requestJson(url, NeoxaTicker.class, null).ticker.lastPrice);
+            } catch(Exception e) {
+                if(log.isDebugEnabled()) {
+                    log.warn("Error retrieving currency rates", e);
+                } else {
+                    log.warn("Error retrieving currency rates (" + e.getMessage() + ")");
+                }
+                return null;
+            }
+        }
+
+        @Override
+        public Map<Date, Double> getHistoricalExchangeRates(Currency currency, Date start, Date end) {
+            if(!USD.equals(currency)) {
+                return Collections.emptyMap();
+            }
+
+            String url = NEOXA_URL + "/api/exchange/candles/" + NEOXA_PAIR + "?interval=1d&limit=" + getCandlesLimit(Instant.now());
+
+            if(log.isInfoEnabled()) {
+                log.info("Requesting historical exchange rates from " + url);
+            }
+
+            HttpClientService httpClientService = AppServices.getHttpClientService();
+            try {
+                return toDailyRates(httpClientService.requestJson(url, NeoxaCandles.class, null), start, end);
+            } catch(Exception e) {
+                if(log.isDebugEnabled()) {
+                    log.warn("Error retrieving historical currency rates", e);
+                } else {
+                    log.warn("Error retrieving historical currency rates (" + e.getMessage() + ")");
+                }
+            }
+
+            return Collections.emptyMap();
+        }
     };
+
+    private static final Currency USD = Currency.getInstance("USD");
+    private static final String NEOXA_URL = "https://neoxa.exchange";
+    private static final String NEOXA_PAIR = "BTCB2_USDC";
+    private static final Instant NEOXA_DATA_START = Instant.parse("2026-09-01T00:00:00Z");
 
     private static final Logger log = LoggerFactory.getLogger(ExchangeSource.class);
     private static final Map<String, String> HTTP_HEADERS = Map.of("User-Agent", "Mozilla/4.0 (compatible; MSIE 9.0; Windows NT 6.1)", "Accept", "*/*");
@@ -284,6 +350,38 @@ public enum ExchangeSource {
     public abstract Double getExchangeRate(Currency currency);
 
     public abstract Map<Date, Double> getHistoricalExchangeRates(Currency currency, Date start, Date end);
+
+    //The candles endpoint takes a count of the most recent candles rather than a range. A count worked out from the
+    //export's start date would tell Neoxa when the wallet's first transaction was, so every request asks for all of
+    //Neoxa's data, counted from the day it starts: whole days since then, plus today's candle, plus one spare.
+    static long getCandlesLimit(Instant now) {
+        return ChronoUnit.DAYS.between(NEOXA_DATA_START, now) + 2;
+    }
+
+    //Each candle opens at UTC midnight and covers that UTC day. Its close is keyed by that UTC date, at local midnight
+    //so it matches a transaction's date truncated in local time; truncating the candle's own instant would move every
+    //close a day earlier west of UTC.
+    static Map<Date, Double> toDailyRates(NeoxaCandles neoxaCandles, Date start, Date end) {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate startDate = start.toInstant().atZone(zone).toLocalDate();
+        LocalDate endDate = end.toInstant().atZone(zone).toLocalDate();
+
+        Map<Date, Double> rates = new TreeMap<>();
+        for(NeoxaCandle candle : neoxaCandles.candles) {
+            LocalDate day = Instant.ofEpochSecond(candle.time).atZone(ZoneOffset.UTC).toLocalDate();
+            Double close = toValidRate(candle.close);
+            if(close != null && !day.isBefore(startDate) && !day.isAfter(endDate)) {
+                rates.put(Date.from(day.atStartOfDay(zone).toInstant()), close);
+            }
+        }
+
+        return rates;
+    }
+
+    //An infinite price breaks rendering, and a zero or negative one corrupts exports
+    static Double toValidRate(Double rate) {
+        return rate != null && Double.isFinite(rate) && rate > 0.0 ? rate : null;
+    }
 
     private static boolean isValidISO4217Code(String code) {
         try {
@@ -402,5 +500,26 @@ public enum ExchangeSource {
 
     private static class MempoolSpaceHistoricalRates {
         public List<MempoolSpaceRates> prices = new ArrayList<>();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class NeoxaTicker {
+        public NeoxaTickerData ticker = new NeoxaTickerData();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class NeoxaTickerData {
+        public Double lastPrice;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class NeoxaCandles {
+        public List<NeoxaCandle> candles = new ArrayList<>();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class NeoxaCandle {
+        public long time;
+        public Double close;
     }
 }

@@ -237,10 +237,11 @@ public class Config {
         return getExchangeSource() != ExchangeSource.NONE;
     }
 
-    //Every source quotes the SHA256d chain, which is not what this wallet holds. The stored
-    //preference is still written, so it returns as the user set it once a real rate exists.
+    //Neoxa is the only source that quotes this chain's coin, and is opt-in. Every other source quotes the SHA256d
+    //chain, which is not what this wallet holds, so a config that names one of them (carried over from before the
+    //split, or from Sparrow) shows no fiat value rather than the wrong one.
     public ExchangeSource getExchangeSource() {
-        return ExchangeSource.NONE;
+        return exchangeSource == ExchangeSource.NEOXA ? ExchangeSource.NEOXA : ExchangeSource.NONE;
     }
 
     public void setExchangeSource(ExchangeSource exchangeSource) {

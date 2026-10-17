@@ -65,14 +65,14 @@ public class GeneralDialog extends DialogWindow {
         mainPanel.addComponent(fiatCurrency);
 
         mainPanel.addComponent(new Label("Exchange rate source"));
-        exchangeSource = new ComboBox<>(ExchangeSource.values());
+        exchangeSource = new ComboBox<>(ExchangeSource.NONE, ExchangeSource.NEOXA);
         mainPanel.addComponent(exchangeSource);
 
         bitcoinUnit.setSelectedItem(Config.get().getBitcoinUnit() == null ? BitcoinUnit.AUTO : Config.get().getBitcoinUnit());
         unitFormat.setSelectedIndex(Config.get().getUnitFormat() == UnitFormat.COMMA ? 1 : 0);
 
         if(Config.get().getExchangeSource() == null) {
-            Config.get().setExchangeSource(ExchangeSource.COINGECKO);
+            Config.get().setExchangeSource(ExchangeSource.NONE);
         }
         exchangeSource.setSelectedItem(Config.get().getExchangeSource());
 
