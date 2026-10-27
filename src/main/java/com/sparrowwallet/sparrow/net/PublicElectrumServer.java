@@ -5,6 +5,7 @@ import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.policy.PolicyType;
 import com.sparrowwallet.sparrow.io.Server;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -72,7 +73,8 @@ public enum PublicElectrumServer {
         //SUPPORTED_NETWORKS is the single gate. Filtering only by network would still hand back servers on a
         //network where the option is withdrawn.
         if(!supportedNetwork()) {
-            return List.of();
+            //Not List.of(), whose indexOf(null) throws when the settings combo box looks up an empty selection
+            return new ArrayList<>();
         }
 
         return Arrays.stream(values()).filter(server -> server.network == Network.get()).collect(Collectors.toList());

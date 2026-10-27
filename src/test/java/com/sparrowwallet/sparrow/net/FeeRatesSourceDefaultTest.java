@@ -148,6 +148,8 @@ public class FeeRatesSourceDefaultTest {
         Assertions.assertFalse(PublicElectrumServer.supportedNetwork());
         Assertions.assertTrue(PublicElectrumServer.getServers().isEmpty(),
                 "and the list one caller divides by must be empty rather than full of other-chain servers");
+        Assertions.assertEquals(-1, PublicElectrumServer.getServers().indexOf(null),
+                "the settings combo box looks up an empty selection, which List.of() answers by throwing");
     }
 
     /**
