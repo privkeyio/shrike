@@ -42,6 +42,18 @@ public class ConfirmationsDescriptionTest {
                 ConfirmationsDescription.get(100, true, 1000, 1099));
     }
 
+    /** A reward mined from 979919 waits 25920 blocks, so the first of them comes free in block 1005839. */
+    @Test
+    public void a_coinbase_under_the_longer_rule_says_so() {
+        Network.set(Network.MAINNET);
+        Assertions.assertEquals("100+ confirmations, immature coinbase, spendable from block 1005839, in about 179 days",
+                ConfirmationsDescription.get(100, true, 979919, 980018));
+        Assertions.assertEquals("100+ confirmations", ConfirmationsDescription.get(25920, true, 979919, 1005838));
+        //One mined a block earlier keeps 6480, though the tip is now past 979919
+        Assertions.assertEquals("100+ confirmations, immature coinbase, spendable from block 986398, in about 44 days",
+                ConfirmationsDescription.get(100, true, 979918, 980017));
+    }
+
     /** Once it can be spent there is nothing left to say about it. */
     @Test
     public void a_mature_coinbase_is_not_called_immature() {
@@ -64,7 +76,7 @@ public class ConfirmationsDescriptionTest {
     @Test
     public void a_network_without_the_schedule_is_untouched() {
         Network.set(Network.REGTEST);
-        Assertions.assertEquals(100, Network.get().getCoinbaseMaturity(), "the fixture must be a network with no schedule");
+        Assertions.assertEquals(100, Network.get().getCoinbaseMaturity(1000), "the fixture must be a network with no schedule");
         Assertions.assertEquals("5 confirmations, immature coinbase", ConfirmationsDescription.get(5, true, 1000, 1004));
         Assertions.assertEquals("100+ confirmations", ConfirmationsDescription.get(100, true, 1000, 1099));
     }

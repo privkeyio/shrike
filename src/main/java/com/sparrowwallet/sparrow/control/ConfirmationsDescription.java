@@ -29,7 +29,7 @@ public class ConfirmationsDescription {
             return "Unconfirmed in mempool";
         }
 
-        int maturity = Network.get().getCoinbaseMaturity();
+        int maturity = Network.get().getCoinbaseMaturity(coinbaseHeight);
         if(isCoinbase && coinbaseHeight > 0 && currentBlockHeight != null
                 && maturity > Transaction.COINBASE_MATURITY_THRESHOLD) {
             int spendableFrom = coinbaseHeight + maturity;
