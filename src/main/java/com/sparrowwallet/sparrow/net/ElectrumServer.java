@@ -1251,7 +1251,7 @@ public class ElectrumServer {
     /**
      * The given unconfirmed transactions that spend this wallet's outputs without valid signatures from it, together with those spending what they
      * create. Until it is mined a transaction is only what the server reports, and where it spends from this wallet that report can be checked here.
-     * A taproot signature commits to every output its transaction spends, so those of a spend from a taproot wallet not already known are fetched.
+     * A taproot or unified opt-in signature commits to every output its transaction spends, so those of such a spend not already known are fetched.
      * Everything judged unsigned this pass is returned again by each later call.
      */
     Set<Sha256Hash> getUnsignedTransactions(Wallet wallet, Map<Sha256Hash, Transaction> unconfirmed, Function<Sha256Hash, Transaction> inputTransactions) throws ServerException {
@@ -1311,7 +1311,7 @@ public class ElectrumServer {
         Set<String> txids = new LinkedHashSet<>();
         for(Transaction transaction : transactions) {
             Map<TransactionInput, WalletNode> signingNodes = wallet.getSigningNodes(transaction, inputTransactions, walletOutputScripts);
-            if(signingNodes.values().stream().anyMatch(node -> node.getWallet().getScriptType() == ScriptType.P2TR)) {
+            if(signingNodes.values().stream().anyMatch(node -> node.getWallet().getScriptType() == ScriptType.P2TR) || optsIn(signingNodes.keySet())) {
                 transaction.getInputs().stream().map(input -> input.getOutpoint().getHash())
                         .filter(txid -> !spentTransactionsThisPass.containsKey(txid) && inputTransactions.apply(txid) == null).forEach(txid -> txids.add(txid.toString()));
             }
@@ -1336,6 +1336,12 @@ public class ElectrumServer {
         } catch(ElectrumServerRpcException e) {
             throw new ServerException(e.getMessage(), e.getCause());
         }
+    }
+
+    //A unified opt-in signature commits to every output its transaction spends whatever the script type, as a taproot signature does
+    private static boolean optsIn(Collection<TransactionInput> inputs) {
+        return inputs.stream().map(input -> input.hasWitness() ? input.getWitness().getSignatures() : input.getScriptSig().getSignatures())
+                .flatMap(Collection::stream).anyMatch(signature -> (signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0);
     }
 
     /**

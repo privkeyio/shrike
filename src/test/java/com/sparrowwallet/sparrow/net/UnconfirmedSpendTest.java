@@ -16,6 +16,7 @@ import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.protocol.TransactionOutput;
 import com.sparrowwallet.drongo.protocol.TransactionSignature;
 import com.sparrowwallet.drongo.protocol.TransactionWitness;
+import com.sparrowwallet.drongo.protocol.UnifiedScriptType;
 import com.sparrowwallet.drongo.psbt.PSBT;
 import com.sparrowwallet.drongo.wallet.*;
 import com.sparrowwallet.sparrow.EventManager;
@@ -197,6 +198,38 @@ public class UnconfirmedSpendTest {
         Set<Sha256Hash> second = electrumServer.getUnsignedTransactions(wallet, unconfirmed, txid -> body(wallet, txid));
         assertTrue(second.isEmpty());
         assertTrue(server.requested.isEmpty());
+    }
+
+    @Test
+    public void fetchesTheTransactionsAnOptedInSpendCommitsTo() throws Exception {
+        Wallet wallet = signingWallet(ScriptType.P2WPKH);
+        Transaction funding = fund(wallet);
+        WalletNode addressNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+
+        //A payjoin signed with the unified opt-in, which commits to every spent output whatever the script type, as a taproot signature does
+        Transaction foreignParent = new Transaction();
+        foreignParent.addInput(Sha256Hash.ZERO_HASH, 0, new Script(new byte[0]));
+        foreignParent.addOutput(50_000L, ScriptType.P2WPKH.getOutputScript(Utils.hexToBytes("bb00000000000000000000000000000000000022")));
+        server.serve(foreignParent);
+
+        Transaction payjoin = new Transaction();
+        payjoin.setVersion(2);
+        payjoin.setSegwitFlag(Transaction.DEFAULT_SEGWIT_FLAG);
+        payjoin.addInput(funding.getTxId(), 0, new Script(new byte[0]));
+        payjoin.addInput(foreignParent.getTxId(), 0, new Script(new byte[0]));
+        payjoin.addOutput(1_040_000L, ScriptType.P2WPKH.getOutputScript(Utils.hexToBytes("cc00000000000000000000000000000000000033")));
+        List<TransactionOutput> spentOutputs = List.of(funding.getOutputs().getFirst(), foreignParent.getOutputs().getFirst());
+        ECKey privKey = wallet.getKeystores().getFirst().getKey(addressNode);
+        byte[] scriptCode = ScriptType.P2PKH.getOutputScript(privKey.getPubKeyHash()).getProgram();
+        Sha256Hash hash = payjoin.hashForUnifiedSignature(spentOutputs, 0, UnifiedScriptType.WITNESS_V0, scriptCode, SigHash.UNIFIED_ALL.value, null, null, null);
+        payjoin.getInputs().getFirst().setWitness(new TransactionWitness(payjoin, privKey, privKey.sign(hash, SigHash.UNIFIED_ALL, TransactionSignature.Type.ECDSA)));
+        payjoin = new Transaction(payjoin.bitcoinSerialize());
+        assertEquals(SigHash.UNIFIED_ALL.value, payjoin.getInputs().getFirst().getWitness().getSignatures().getFirst().sighashFlags, "the spend must opt in, or this proves nothing");
+
+        Set<Sha256Hash> unsigned = new ElectrumServer().getUnsignedTransactions(wallet, Map.of(payjoin.getTxId(), payjoin), txid -> body(wallet, txid));
+
+        assertEquals(Set.of(foreignParent.getTxId().toString()), server.requested);
+        assertTrue(unsigned.isEmpty());
     }
 
     @Test
