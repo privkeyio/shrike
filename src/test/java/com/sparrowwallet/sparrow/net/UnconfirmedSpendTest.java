@@ -203,14 +203,41 @@ public class UnconfirmedSpendTest {
     @Test
     public void fetchesTheTransactionsAnOptedInSpendCommitsTo() throws Exception {
         Wallet wallet = signingWallet(ScriptType.P2WPKH);
-        Transaction funding = fund(wallet);
-        WalletNode addressNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Transaction foreignParent = foreignParent();
+        server.serve(foreignParent);
+        Transaction payjoin = optedInPayjoin(wallet, foreignParent);
 
-        //A payjoin signed with the unified opt-in, which commits to every spent output whatever the script type, as a taproot signature does
+        Set<Sha256Hash> unsigned = new ElectrumServer().getUnsignedTransactions(wallet, Map.of(payjoin.getTxId(), payjoin), txid -> body(wallet, txid));
+
+        assertEquals(Set.of(foreignParent.getTxId().toString()), server.requested);
+        assertTrue(unsigned.isEmpty());
+    }
+
+    @Test
+    public void leavesOutAnOptedInSpendWhoseSpentTransactionIsNotServed() throws Exception {
+        Wallet wallet = signingWallet(ScriptType.P2WPKH);
+        Transaction foreignParent = foreignParent();
+        Transaction payjoin = optedInPayjoin(wallet, foreignParent);
+
+        Set<Sha256Hash> unsigned = new ElectrumServer().getUnsignedTransactions(wallet, Map.of(payjoin.getTxId(), payjoin), txid -> body(wallet, txid));
+
+        assertEquals(Set.of(foreignParent.getTxId().toString()), server.requested);
+        assertEquals(Set.of(payjoin.getTxId()), unsigned);
+    }
+
+    private static Transaction foreignParent() {
         Transaction foreignParent = new Transaction();
         foreignParent.addInput(Sha256Hash.ZERO_HASH, 0, new Script(new byte[0]));
         foreignParent.addOutput(50_000L, ScriptType.P2WPKH.getOutputScript(Utils.hexToBytes("bb00000000000000000000000000000000000022")));
-        server.serve(foreignParent);
+        return foreignParent;
+    }
+
+    /**
+     * A payjoin signed with the unified opt-in, which commits to every spent output whatever the script type, as a taproot signature does
+     */
+    private static Transaction optedInPayjoin(Wallet wallet, Transaction foreignParent) throws Exception {
+        Transaction funding = fund(wallet);
+        WalletNode addressNode = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
 
         Transaction payjoin = new Transaction();
         payjoin.setVersion(2);
@@ -226,10 +253,7 @@ public class UnconfirmedSpendTest {
         payjoin = new Transaction(payjoin.bitcoinSerialize());
         assertEquals(SigHash.UNIFIED_ALL.value, payjoin.getInputs().getFirst().getWitness().getSignatures().getFirst().sighashFlags, "the spend must opt in, or this proves nothing");
 
-        Set<Sha256Hash> unsigned = new ElectrumServer().getUnsignedTransactions(wallet, Map.of(payjoin.getTxId(), payjoin), txid -> body(wallet, txid));
-
-        assertEquals(Set.of(foreignParent.getTxId().toString()), server.requested);
-        assertTrue(unsigned.isEmpty());
+        return payjoin;
     }
 
     @Test
