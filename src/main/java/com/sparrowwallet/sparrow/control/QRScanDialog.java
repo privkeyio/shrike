@@ -103,6 +103,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
         final DialogPane dialogPane = new QRScanDialogPane();
         setDialogPane(dialogPane);
         AppServices.setStageIcon(dialogPane.getScene().getWindow());
+        setTitle("Scan QR Code");
 
         WebcamView webcamView = new WebcamView(webcamService, Config.get().isMirrorCapture());
 
@@ -111,6 +112,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
         progressBar.setPadding(new Insets(0, 10, 0, 10));
         progressBar.setPrefWidth(Integer.MAX_VALUE);
         progressBar.progressProperty().bind(percentComplete);
+        progressBar.setAccessibleText("Scan progress");
 
         VBox vBox = new VBox(20);
         StackPane stackPane = new StackPane();
@@ -214,6 +216,15 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
         final ButtonType deviceButtonType = new javafx.scene.control.ButtonType("Default Camera", ButtonBar.ButtonData.LEFT);
         final ButtonType resolutionButtonType = new javafx.scene.control.ButtonType("Resolution", ButtonBar.ButtonData.HELP_2);
         dialogPane.getButtonTypes().addAll(deviceButtonType, resolutionButtonType, cancelButtonType);
+
+        //The camera and resolution pop-ups have no visible label, so hidden labels name them for screen readers
+        for(Map.Entry<String, ButtonType> popup : Map.of("Camera", deviceButtonType, "Resolution", resolutionButtonType).entrySet()) {
+            Label label = new Label(popup.getKey());
+            label.setLabelFor(dialogPane.lookupButton(popup.getValue()));
+            label.setVisible(false);
+            label.setManaged(false);
+            vBox.getChildren().add(label);
+        }
         dialogPane.setPrefWidth(646);
         dialogPane.setPrefHeight(webcamResolutionProperty.get().isWidescreenAspect() ? 490 : 590);
         dialogPane.setMinHeight(dialogPane.getPrefHeight());
@@ -464,7 +475,7 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                         //ignore, bytes not parsable as utf-8
                     }
 
-                    result = new Result(new URException("Parsed UR of type " + urRegistryType + " was not a PSBT, transaction or UTF-8 text"));
+                    return new Result(new URException("Parsed UR of type " + urRegistryType + " was not a PSBT, transaction or UTF-8 text"));
                 } else if(urRegistryType.equals(RegistryType.CRYPTO_PSBT)) {
                     CryptoPSBT cryptoPSBT = (CryptoPSBT)ur.decodeFromRegistry();
                     try {
@@ -549,8 +560,6 @@ public class QRScanDialog extends Dialog<QRScanDialog.Result> {
                 log.error("Error parsing UR CBOR", e);
                 return new Result(new URException("Error parsing UR CBOR", e));
             }
-
-            return null;
         }
 
         private Address getAddress(CryptoAddress cryptoAddress) {

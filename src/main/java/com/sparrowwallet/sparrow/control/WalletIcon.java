@@ -24,7 +24,7 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLStreamHandler;
 
-public class WalletIcon extends StackPane {
+public class WalletIcon extends DecorativePane {
     public static final String PROTOCOL = "walleticon";
     private static final String QUERY = "icon";
     public static final int WIDTH = 15;

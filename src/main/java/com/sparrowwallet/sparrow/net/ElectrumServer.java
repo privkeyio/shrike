@@ -119,8 +119,9 @@ public class ElectrumServer {
     //Counts the rewinds of the header store, so that a proof can tell whether one happened while it was being obtained. Written under headerSyncLock
     static volatile int reorgCount;
 
-    //The deepest fork point the store has been rewound to this session, at or above which a stored height may have been proven against an orphaned
-    //header. Written only under headerSyncLock, which is what makes the min in reconcile atomic; volatile is for the readers that do not take it
+    //The deepest fork point the store has been rewound to this session, or that a wallet loaded in it was found to hold a proof from above, at or above
+    //which a stored height may have been proven against an orphaned header. Written only under headerSyncLock, which is what makes the min atomic;
+    //volatile is for the readers that do not take it
     static volatile int lastReorgForkHeight = Integer.MAX_VALUE;
 
     private static final Map<Integer, WalletSyncLock> walletSyncLocks = Collections.synchronizedMap(new HashMap<>());
@@ -193,6 +194,15 @@ public class ElectrumServer {
     //The nodes this task demoted a height in. Their outputs disagree with the server's status by construction, so the changed history check must not
     //count them: a wallet whose used nodes are all demoted would otherwise abort into a full refresh on every open, the demotion being stored
     private final Set<String> demotedScriptHashes = new HashSet<>();
+
+    //Per pass, since each of the several calls a pass makes to getReferencedTransactions judges every unconfirmed reference it has collected so far.
+    //Only what stays true as the gap limit derives more addresses is kept: an unsigned spend stays unsigned, while one that was not yet seen to spend
+    //from this wallet may do so once another address is derived. The transactions a taproot spend commits to are kept so they are fetched only once
+    private final Map<Wallet, Set<Sha256Hash>> unsignedThisPass = new HashMap<>();
+
+    private final Map<Sha256Hash, Transaction> spentTransactionsThisPass = new HashMap<>();
+
+    private static final Set<Sha256Hash> unsignedWarnedTxids = ConcurrentHashMap.newKeySet();
 
     private static synchronized CloseableTransport getTransport() throws ServerException {
         if(transport == null) {
@@ -271,7 +281,11 @@ public class ElectrumServer {
         reorgInvalidatedScriptHashes.clear();
         proofWarnedPairs.clear();
         proofsShownFalseWarnedPairs.clear();
-        walletSyncLocks.values().forEach(syncLock -> syncLock.scriptHashesInitialized = false);
+        unsignedWarnedTxids.clear();
+        walletSyncLocks.values().forEach(syncLock -> {
+            syncLock.scriptHashesInitialized = false;
+            syncLock.storedProofsChecked = false;
+        });
     }
 
     public void connect() throws ServerException {
@@ -405,7 +419,10 @@ public class ElectrumServer {
     public static void clearRetrievedScriptHashes(Wallet wallet) {
         wallet.getNode(KeyPurpose.RECEIVE).getChildren().stream().map(ElectrumServer::getScriptHash).forEach(ElectrumServer::clearRetrievedScriptHash);
         wallet.getNode(KeyPurpose.CHANGE).getChildren().stream().map(ElectrumServer::getScriptHash).forEach(ElectrumServer::clearRetrievedScriptHash);
-        walletSyncLocks.computeIfAbsent(wallet.hashCode(), w -> new WalletSyncLock()).scriptHashesInitialized = false;
+        WalletSyncLock walletSyncLock = walletSyncLocks.computeIfAbsent(wallet.hashCode(), w -> new WalletSyncLock());
+        walletSyncLock.scriptHashesInitialized = false;
+        walletSyncLock.storedProofsChecked = false;
+        walletSyncLock.storedProofsFromHeight = null;
     }
 
     private static void clearRetrievedScriptHash(String scriptHash) {
@@ -496,12 +513,27 @@ public class ElectrumServer {
 
             if(isConnected()) {
                 try {
+                    if(!walletSyncLock.storedProofsChecked && isVerifyingTransactions()) {
+                        walletSyncLock.storedProofsChecked = checkStoredProofs(wallet, walletSyncLock);
+                        //Only a fetch of every node revisits what the comparison invalidated, and it is not made again once it has completed
+                        if(nodes != null && hasReorgInvalidatedScriptHashes(wallet)) {
+                            nodes = null;
+                        }
+                    }
+
                     //Taken before the fetch, so an invalidation arriving while this pass runs can be told from one the pass is acting on
                     Set<String> invalidatedBeforeFetch = Set.copyOf(reorgInvalidatedScriptHashes);
+                    int reorgsBeforeFetch = reorgCount;
                     Map<String, String> previousScriptHashes = getCalculatedScriptHashes(wallet);
                     Map<WalletNode, Set<BlockTransactionHash>> nodeTransactionMap = (nodes == null ? getHistory(wallet) : getHistory(wallet, nodes));
                     getReferencedTransactions(wallet, nodeTransactionMap);
                     calculateNodeHistory(wallet, nodeTransactionMap);
+
+                    //A reorg reconciled while this pass was in flight was invalidated against the outputs the wallet held at the time, which do not include
+                    //a payment this pass has just found above the fork. The wallet may have had nothing above it then, and so not have refreshed at all
+                    if(reorgCount != reorgsBeforeFetch && invalidateWalletScriptHashesForReorg(wallet, lastReorgForkHeight)) {
+                        EventManager.get().post(new RequestWalletRefreshEvent(wallet));
+                    }
 
                     //A node invalidated by a reorg has no retrieved status left to compare against, so it must not count as changed history below
                     Set<String> invalidatedScriptHashes = Set.copyOf(reorgInvalidatedScriptHashes);
@@ -547,11 +579,13 @@ public class ElectrumServer {
                         reorgInvalidatedScriptHashes.removeAll(invalidatedBeforeFetch.stream().filter(walletScriptHashes::contains).collect(Collectors.toSet()));
                     }
 
-                    //Clear transaction outputs for nodes that have no history - this is useful when a transaction is replaced in the mempool
+                    //Clear transaction outputs for nodes that have no history - this is useful when a transaction is replaced in the mempool. A node a reorg
+                    //invalidated during this pass has no status because it was invalidated, not because it has no history, and is left for the refresh
                     if(nodes != null) {
                         for(WalletNode node : nodes) {
                             String scriptHash = getScriptHash(node);
-                            if(retrievedScriptHashes.get(scriptHash) == null && !node.getTransactionOutputs().isEmpty()) {
+                            if(retrievedScriptHashes.get(scriptHash) == null && !node.getTransactionOutputs().isEmpty()
+                                    && (invalidatedBeforeFetch.contains(scriptHash) || !invalidatedScriptHashes.contains(scriptHash))) {
                                 log.debug("Clearing transaction history for " + node);
                                 node.getTransactionOutputs().clear();
                             }
@@ -566,6 +600,62 @@ public class ElectrumServer {
             }
 
             return false;
+        }
+    }
+
+    /**
+     * Compares the block each of the wallet's transactions was proven against with the header the store now holds at that height, once for a wallet
+     * as it is first fetched. A reorg reaches the wallets open when the store is rewound, and a wallet closed at the time - whether earlier this
+     * session or in one before it - still holds what the replaced block proved, at heights the server may well report unchanged. Where one is found,
+     * the wallet is treated as a reorg at that height would have treated it: its nodes above are fetched again and the stored block hashes compared.
+     * <p>
+     * Only the transactions within the deepest reorg the store accepts of the block height the wallet stored are compared, which keeps an ordinary
+     * load from reading the store at all. That is every transaction a reorg could have reached where the store kept pace with the wallet, since the
+     * wallet heard of every reorg while it was open. It is not where the wallet's height advanced while nothing was being verified - on a Bitcoin
+     * Core connection, or with verification off - and the store stood still: a reorg reconciled later, below that window, is not looked for.
+     * <p>
+     * Returns whether every one of them could be compared, which is false while the store has yet to reach one. The comparison is then made again on
+     * a later fetch, from the height it was first made from: the fetch in between moves the wallet's stored height on to the current tip.
+     */
+    private static boolean checkStoredProofs(Wallet wallet, WalletSyncLock walletSyncLock) throws ServerException {
+        if(walletSyncLock.storedProofsFromHeight == null) {
+            int startHeight = Network.get().getHeaderCheckpoints().getMaxHeight() + 1;
+            Integer storedHeight = wallet.getStoredBlockHeight();
+            walletSyncLock.storedProofsFromHeight = storedHeight == null ? startHeight : Math.max(startHeight, storedHeight - MAX_REORG_DEPTH + 1);
+        }
+
+        int fromHeight = walletSyncLock.storedProofsFromHeight;
+        List<BlockTransaction> proven = wallet.getTransactions().values().stream().filter(blkTx -> blkTx.getBlockHash() != null && blkTx.getHeight() >= fromHeight).toList();
+        if(proven.isEmpty()) {
+            return true;    //the ordinary case, in which the store is not read, nor loaded for a wallet that has no use for it
+        }
+
+        try {
+            //Read without the header sync lock, which a catch up holds across its fetches. A header the sync is about to replace compares as held,
+            //and the reorg that replaces it then reaches this wallet as it does any other that is open
+            HeaderStore store = getHeaderStore();
+            int orphanedHeight = Integer.MAX_VALUE;
+            boolean compared = true;
+            for(BlockTransaction blkTx : proven) {
+                Sha256Hash storedHash = store.getHash(blkTx.getHeight());
+                if(storedHash == null) {
+                    compared = false;
+                } else if(!storedHash.equals(blkTx.getBlockHash())) {
+                    orphanedHeight = Math.min(orphanedHeight, blkTx.getHeight());
+                }
+            }
+
+            if(orphanedHeight < Integer.MAX_VALUE) {
+                int forkHeight = orphanedHeight - 1;
+                synchronized(headerSyncLock) {
+                    lastReorgForkHeight = Math.min(lastReorgForkHeight, forkHeight);
+                }
+                invalidateWalletScriptHashesForReorg(wallet, forkHeight);
+            }
+
+            return compared;
+        } catch(IOException e) {
+            throw new ServerException("Could not read the block header store", e);
         }
     }
 
@@ -612,6 +702,10 @@ public class ElectrumServer {
             Map<String, WalletNode> walletScriptHashes = getAllScriptHashes(wallet);
             for(BlockTransactionHash reference : newReferences) {
                 BlockTransaction blockTransaction = wallet.getTransactions().get(reference.getHash());
+                if(blockTransaction == null) {
+                    continue;
+                }
+
                 for(TransactionOutput txOutput : blockTransaction.getTransaction().getOutputs()) {
                     WalletNode node = walletScriptHashes.get(getScriptHash(txOutput));
                     if(node != null && !historyNodes.contains(node)) {
@@ -971,6 +1065,30 @@ public class ElectrumServer {
             transactionMap = getTransactions(wallet, references, blockHeaderMap, proven);
         }
 
+        if(isVerifyingSignatures()) {
+            Map<Sha256Hash, BlockTransaction> fetched = transactionMap;
+            Function<Sha256Hash, Transaction> inputTransactions = txid -> {
+                BlockTransaction blockTransaction = fetched.containsKey(txid) ? fetched.get(txid) : wallet.getWalletTransaction(txid);
+                return blockTransaction == null ? null : blockTransaction.getTransaction();
+            };
+
+            Map<Sha256Hash, Transaction> unconfirmed = new HashMap<>();
+            for(Set<BlockTransactionHash> nodeReferences : nodeTransactionMap.values()) {
+                for(BlockTransactionHash reference : nodeReferences) {
+                    Transaction transaction = reference.getHeight() <= 0 ? inputTransactions.apply(reference.getHash()) : null;
+                    if(transaction != null) {
+                        unconfirmed.put(reference.getHash(), transaction);
+                    }
+                }
+            }
+
+            Set<Sha256Hash> unsigned = getUnsignedTransactions(wallet, unconfirmed, inputTransactions);
+            if(!unsigned.isEmpty()) {
+                transactionMap.keySet().removeAll(unsigned);
+                removeReferences(nodeTransactionMap, unsigned);
+            }
+        }
+
         //A re-proof at an unchanged height leaves the map equal to what the wallet holds, since a block hash is not part of that comparison
         if(!transactionMap.equals(wallet.getTransactions()) || !proven.isEmpty()) {
             wallet.updateTransactions(transactionMap);
@@ -1114,11 +1232,124 @@ public class ElectrumServer {
     }
 
     /**
+     * Removes every reference to the given transactions from every node that holds one, so that they reach neither the wallet transactions nor the node
+     * transaction outputs. The nodes are recorded as demoted ones are, since they too disagree with the server's status by construction.
+     */
+    private void removeReferences(Map<WalletNode, Set<BlockTransactionHash>> nodeTransactionMap, Set<Sha256Hash> txids) {
+        for(Map.Entry<WalletNode, Set<BlockTransactionHash>> entry : nodeTransactionMap.entrySet()) {
+            if(entry.getValue().removeIf(reference -> txids.contains(reference.getHash()))) {
+                demotedScriptHashes.add(getScriptHash(entry.getKey()));
+            }
+        }
+    }
+
+    private static boolean isVerifyingSignatures() {
+        //A Bitcoin Core connection is the user's own node, which has validated every transaction it reports
+        return Config.get().getServerType() != ServerType.BITCOIN_CORE;
+    }
+
+    /**
+     * The given unconfirmed transactions that spend this wallet's outputs without valid signatures from it, together with those spending what they
+     * create. Until it is mined a transaction is only what the server reports, and where it spends from this wallet that report can be checked here.
+     * A taproot or unified opt-in signature commits to every output its transaction spends, so those of such a spend not already known are fetched.
+     * Everything judged unsigned this pass is returned again by each later call.
+     */
+    Set<Sha256Hash> getUnsignedTransactions(Wallet wallet, Map<Sha256Hash, Transaction> unconfirmed, Function<Sha256Hash, Transaction> inputTransactions) throws ServerException {
+        Set<Sha256Hash> unsigned = unsignedThisPass.computeIfAbsent(wallet, w -> new LinkedHashSet<>());
+        Set<Sha256Hash> found = new LinkedHashSet<>();
+
+        Map<Sha256Hash, Transaction> unjudged = new LinkedHashMap<>(unconfirmed);
+        unjudged.keySet().removeAll(unsigned);
+        if(!unjudged.isEmpty()) {
+            //Built once per call rather than per transaction, since it visits every address node, and not kept across calls, since the gap limit adds
+            //nodes during a pass and a spend from one missing here would not be checked at all
+            Map<Script, WalletNode> walletOutputScripts = wallet.getWalletOutputScripts();
+            fetchSpentTransactions(wallet, unjudged.values(), inputTransactions, walletOutputScripts);
+            Function<Sha256Hash, Transaction> lookup = txid -> {
+                Transaction transaction = inputTransactions.apply(txid);
+                return transaction == null ? spentTransactionsThisPass.get(txid) : transaction;
+            };
+
+            for(Map.Entry<Sha256Hash, Transaction> entry : unjudged.entrySet()) {
+                try {
+                    if(!wallet.getUnsignedInputs(entry.getValue(), lookup, walletOutputScripts).isEmpty()) {
+                        found.add(entry.getKey());
+                    }
+                } catch(Exception e) {
+                    log.warn("Could not verify the signatures of " + entry.getKey(), e);
+                    found.add(entry.getKey());
+                }
+            }
+        }
+
+        for(boolean added = !found.isEmpty() || !unsigned.isEmpty(); added; ) {
+            added = false;
+            for(Map.Entry<Sha256Hash, Transaction> entry : unconfirmed.entrySet()) {
+                Sha256Hash txid = entry.getKey();
+                if(!found.contains(txid) && !unsigned.contains(txid) && entry.getValue().getInputs().stream().map(input -> input.getOutpoint().getHash())
+                        .anyMatch(spent -> found.contains(spent) || unsigned.contains(spent))) {
+                    found.add(entry.getKey());
+                    added = true;
+                }
+            }
+        }
+
+        if(!found.isEmpty()) {
+            unsigned.addAll(found);
+            log.warn("The connected server reported transactions spending from " + wallet.getFullName() + " that are not validly signed: " + found);
+            Set<Sha256Hash> unwarned = found.stream().filter(unsignedWarnedTxids::add).collect(Collectors.toCollection(LinkedHashSet::new));
+            if(!unwarned.isEmpty()) {
+                EventManager.get().post(new UnsignedTransactionsEvent(wallet, unwarned));
+            }
+        }
+
+        return new LinkedHashSet<>(unsigned);
+    }
+
+    private void fetchSpentTransactions(Wallet wallet, Collection<Transaction> transactions, Function<Sha256Hash, Transaction> inputTransactions,
+                                        Map<Script, WalletNode> walletOutputScripts) throws ServerException {
+        Set<String> txids = new LinkedHashSet<>();
+        for(Transaction transaction : transactions) {
+            Map<TransactionInput, WalletNode> signingNodes = wallet.getSigningNodes(transaction, inputTransactions, walletOutputScripts);
+            if(signingNodes.values().stream().anyMatch(node -> node.getWallet().getScriptType() == ScriptType.P2TR) || optsIn(signingNodes.keySet())) {
+                transaction.getInputs().stream().map(input -> input.getOutpoint().getHash())
+                        .filter(txid -> !spentTransactionsThisPass.containsKey(txid) && inputTransactions.apply(txid) == null).forEach(txid -> txids.add(txid.toString()));
+            }
+        }
+
+        if(txids.isEmpty()) {
+            return;
+        }
+
+        try {
+            Map<String, String> result = electrumServerRpc.getTransactions(getTransport(), wallet, txids);
+            for(Map.Entry<String, String> entry : result.entrySet()) {
+                try {
+                    Transaction transaction = new Transaction(Utils.hexToBytes(entry.getValue()));
+                    if(transaction.getTxId().toString().equals(entry.getKey())) {
+                        spentTransactionsThisPass.put(transaction.getTxId(), transaction);
+                    }
+                } catch(Exception e) {
+                    log.debug("Could not parse spent transaction " + entry.getKey(), e);
+                }
+            }
+        } catch(ElectrumServerRpcException e) {
+            throw new ServerException(e.getMessage(), e.getCause());
+        }
+    }
+
+    //A unified opt-in signature commits to every output its transaction spends whatever the script type, as a taproot signature does
+    private static boolean optsIn(Collection<TransactionInput> inputs) {
+        return inputs.stream().map(input -> input.hasWitness() ? input.getWitness().getSignatures() : input.getScriptSig().getSignatures())
+                .flatMap(Collection::stream).anyMatch(signature -> (signature.sighashFlags & SigHash.UNIFIED_FLAG) != 0);
+    }
+
+    /**
      * Whether a stored transaction is held at a height that is still numerically what the server reports but was proven against a block the chain no
      * longer holds, which is the form a reorg takes when a transaction is re-included at the same height. Above the last fork point this session only,
      * so an ordinary pass reads neither the store nor the disk.
      */
-    private boolean isProvenAgainstOrphanedHeader(BlockTransaction existing) throws ServerException {
+    private static boolean isProvenAgainstOrphanedHeader(BlockTransaction existing) throws ServerException {
         if(existing.getBlockHash() == null || existing.getHeight() <= lastReorgForkHeight) {
             return false;       //history from before this feature, or a height no reorg this session has reached
         }
@@ -1278,11 +1509,25 @@ public class ElectrumServer {
     /**
      * The given transaction carrying the block it was proven to be in, where this session has proved its height, and the transaction itself where it
      * has not. The proof outlives the objects a wallet or a fetch hands out, none of which carry what was established after they were built, so what
-     * has been proven is asked here rather than read from whichever of them a form was last handed.
+     * has been proven is asked here rather than read from whichever of them a form was last handed. For the same reason a block one of them carries
+     * that a reorg has since replaced is not taken as proven: the object may have been handed out before the reorg reached the wallet that holds it.
      */
     public static BlockTransaction getProvenTransaction(BlockTransaction blockTransaction) {
-        if(blockTransaction.getHeight() <= 0 || isProven(blockTransaction)) {
+        if(blockTransaction.getHeight() <= 0) {
             return blockTransaction;
+        }
+
+        if(isProven(blockTransaction)) {
+            try {
+                if(!isProvenAgainstOrphanedHeader(blockTransaction)) {
+                    return blockTransaction;
+                }
+            } catch(ServerException e) {
+                log.warn("Could not compare the block of transaction " + blockTransaction.getHashAsString() + " with the header store", e);
+                return blockTransaction;
+            }
+
+            blockTransaction = new BlockTransaction(blockTransaction.getHash(), blockTransaction.getHeight(), null, blockTransaction.getFee(), blockTransaction.getTransaction(), null);
         }
 
         BlockHeader provenHeader = provenTransactionHeaders.get(blockTransaction.getHashAsString() + ":" + blockTransaction.getHeight());
@@ -1640,6 +1885,12 @@ public class ElectrumServer {
             throw new VerificationException("Server returned a malformed header chunk when reconciling to height " + endHeight);
         }
 
+        //The server's chain to this height is the one the store holds, as when an announcement the store has already synced past names a block it
+        //replaced. Each header commits to the one below it, so a matching top header means there is nothing to reorganise
+        if(candidate.getLast().getHash().equals(store.getHash(endHeight))) {
+            return;
+        }
+
         //Walk back from the announced tip, checking each header against the one below it, until one descends from a header the store already holds
         int forkHeight = -1;
         for(int i = count - 1; i >= 0; i--) {
@@ -1845,8 +2096,7 @@ public class ElectrumServer {
      * in the wallet no more than any other the server cannot prove. A tip not yet announced is not evidence of lagging.
      * <p>
      * Not asked of a Bitcoin Core connection at all, whichever backend is fronting it: the node answering is the user's own, and a proof it built
-     * against headers it also supplied establishes nothing it has not already been trusted for. Cormorant declares as much in its capability, but
-     * bwt takes over where cormorant cannot start, and the same node should not verify or not according to which one did.
+     * against headers it also supplied establishes nothing it has not already been trusted for.
      */
     public static boolean isVerifyingTransactions() {
         if(!Config.get().isVerifyTransactions() || Config.get().getServerType() == ServerType.BITCOIN_CORE
@@ -2742,6 +2992,15 @@ public class ElectrumServer {
                 Map<BlockTransactionHash, BlockHeader> proven = isVerifyingTransactions() ? verifySilentPaymentReferences(wallet, referencesToFetch) : Collections.emptyMap();
                 Map<Integer, BlockHeader> blockHeaderMap = getBlockHeaders(wallet, referencesToFetch.keySet());
                 Map<Sha256Hash, BlockTransaction> fetched = getTransactions(wallet, referencesToFetch, blockHeaderMap, proven);
+                if(isVerifyingSignatures()) {
+                    Function<Sha256Hash, Transaction> inputTransactions = txid -> {
+                        BlockTransaction blockTransaction = fetched.containsKey(txid) ? fetched.get(txid) : wallet.getWalletTransaction(txid);
+                        return blockTransaction == null ? null : blockTransaction.getTransaction();
+                    };
+                    Map<Sha256Hash, Transaction> unconfirmed = fetched.values().stream().filter(blkTx -> blkTx.getHeight() <= 0 && blkTx.getTransaction() != null)
+                            .collect(Collectors.toMap(BlockTransaction::getHash, BlockTransaction::getTransaction));
+                    fetched.keySet().removeAll(getUnsignedTransactions(wallet, unconfirmed, inputTransactions));
+                }
                 transactionMap.putAll(fetched);
                 wallet.updateTransactions(fetched);
             } finally {
@@ -2990,7 +3249,7 @@ public class ElectrumServer {
             }
 
             if(server.startsWith("cormorant")) {
-                return new ServerCapability(true, false, true, false, true).withMerkleProofs(false);
+                return new ServerCapability(true, false, true, false, true);
             }
 
             if(server.startsWith("electrs/")) {
@@ -3254,7 +3513,7 @@ public class ElectrumServer {
                                 return new FeeRatesUpdatedEvent(blockTargetFeeRates, mempoolRateSizes, nextBlockMedianFeeRate);
                             }
                         } else {
-                            closeConnection();
+                            throw new ServerException("Connection to server lost");
                         }
                     }
 
@@ -3567,6 +3826,8 @@ public class ElectrumServer {
 
     private static class WalletSyncLock {
         public boolean scriptHashesInitialized;
+        public boolean storedProofsChecked;
+        public Integer storedProofsFromHeight;
     }
 
     public static class TransactionHistoryService extends Service<Boolean> {

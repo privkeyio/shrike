@@ -2,6 +2,7 @@ package com.sparrowwallet.sparrow.wallet;
 
 import com.google.common.eventbus.Subscribe;
 import com.sparrowwallet.drongo.SecureString;
+import com.sparrowwallet.drongo.crypto.ECKey;
 import com.sparrowwallet.drongo.crypto.InvalidPasswordException;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.sparrow.AppServices;
@@ -53,6 +54,8 @@ public class WalletController extends WalletFormController implements Initializa
 
     private CustomPasswordField passwordField;
 
+    private int lockCount;
+
     private final BooleanProperty walletEncryptedProperty = new SimpleBooleanProperty(false);
 
     private final ChangeListener<Boolean> lockFocusListener = new ChangeListener<>() {
@@ -83,7 +86,7 @@ public class WalletController extends WalletFormController implements Initializa
                 if(walletFunction.getUserData().equals(function)) {
                     existing = true;
                     walletFunction.setViewOrder(0);
-                } else if(function != Function.LOCK) {
+                } else if(walletFunction.getUserData() != Function.LOCK) {
                     walletFunction.setViewOrder(1);
                 }
             }
@@ -113,6 +116,8 @@ public class WalletController extends WalletFormController implements Initializa
             } catch (IOException e) {
                 throw new IllegalStateException("Can't find pane", e);
             }
+
+            showFrontView();
         });
 
         for(Toggle toggle : walletMenu.getToggles()) {
@@ -190,15 +195,19 @@ public class WalletController extends WalletFormController implements Initializa
     }
 
     private void unlockWallet(CustomPasswordField passwordField) {
+        updateWalletEncryptedStatus();
         if(walletEncryptedProperty.get()) {
             String walletId = walletForm.getWalletId();
             SecureString password = new SecureString(passwordField.getText());
+            int lockCount = this.lockCount;
             Storage.KeyDerivationService keyDerivationService = new Storage.KeyDerivationService(walletForm.getStorage(), password, true);
             keyDerivationService.setOnSucceeded(workerStateEvent -> {
                 passwordField.clear();
                 password.clear();
                 EventManager.get().post(new StorageEvent(walletId, TimedEvent.Action.END, "Done"));
-                unlockWallet();
+                if(lockCount == this.lockCount) {
+                    unlockWallet();
+                }
             });
             keyDerivationService.setOnFailed(workerStateEvent -> {
                 EventManager.get().post(new StorageEvent(walletId, TimedEvent.Action.END, "Failed"));
@@ -221,24 +230,14 @@ public class WalletController extends WalletFormController implements Initializa
     }
 
     private void updateWalletEncryptedStatus() {
-        try {
-            walletEncryptedProperty.set(getWalletForm().getStorage().isEncrypted());
-        } catch(IOException e) {
-            log.warn("Error determining if wallet is locked", e);
-        }
+        ECKey encryptionPubKey = getWalletForm().getStorage().getEncryptionPubKey();
+        walletEncryptedProperty.set(encryptionPubKey != null && !Storage.NO_PASSWORD_KEY.equals(encryptionPubKey));
     }
 
     @Subscribe
     public void walletAddressesChanged(WalletAddressesChangedEvent event) {
         if(event.getWalletId().equals(walletForm.getWalletId())) {
             configure(event.getWallet());
-        }
-    }
-
-    @Subscribe
-    public void walletSettingsChanged(WalletSettingsChangedEvent event) {
-        if(event.getWalletId().equals(walletForm.getWalletId())) {
-            Platform.runLater(this::updateWalletEncryptedStatus);
         }
     }
 
@@ -250,15 +249,29 @@ public class WalletController extends WalletFormController implements Initializa
     }
 
     @Subscribe
+    public void functionShortcut(FunctionShortcutEvent event) {
+        if(event.getWallet().equals(walletForm.getWallet()) && walletMenuBox.isVisible()) {
+            for(Toggle toggle : walletMenu.getToggles()) {
+                if(toggle.getUserData().equals(event.getFunction()) && toggle instanceof ToggleButton toggleButton && toggleButton.isVisible() && !toggleButton.isDisabled()) {
+                    toggleButton.setSelected(true);
+                    toggleButton.requestFocus();
+                }
+            }
+        }
+    }
+
+    @Subscribe
     public void walletLock(WalletLockEvent event) {
         if(event.getWallet().equals(walletForm.getMasterWallet())) {
+            updateWalletEncryptedStatus();
             if(lockPane == null) {
-                updateWalletEncryptedStatus();
                 initializeLockScreen();
             }
 
             getWalletForm().setLocked(true);
             lockPane.setViewOrder(-1);
+            showFrontView();
+            lockCount++;
         }
     }
 
@@ -268,7 +281,22 @@ public class WalletController extends WalletFormController implements Initializa
             getWalletForm().setLocked(false);
             if(lockPane != null) {
                 lockPane.setViewOrder(2);
+                showFrontView();
             }
+        }
+    }
+
+    //Views behind the front one are hidden so they stay out of keyboard focus traversal and the accessibility tree
+    private void showFrontView() {
+        Node front = null;
+        for(Node view : walletPane.getChildren()) {
+            if(front == null || view.getViewOrder() <= front.getViewOrder()) {
+                front = view;
+            }
+        }
+
+        for(Node view : walletPane.getChildren()) {
+            view.setVisible(view == front);
         }
     }
 }

@@ -5,7 +5,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import tornadofx.control.*?>
-<?import org.controlsfx.control.RangeSlider?>
+<?import com.sparrowwallet.sparrow.control.CosignersSlider?>
 <?import com.sparrowwallet.sparrow.control.CopyableLabel?>
 <?import com.sparrowwallet.drongo.policy.PolicyType?>
 <?import com.sparrowwallet.drongo.protocol.ScriptType?>
@@ -57,7 +57,7 @@
                                 </FXCollections>
                             </items>
                         </ComboBox>
-                        <HelpLabel helpText="Native Segwit the type chosen for most new wallets.\nTaproot is a newer type useful for specific needs.\nNested Segwit and Legacy are useful for recovering older wallets.\nFor existing wallets, be sure to choose the type that matches the wallet you are restoring." />
+                        <HelpLabel helpText="Native Segwit is the type chosen for most new wallets.\nTaproot is a newer type useful for specific needs.\nNested Segwit and Legacy are useful for recovering older wallets.\nFor existing wallets, be sure to choose the type that matches the wallet you are restoring." />
                     </Field>
                 </Fieldset>
             </Form>
@@ -65,12 +65,10 @@
             <Form GridPane.columnIndex="1" GridPane.rowIndex="0">
                 <Fieldset inputGrow="SOMETIMES" text="" fx:id="multisigFieldset">
                     <Field text="Cosigners:">
-                        <RangeSlider fx:id="multisigControl" showTickMarks="true" showTickLabels="true" blockIncrement="1" min="1" max="9" highValue="3" lowValue="2" snapToTicks="true" majorTickUnit="1" minorTickCount="0" />
+                        <CosignersSlider fx:id="multisigControl" showTickMarks="true" showTickLabels="true" blockIncrement="1" min="1" max="9" highValue="3" lowValue="2" snapToTicks="true" majorTickUnit="1" minorTickCount="0" />
                     </Field>
                     <Field text="M of N:">
-                        <CopyableLabel fx:id="multisigLowLabel" />
-                        <CopyableLabel text="/"/>
-                        <CopyableLabel fx:id="multisigHighLabel" />
+                        <CopyableLabel fx:id="multisigLabel" />
                     </Field>
                 </Fieldset>
             </Form>
@@ -83,7 +81,7 @@
                                 <DescriptorArea fx:id="descriptor" editable="false" styleClass="uneditable-codearea" prefHeight="27" maxHeight="27" />
                             </content>
                         </VirtualizedScrollPane>
-                        <Button fx:id="scanDescriptorQR" onAction="#scanDescriptorQR">
+                        <Button accessibleText="Scan QR Code" fx:id="scanDescriptorQR" onAction="#scanDescriptorQR">
                             <graphic>
                                 <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="12" icon="CAMERA" />
                             </graphic>
@@ -91,7 +89,7 @@
                                 <Tooltip text="Scan a QR code" />
                             </tooltip>
                         </Button>
-                        <Button fx:id="showDescriptorQR" onAction="#showDescriptorQR">
+                        <Button accessibleText="Show QR Code" fx:id="showDescriptorQR" onAction="#showDescriptorQR">
                             <graphic>
                                 <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="12" icon="QRCODE" />
                             </graphic>

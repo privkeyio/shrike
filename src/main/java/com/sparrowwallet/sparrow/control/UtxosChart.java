@@ -2,12 +2,16 @@ package com.sparrowwallet.sparrow.control;
 
 import com.sparrowwallet.drongo.BitcoinUnit;
 import com.sparrowwallet.drongo.wallet.Wallet;
+import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.UnitFormat;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.wallet.Entry;
 import com.sparrowwallet.sparrow.wallet.UtxoEntry;
 import com.sparrowwallet.sparrow.wallet.WalletUtxosEntry;
 import javafx.beans.NamedArg;
+import javafx.collections.FXCollections;
+import javafx.scene.AccessibleAttribute;
+import javafx.scene.AccessibleRole;
 import javafx.scene.Node;
 import javafx.scene.chart.*;
 import javafx.scene.control.Tooltip;
@@ -30,6 +34,17 @@ public class UtxosChart extends BarChart<String, Number> {
 
     public UtxosChart(@NamedArg("xAxis") Axis<String> xAxis, @NamedArg("yAxis") Axis<Number> yAxis) {
         super(xAxis, yAxis);
+        setAccessibleRole(AccessibleRole.TEXT);
+        AppServices.keepChartPointsOutOfTabOrder(getPlotChildren());
+    }
+
+    @Override
+    public Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+        if(attribute == AccessibleAttribute.CHILDREN) {
+            return FXCollections.emptyObservableList();
+        }
+
+        return super.queryAccessibleAttribute(attribute, parameters);
     }
 
     public void initialize(WalletUtxosEntry walletUtxosEntry) {
@@ -47,6 +62,7 @@ public class UtxosChart extends BarChart<String, Number> {
                 .collect(Collectors.toList());
 
         totalUtxos = utxoDataList.size();
+        setAccessibleText("UTXO values chart of " + totalUtxos + " UTXO" + (totalUtxos == 1 ? "" : "s"));
         if(utxoDataList.size() > MAX_BARS) {
             List<Data<String, Number>> otherDataList = utxoDataList.subList(MAX_BARS - 1, utxoDataList.size());
             List<Entry> otherEntries = otherDataList.stream().map(data -> (Entry)data.getExtraValue()).collect(Collectors.toList());

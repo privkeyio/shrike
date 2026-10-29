@@ -120,14 +120,7 @@ public class PaymentController extends WalletFormController implements Initializ
     private final ChangeListener<String> amountListener = new ChangeListener<>() {
         @Override
         public void changed(ObservableValue<? extends String> observable, String oldValue, String newValue) {
-            if(sendController.getUtxoSelector() instanceof MaxUtxoSelector) {
-                sendController.utxoSelectorProperty().setValue(null);
-            }
-
-            for(Tab tab : sendController.getPaymentTabs().getTabs()) {
-                PaymentController controller = (PaymentController) tab.getUserData();
-                controller.setSendMax(false);
-            }
+            clearSendMax();
 
             Long recipientValueSats = getRecipientValueSats();
             if(recipientValueSats != null) {
@@ -193,99 +186,98 @@ public class PaymentController extends WalletFormController implements Initializ
                 payjoinURIProperty.set(null);
             }
 
-            try {
-                BitcoinURI bitcoinURI = new BitcoinURI(newValue);
-                Platform.runLater(() -> updateFromURI(bitcoinURI));
-                return;
-            } catch(Exception e) {
-                //ignore, not a URI
-            }
-
-            Optional<String> optDnsPaymentHrn = DnsPayment.getHrn(newValue);
-            if(optDnsPaymentHrn.isPresent()) {
-                String dnsPaymentHrn = optDnsPaymentHrn.get();
-                DnsPayment cachedDnsPayment = DnsPaymentCache.getDnsPayment(dnsPaymentHrn);
-                if(cachedDnsPayment != null) {
-                    setDnsPayment(cachedDnsPayment);
+            if(payNymProperty.get() == null) {
+                try {
+                    BitcoinURI bitcoinURI = new BitcoinURI(newValue);
+                    Platform.runLater(() -> updateFromURI(bitcoinURI));
                     return;
+                } catch(Exception e) {
+                    //ignore, not a URI
                 }
 
-                if(Config.get().hasServer() && !AppServices.isConnected() && !AppServices.isConnecting()) {
-                    if(Config.get().getConnectToResolve() == null || Config.get().getConnectToResolve() == Boolean.FALSE) {
-                        Platform.runLater(() -> {
-                            ConfirmationAlert confirmationAlert = new ConfirmationAlert("Connect to resolve?", "You are currently offline. Connect to resolve the address?", ButtonType.NO, ButtonType.YES);
-                            Optional<ButtonType> optType = confirmationAlert.showAndWait();
-                            if(confirmationAlert.isDontAskAgain() && optType.isPresent()) {
-                                Config.get().setConnectToResolve(optType.get() == ButtonType.YES);
-                            }
-                            if(optType.isPresent() && optType.get() == ButtonType.YES) {
-                                EventManager.get().post(new RequestConnectEvent());
+                //A name is not a recipient until it has resolved, which it may never do. Whatever becomes of it, the transaction is rebuilt below, as the
+                //one already created is for the recipient the name has replaced
+                Optional<String> optDnsPaymentHrn = DnsPayment.getHrn(newValue);
+                if(optDnsPaymentHrn.isPresent()) {
+                    String dnsPaymentHrn = optDnsPaymentHrn.get();
+                    DnsPayment cachedDnsPayment = DnsPaymentCache.getDnsPayment(dnsPaymentHrn);
+                    if(cachedDnsPayment != null) {
+                        setDnsPayment(cachedDnsPayment);
+                    } else if(Config.get().hasServer() && !AppServices.isConnected() && !AppServices.isConnecting()) {
+                        if(Config.get().getConnectToResolve() == null || Config.get().getConnectToResolve() == Boolean.FALSE) {
+                            Platform.runLater(() -> {
+                                ConfirmationAlert confirmationAlert = new ConfirmationAlert("Connect to resolve?", "You are currently offline. Connect to resolve the address?", ButtonType.NO, ButtonType.YES);
+                                Optional<ButtonType> optType = confirmationAlert.showAndWait();
+                                if(confirmationAlert.isDontAskAgain() && optType.isPresent()) {
+                                    Config.get().setConnectToResolve(optType.get() == ButtonType.YES);
+                                }
+                                if(optType.isPresent() && optType.get() == ButtonType.YES) {
+                                    EventManager.get().post(new RequestConnectEvent());
+                                }
+                            });
+                        } else {
+                            Platform.runLater(() -> EventManager.get().post(new RequestConnectEvent()));
+                        }
+                    } else {
+                        DnsPaymentService dnsPaymentService = new DnsPaymentService(dnsPaymentHrn);
+                        dnsPaymentService.setOnSucceeded(_ -> {
+                            if(isCurrentHrn(dnsPaymentHrn)) {
+                                dnsPaymentService.getValue().ifPresent(dnsPayment -> setDnsPayment(dnsPayment));
                             }
                         });
-                    } else {
-                        Platform.runLater(() -> EventManager.get().post(new RequestConnectEvent()));
+                        dnsPaymentService.setOnFailed(failEvent -> {
+                            Throwable exception = failEvent.getSource().getException();
+                            if(isCurrentHrn(dnsPaymentHrn) && exception != null && !(exception.getCause() instanceof TimeoutException)) {
+                                AppServices.showErrorDialog("Validation failed for " + dnsPaymentHrn, Throwables.getRootCause(exception).getMessage());
+                            }
+                        });
+                        dnsPaymentService.start();
                     }
-                    return;
                 }
 
-                DnsPaymentService dnsPaymentService = new DnsPaymentService(dnsPaymentHrn);
-                dnsPaymentService.setOnSucceeded(_ -> {
-                    if(isCurrentHrn(dnsPaymentHrn)) {
-                        dnsPaymentService.getValue().ifPresent(dnsPayment -> setDnsPayment(dnsPayment));
-                    }
-                });
-                dnsPaymentService.setOnFailed(failEvent -> {
-                    Throwable exception = failEvent.getSource().getException();
-                    if(isCurrentHrn(dnsPaymentHrn) && exception != null && !(exception.getCause() instanceof TimeoutException)) {
-                        AppServices.showErrorDialog("Validation failed for " + dnsPaymentHrn, Throwables.getRootCause(exception).getMessage());
-                    }
-                });
-                dnsPaymentService.start();
-                return;
-            }
-
-            if(sendController.getWalletForm().getWallet().hasPaymentCode()) {
-                try {
-                    PaymentCode paymentCode = new PaymentCode(newValue);
-                    Wallet recipientBip47Wallet = sendController.getWalletForm().getWallet().getChildWallet(paymentCode, sendController.getWalletForm().getWallet().getScriptType());
-                    if(recipientBip47Wallet == null && sendController.getWalletForm().getWallet().getScriptType() != ScriptType.P2PKH) {
-                        recipientBip47Wallet = sendController.getWalletForm().getWallet().getChildWallet(paymentCode, ScriptType.P2PKH);
-                    }
-
-                    if(recipientBip47Wallet != null && hasNotificationTransaction(paymentCode)) {
-                        PayNym payNym = PayNym.fromWallet(recipientBip47Wallet);
-                        Platform.runLater(() -> setPayNym(payNym));
-                    } else if(!paymentCode.equals(sendController.getWalletForm().getWallet().getPaymentCode())) {
-                        ButtonType previewType = new ButtonType("Preview Transaction", ButtonBar.ButtonData.YES);
-                        Optional<ButtonType> optButton = AppServices.showAlertDialog("Send notification transaction?", "This payment code is not yet linked with a notification transaction. Send a notification transaction?", Alert.AlertType.CONFIRMATION, ButtonType.CANCEL, previewType);
-                        if(optButton.isPresent() && optButton.get() == previewType) {
-                            Payment payment = new Payment(paymentCode.getNotificationAddress(), "Link " + paymentCode.toAbbreviatedString(), MINIMUM_P2PKH_OUTPUT_SATS, false);
-                            Platform.runLater(() -> EventManager.get().post(new SpendUtxoEvent(sendController.getWalletForm().getWallet(), List.of(payment), List.of(new byte[80]), paymentCode)));
-                        } else {
-                            Platform.runLater(() -> address.setText(""));
+                if(sendController.getWalletForm().getWallet().hasPaymentCode()) {
+                    try {
+                        PaymentCode paymentCode = new PaymentCode(newValue);
+                        Wallet recipientBip47Wallet = sendController.getWalletForm().getWallet().getChildWallet(paymentCode, sendController.getWalletForm().getWallet().getScriptType());
+                        if(recipientBip47Wallet == null && sendController.getWalletForm().getWallet().getScriptType() != ScriptType.P2PKH) {
+                            recipientBip47Wallet = sendController.getWalletForm().getWallet().getChildWallet(paymentCode, ScriptType.P2PKH);
                         }
+
+                        if(recipientBip47Wallet != null && hasNotificationTransaction(paymentCode)) {
+                            PayNym payNym = PayNym.fromWallet(recipientBip47Wallet);
+                            Platform.runLater(() -> setPayNym(payNym));
+                        } else if(!paymentCode.equals(sendController.getWalletForm().getWallet().getPaymentCode())) {
+                            ButtonType previewType = new ButtonType("Preview Transaction", ButtonBar.ButtonData.YES);
+                            Optional<ButtonType> optButton = AppServices.showAlertDialog("Send notification transaction?", "This payment code is not yet linked with a notification transaction. Send a notification transaction?", Alert.AlertType.CONFIRMATION, ButtonType.CANCEL, previewType);
+                            if(optButton.isPresent() && optButton.get() == previewType) {
+                                Payment payment = new Payment(paymentCode.getNotificationAddress(), "Link " + paymentCode.toAbbreviatedString(), MINIMUM_P2PKH_OUTPUT_SATS, false);
+                                Platform.runLater(() -> EventManager.get().post(new SpendUtxoEvent(sendController.getWalletForm().getWallet(), List.of(payment), List.of(new byte[80]), paymentCode)));
+                            } else {
+                                Platform.runLater(() -> address.setText(""));
+                            }
+                        }
+                    } catch(Exception e) {
+                        //ignore, not a payment code
                     }
+                }
+
+                try {
+                    SilentPaymentAddress silentPaymentAddress = SilentPaymentAddress.from(newValue);
+                    setSilentPaymentAddress(silentPaymentAddress);
                 } catch(Exception e) {
-                    //ignore, not a payment code
+                    //ignore, not a silent payment address
                 }
-            }
 
-            try {
-                SilentPaymentAddress silentPaymentAddress = SilentPaymentAddress.from(newValue);
-                setSilentPaymentAddress(silentPaymentAddress);
-            } catch(Exception e) {
-                //ignore, not a silent payment address
-            }
-
-            try {
-                Address toAddress = Address.fromString(newValue);
-                WalletNode walletNode = sendController.getWalletNode(toAddress);
-                if(walletNode != null) {
-                    consolidationNodeProperty.set(walletNode);
+                try {
+                    Address toAddress = Address.fromString(newValue);
+                    WalletNode walletNode = sendController.getWalletNode(toAddress);
+                    if(walletNode != null) {
+                        consolidationNodeProperty.set(walletNode);
+                    }
+                    label.requestFocus();
+                } catch(Exception e) {
+                    //ignore, not an address
                 }
-                label.requestFocus();
-            } catch(Exception e) {
-                //ignore, not an address
             }
 
             revalidateAmount();
@@ -312,36 +304,7 @@ public class PaymentController extends WalletFormController implements Initializ
     public void initializeView() {
         updateOpenWallets();
         openWallets.prefWidthProperty().bind(address.widthProperty());
-        openWallets.valueProperty().addListener((observable, oldValue, newValue) -> {
-            if(newValue == payNymWallet) {
-                PayNymDialog payNymDialog = new PayNymDialog(sendController.getWalletForm().getWalletId(), PayNymDialog.Operation.SEND);
-                payNymDialog.initOwner(scanQrButton.getScene().getWindow());
-                Optional<PayNym> optPayNym = payNymDialog.showAndWait();
-                optPayNym.ifPresent(this::setPayNym);
-            } else if(newValue == nfcCardWallet) {
-                DeviceGetAddressDialog deviceGetAddressDialog = new DeviceGetAddressDialog(Collections.emptyList());
-                deviceGetAddressDialog.initOwner(scanQrButton.getScene().getWindow());
-                Optional<Address> optAddress = deviceGetAddressDialog.showAndWait();
-                if(optAddress.isPresent()) {
-                    address.setText(optAddress.get().toString());
-                    label.requestFocus();
-                }
-            } else if(newValue != null) {
-                if(newValue.getPolicyType() == PolicyType.SINGLE_SP) {
-                    address.setText(newValue.getSilentPaymentScanAddress().getSilentPaymentAddress().getAddress());
-                } else {
-                    List<Address> existingAddresses = getOtherAddresses();
-                    WalletNode freshNode = newValue.getFreshNode(KeyPurpose.RECEIVE);
-                    Address freshAddress = freshNode.getAddress();
-                    while(existingAddresses.contains(freshAddress) || (freshNode.getLabel() != null && !freshNode.getLabel().isEmpty())) {
-                        freshNode = newValue.getFreshNode(KeyPurpose.RECEIVE, freshNode);
-                        freshAddress = freshNode.getAddress();
-                    }
-                    address.setText(freshAddress.toString());
-                }
-                label.requestFocus();
-            }
-        });
+        address.setOnChoose(this::selectOpenWallet);
         openWallets.setCellFactory(c -> new ListCell<>() {
             @Override
             protected void updateItem(Wallet wallet, boolean empty) {
@@ -522,13 +485,44 @@ public class PaymentController extends WalletFormController implements Initializ
         openWallets.setItems(FXCollections.observableList(openWalletList));
     }
 
+    private void selectOpenWallet(Wallet newValue) {
+        if(newValue == payNymWallet) {
+            PayNymDialog payNymDialog = new PayNymDialog(sendController.getWalletForm().getWalletId(), PayNymDialog.Operation.SEND);
+            payNymDialog.initOwner(scanQrButton.getScene().getWindow());
+            Optional<PayNym> optPayNym = payNymDialog.showAndWait();
+            optPayNym.ifPresent(this::setPayNym);
+        } else if(newValue == nfcCardWallet) {
+            DeviceGetAddressDialog deviceGetAddressDialog = new DeviceGetAddressDialog(Collections.emptyList());
+            deviceGetAddressDialog.initOwner(scanQrButton.getScene().getWindow());
+            Optional<Address> optAddress = deviceGetAddressDialog.showAndWait();
+            if(optAddress.isPresent()) {
+                address.setText(optAddress.get().toString());
+                label.requestFocus();
+            }
+        } else if(newValue != null) {
+            if(newValue.getPolicyType() == PolicyType.SINGLE_SP) {
+                address.setText(newValue.getSilentPaymentScanAddress().getSilentPaymentAddress().getAddress());
+            } else {
+                List<Address> existingAddresses = getOtherAddresses();
+                WalletNode freshNode = newValue.getFreshNode(KeyPurpose.RECEIVE);
+                Address freshAddress = freshNode.getAddress();
+                while(existingAddresses.contains(freshAddress) || (freshNode.getLabel() != null && !freshNode.getLabel().isEmpty())) {
+                    freshNode = newValue.getFreshNode(KeyPurpose.RECEIVE, freshNode);
+                    freshAddress = freshNode.getAddress();
+                }
+                address.setText(freshAddress.toString());
+            }
+            label.requestFocus();
+        }
+    }
+
     private Node getOpenWalletIcon(Wallet wallet) {
         if(wallet == payNymWallet) {
-            return getPayNymGlyph();
+            return new DecorativePane(getPayNymGlyph());
         }
 
         if(wallet == nfcCardWallet) {
-            return getNfcCardGlyph();
+            return new DecorativePane(getNfcCardGlyph());
         }
 
         Wallet masterWallet = wallet.isMasterWallet() ? wallet : wallet.getMasterWallet();
@@ -761,6 +755,7 @@ public class PaymentController extends WalletFormController implements Initializ
             }
             if(payment.getAmount() >= 0) {
                 setRecipientValueSats(payment.getAmount());
+                revalidateAmount();
             }
             setFiatAmount(AppServices.getFiatCurrencyExchangeRate(), payment.getAmount());
         }
@@ -842,8 +837,10 @@ public class PaymentController extends WalletFormController implements Initializ
             label.setText(bitcoinURI.getLabel());
         }
         if(bitcoinURI.getAmount() != null) {
+            clearSendMax();
             setRecipientValueSats(bitcoinURI.getAmount());
             setFiatAmount(AppServices.getFiatCurrencyExchangeRate(), bitcoinURI.getAmount());
+            revalidateAmount();
         }
         setPayjoinURI(bitcoinURI);
         sendController.updateTransaction();
@@ -881,6 +878,17 @@ public class PaymentController extends WalletFormController implements Initializ
 
     public boolean isSendMax() {
         return maxButton.isSelected();
+    }
+
+    private void clearSendMax() {
+        if(sendController.getUtxoSelector() instanceof MaxUtxoSelector) {
+            sendController.utxoSelectorProperty().setValue(null);
+        }
+
+        for(Tab tab : sendController.getPaymentTabs().getTabs()) {
+            PaymentController controller = (PaymentController)tab.getUserData();
+            controller.setSendMax(false);
+        }
     }
 
     public void setSendMax(boolean sendMax) {

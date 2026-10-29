@@ -12,10 +12,9 @@ import com.sparrowwallet.sparrow.wallet.WalletForm;
 import com.sparrowwallet.sparrow.wallet.WalletTransactionsEntry;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.geometry.Side;
+import javafx.scene.AccessibleAttribute;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
@@ -43,6 +42,7 @@ public class WalletSummaryDialog extends Dialog<Void> {
         dialogPane.getStylesheets().add(AppServices.class.getResource("wallet/transactions.css").toExternalForm());
 
         AppServices.setStageIcon(dialogPane.getScene().getWindow());
+        setTitle("Wallet Summary");
         dialogPane.setHeaderText("Wallet Summary for " + (allOpenWallets ? "All Open Wallets" : masterWallets.get(0).getName()));
         dialogPane.setGraphic(new DialogImage(DialogImage.Type.SPARROW));
 
@@ -55,7 +55,14 @@ public class WalletSummaryDialog extends Dialog<Void> {
         nameColumn.setCellValueFactory((TreeTableColumn.CellDataFeatures<Entry, String> param) -> {
             return new ReadOnlyObjectWrapper<>(param.getValue().getValue().getLabel());
         });
-        nameColumn.setCellFactory(p -> new LabelCell());
+        //The wallet column reads the whole row as the table is moved through
+        nameColumn.setCellFactory(p -> new LabelCell() {
+            @Override
+            public Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+                String summary = attribute == AccessibleAttribute.TEXT ? CoinTreeTable.getRowSummary(this) : null;
+                return summary != null ? summary : super.queryAccessibleAttribute(attribute, parameters);
+            }
+        });
         table.getColumns().add(nameColumn);
 
         TreeTableColumn<Entry, Number> balanceColumn = new TreeTableColumn<>("Balance");

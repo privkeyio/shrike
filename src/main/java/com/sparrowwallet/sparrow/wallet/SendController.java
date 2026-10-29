@@ -213,6 +213,7 @@ public class SendController extends WalletFormController implements Initializabl
 
             Tooltip tooltip = new Tooltip("Target inclusion within " + target + " blocks");
             targetBlocks.setTooltip(tooltip);
+            targetBlocks.setAccessibleText(tooltip.getText());
 
             userFeeSet.set(false);
             for(Tab tab : paymentTabs.getTabs()) {
@@ -360,11 +361,13 @@ public class SendController extends WalletFormController implements Initializabl
         feeSelectionToggleGroup.selectToggle(feeRatesSelection == FeeRatesSelection.BLOCK_TARGET ? targetBlocksToggle :
                 (feeRatesSelection == FeeRatesSelection.MEMPOOL_SIZE ? mempoolSizeToggle : recentBlocksToggle));
         feeSelectionToggleGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
-            if(newValue != null) {
+            if(newValue == null) {
+                oldValue.setSelected(true);
+            } else {
                 FeeRatesSelection newFeeRatesSelection = (FeeRatesSelection)newValue.getUserData();
                 Config.get().setFeeRatesSelection(newFeeRatesSelection);
                 EventManager.get().post(new FeeRatesSelectionChangedEvent(getWalletForm().getWallet(), newFeeRatesSelection));
-            };
+            }
         });
 
         BitcoinUnit unit = getBitcoinUnit(Config.get().getBitcoinUnit());
@@ -450,6 +453,11 @@ public class SendController extends WalletFormController implements Initializabl
         privacyToggle.setOnAction(event -> {
             Config.get().setSendOptimizationStrategy(OptimizationStrategy.PRIVACY);
             updateTransaction();
+        });
+        optimizationToggleGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
+            if(newValue == null) {
+                oldValue.setSelected(true);
+            }
         });
         setPreferredOptimizationStrategy();
         updatePrivacyAnalysis(null);
@@ -857,6 +865,7 @@ public class SendController extends WalletFormController implements Initializabl
         blockTargetFeeRatesChart.select(target);
         Tooltip tooltip = new Tooltip("Target inclusion within " + target + " blocks");
         targetBlocks.setTooltip(tooltip);
+        targetBlocks.setAccessibleText(tooltip.getText());
         targetBlocks.valueProperty().addListener(targetBlocksListener);
     }
 
@@ -1493,7 +1502,7 @@ public class SendController extends WalletFormController implements Initializabl
             broadcastTransactionService.setOnFailed(failedEvent -> {
                 proxyWorker.end();
                 log.error("Error broadcasting notification transaction", failedEvent.getSource().getException());
-                AppServices.showErrorDialog("Error broadcasting notification transaction", failedEvent.getSource().getException().getMessage());
+                AppServices.showErrorDialog("Error broadcasting notification transaction", "The server returned an error when broadcasting the notification transaction. The server response is contained in the log (See Help > Show Log File).");
             });
             ServiceProgressDialog progressDialog = new ServiceProgressDialog("Broadcast", "Broadcast Notification Transaction", new DialogImage(DialogImage.Type.PAYNYM), proxyWorker);
             progressDialog.initOwner(notificationButton.getScene().getWindow());

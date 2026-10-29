@@ -8,6 +8,7 @@ import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.MnemonicException;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
+import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
 import com.sparrowwallet.sparrow.event.KeystoreImportEvent;
 import com.sparrowwallet.sparrow.io.ImportException;
@@ -77,6 +78,8 @@ public class XprvKeystoreImportPane extends TitledDescriptionPane {
 
     private void createImportButton() {
         importButton = new SplitMenuButton();
+        //A split button is not named by its text for screen readers
+        importButton.accessibleTextProperty().bind(importButton.textProperty());
         importButton.setAlignment(Pos.CENTER_RIGHT);
         importButton.setText("Import Keystore");
         setDefaultButton(importButton);
@@ -128,6 +131,7 @@ public class XprvKeystoreImportPane extends TitledDescriptionPane {
 
     private Node getXprvEntry(boolean displayOnly) {
         TextArea xprvField = new TextArea();
+        AppServices.moveFocusOnTab(xprvField);
         xprvField.setPrefRowCount(2);
         xprvField.setWrapText(true);
         xprvField.getStyleClass().add("fixed-width");
@@ -180,6 +184,11 @@ public class XprvKeystoreImportPane extends TitledDescriptionPane {
     private Node getDerivationEntry(List<ChildNumber> derivation) {
         TextField derivationField = new TextField();
         derivationField.setPromptText("Derivation path");
+        //Screen readers do not read prompt text, and accessible text on a text field would replace the path it reads, so it is named by an unshown label
+        Label derivationLabel = new Label("Derivation path");
+        derivationLabel.setVisible(false);
+        derivationLabel.setManaged(false);
+        derivationLabel.setLabelFor(derivationField);
         derivationField.setText(KeyDerivation.writePath(derivation));
         HBox.setHgrow(derivationField, Priority.ALWAYS);
 
@@ -207,6 +216,7 @@ public class XprvKeystoreImportPane extends TitledDescriptionPane {
         HBox contentBox = new HBox();
         contentBox.setAlignment(Pos.TOP_RIGHT);
         contentBox.setSpacing(20);
+        contentBox.getChildren().add(derivationLabel);
         contentBox.getChildren().add(derivationField);
         contentBox.getChildren().add(importDerivationButton);
         contentBox.setPadding(new Insets(10, 30, 10, 30));

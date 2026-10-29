@@ -59,6 +59,8 @@ public class MnemonicKeystorePane extends TitledDescriptionPane {
 
     private void createEnterMnemonicButton() {
         enterMnemonicButton = new SplitMenuButton();
+        //A split button is not named by its text for screen readers
+        enterMnemonicButton.accessibleTextProperty().bind(enterMnemonicButton.textProperty());
         enterMnemonicButton.setAlignment(Pos.CENTER_RIGHT);
         enterMnemonicButton.setText("Use 24 Words");
         defaultWordSizeProperty = new SimpleIntegerProperty(24);
@@ -321,7 +323,9 @@ public class MnemonicKeystorePane extends TitledDescriptionPane {
                 }
             };
             wordField.setMaxWidth(100);
-            wordField.setAccessibleText("Word " + (wordNumber + 1));
+            //Named through its label: accessible text on a text field replaces the word as the field's value
+            label.setAccessibleText("Word " + (wordNumber + 1));
+            label.setLabelFor(wordField);
             TextFormatter<?> formatter = new TextFormatter<>((TextFormatter.Change change) -> {
                 String text = change.getText();
                 // if text was added, fix the text to fit the requirements
@@ -448,6 +452,7 @@ public class MnemonicKeystorePane extends TitledDescriptionPane {
             Label usePassphraseLabel = new Label("Use passphrase?");
             usePassphraseLabel.managedProperty().bind(usePassphraseLabel.visibleProperty());
             CheckBox usePassphraseCheckbox = new CheckBox(" ");
+            usePassphraseCheckbox.setAccessibleText(usePassphraseLabel.getText());
             usePassphraseCheckbox.setDisable(!editable);
             usePassphraseCheckbox.managedProperty().bind(usePassphraseCheckbox.visibleProperty());
             usePassphraseLabel.visibleProperty().bind(usePassphraseCheckbox.visibleProperty());
@@ -468,6 +473,7 @@ public class MnemonicKeystorePane extends TitledDescriptionPane {
             Label passphraseLabel = new Label(getPassphraseLabel());
             passphraseLabel.managedProperty().bind(passphraseLabel.visibleProperty());
             passphraseField = new TextField();
+            passphraseLabel.setLabelFor(passphraseField);
             passphraseField.setPromptText(passphraseProperty.isEmpty().get() ? "Leave blank for none" : "");
             passphraseField.setText(passphraseProperty.get());
             passphraseField.setDisable(!editable);

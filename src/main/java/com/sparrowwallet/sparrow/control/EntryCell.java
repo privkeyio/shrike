@@ -19,6 +19,7 @@ import javafx.application.Platform;
 import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.geometry.Pos;
+import javafx.scene.AccessibleAttribute;
 import javafx.scene.control.*;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -99,6 +100,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 actionBox.getStyleClass().add("cell-actions");
                 Button viewTransactionButton = new Button("");
                 viewTransactionButton.setGraphic(getViewTransactionGlyph());
+                viewTransactionButton.setAccessibleText("View Transaction");
                 viewTransactionButton.setOnAction(event -> {
                     EventManager.get().post(new ViewTransactionEvent(this.getScene().getWindow(), transactionEntry.getBlockTransaction()));
                 });
@@ -109,6 +111,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                         Config.get().isIncludeMempoolOutputs() && transactionEntry.getWallet().allInputsFromWallet(blockTransaction.getHash())) {
                     Button increaseFeeButton = new Button("");
                     increaseFeeButton.setGraphic(getIncreaseFeeRBFGlyph());
+                    increaseFeeButton.setAccessibleText("Increase Fee (RBF)");
                     increaseFeeButton.setOnAction(event -> {
                         increaseFee(transactionEntry, false);
                     });
@@ -118,6 +121,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 if(blockTransaction.getHeight() <= 0 && containsWalletOutputs(transactionEntry)) {
                     Button cpfpButton = new Button("");
                     cpfpButton.setGraphic(getIncreaseFeeCPFPGlyph());
+                    cpfpButton.setAccessibleText("Increase Effective Fee (CPFP)");
                     cpfpButton.setOnAction(event -> {
                         createCpfp(transactionEntry);
                     });
@@ -141,6 +145,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 if(!nodeEntry.getNode().getWallet().isBip47() && nodeEntry.getNode().getWallet().getPolicyType() != PolicyType.SINGLE_SP) {
                     Button receiveButton = new Button("");
                     receiveButton.setGraphic(getReceiveGlyph());
+                    receiveButton.setAccessibleText("Receive To");
                     receiveButton.setOnAction(event -> {
                         EventManager.get().post(new ReceiveActionEvent(nodeEntry));
                         Platform.runLater(() -> EventManager.get().post(new ReceiveToEvent(nodeEntry)));
@@ -151,6 +156,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 if(canSignMessage(nodeEntry.getNode())) {
                     Button signMessageButton = new Button("");
                     signMessageButton.setGraphic(getSignMessageGlyph());
+                    signMessageButton.setAccessibleText("Sign/Verify Message");
                     signMessageButton.setOnAction(event -> {
                         MessageSignDialog messageSignDialog = new MessageSignDialog(nodeEntry.getWallet(), nodeEntry.getNode());
                         messageSignDialog.initOwner(getTreeTableView().getScene().getWindow());
@@ -178,6 +184,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 actionBox.getStyleClass().add("cell-actions");
                 Button viewTransactionButton = new Button("");
                 viewTransactionButton.setGraphic(getViewTransactionGlyph());
+                viewTransactionButton.setAccessibleText("View Transaction");
                 viewTransactionButton.setOnAction(event -> {
                     EventManager.get().post(new ViewTransactionEvent(this.getScene().getWindow(), hashIndexEntry.getBlockTransaction(), hashIndexEntry));
                 });
@@ -186,6 +193,7 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 if(hashIndexEntry.getType().equals(HashIndexEntry.Type.OUTPUT) && hashIndexEntry.isSpendable() && !hashIndexEntry.getHashIndex().isSpent()) {
                     Button spendUtxoButton = new Button("");
                     spendUtxoButton.setGraphic(getSendGlyph());
+                    spendUtxoButton.setAccessibleText("Send Selected");
                     spendUtxoButton.setOnAction(event -> {
                         sendSelectedUtxos(getTreeTableView(), hashIndexEntry);
                     });
@@ -195,6 +203,15 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 setGraphic(getTreeTableView().getStyleClass().contains("bip47") ? null : actionBox);
             }
         }
+    }
+
+    @Override
+    public Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+        if(attribute == AccessibleAttribute.HELP && getContextMenu() != null && getTreeTableView() instanceof CoinTreeTable) {
+            return CoinTreeTable.withRowActionsHelp(super.queryAccessibleAttribute(attribute, parameters));
+        }
+
+        return super.queryAccessibleAttribute(attribute, parameters);
     }
 
     @Override

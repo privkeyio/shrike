@@ -6,11 +6,10 @@ import com.sparrowwallet.drongo.protocol.ScriptOpCodes;
 import javafx.geometry.Pos;
 import org.controlsfx.control.decoration.Decorator;
 import org.controlsfx.control.decoration.GraphicDecoration;
-import org.fxmisc.richtext.CodeArea;
 
 import static com.sparrowwallet.drongo.protocol.ScriptType.*;
 
-public class ScriptArea extends CodeArea {
+public class ScriptArea extends ReadOnlyCodeArea {
     private Script script;
 
     public void appendScript(Script script) {

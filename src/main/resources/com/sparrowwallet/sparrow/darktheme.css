@@ -17,10 +17,6 @@
     -fx-prompt-text-fill: gray;
 }
 
-.button{
-    -fx-focus-traversable: false;
-}
-
 .button:hover{
     -fx-text-fill: white;
 }
@@ -163,6 +159,15 @@ HorizontalHeaderColumn > TableColumnHeader.column-header.table-column{
 
 .root .tab-pane > .tab-header-area > .headers-region > .tab:selected .tab-label .label,
 .root .tab-pane > .tab-header-area > .headers-region > .tab:hover .tab-label .label {
+    -fx-text-fill: white;
+}
+
+.root #tabs > .tab-header-area > .headers-region > .tab .tab-label {
+    -fx-text-fill: derive(white, -8%);
+}
+
+.root #tabs > .tab-header-area > .headers-region > .tab:selected .tab-label,
+.root #tabs > .tab-header-area > .headers-region > .tab:hover .tab-label {
     -fx-text-fill: white;
 }
 

@@ -38,7 +38,7 @@
                         <ToggleGroup fx:id="serverTypeToggleGroup" />
                     </toggleGroup>
                     <buttons>
-                        <ToggleButton fx:id="publicElectrumToggle" text="Public Server" toggleGroup="$serverTypeToggleGroup">
+                        <ToggleButton accessibleRole="RADIO_BUTTON" fx:id="publicElectrumToggle" text="Public Server" toggleGroup="$serverTypeToggleGroup">
                             <graphic>
                                 <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="12" icon="TOGGLE_ON" styleClass="public-electrum" />
                             </graphic>
@@ -46,7 +46,7 @@
                                 <ServerType fx:constant="PUBLIC_ELECTRUM_SERVER"/>
                             </userData>
                         </ToggleButton>
-                        <ToggleButton text="Bitcoin Knots" toggleGroup="$serverTypeToggleGroup">
+                        <ToggleButton accessibleRole="RADIO_BUTTON" text="Bitcoin Knots" toggleGroup="$serverTypeToggleGroup">
                             <graphic>
                                 <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="12" icon="TOGGLE_ON" styleClass="bitcoin-core" />
                             </graphic>
@@ -54,7 +54,7 @@
                                 <ServerType fx:constant="BITCOIN_CORE"/>
                             </userData>
                         </ToggleButton>
-                        <ToggleButton text="Private Electrum" toggleGroup="$serverTypeToggleGroup">
+                        <ToggleButton accessibleRole="RADIO_BUTTON" text="Private Electrum" toggleGroup="$serverTypeToggleGroup">
                             <graphic>
                                 <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="12" icon="TOGGLE_ON" styleClass="private-electrum" />
                             </graphic>
@@ -93,6 +93,7 @@
             <Field text="Proxy URL:">
                 <TextField fx:id="publicProxyHost" promptText="e.g. 127.0.0.1" />
                 <TextField fx:id="publicProxyPort" maxWidth="120" promptText="e.g. 9050/9150" />
+                <Label text="Proxy port" labelFor="$publicProxyPort" visible="false" managed="false" />
             </Field>
         </Fieldset>
     </Form>
@@ -101,10 +102,11 @@
         <Fieldset inputGrow="SOMETIMES" text="Bitcoin Knots RPC">
             <Field text="URL:">
                 <StackPane>
-                    <ComboBox fx:id="recentCoreServers" />
+                    <ComboBox fx:id="recentCoreServers" accessibleText="Choose a recent server" />
                     <ComboBoxTextField fx:id="coreHost" promptText="e.g. 127.0.0.1" comboProperty="$recentCoreServers" />
                 </StackPane>
                 <TextField fx:id="corePort" promptText="e.g. 8332" maxWidth="120" />
+                <Label text="Port" labelFor="$corePort" visible="false" managed="false" />
             </Field>
             <Field text="Authentication:">
                 <SegmentedButton>
@@ -112,12 +114,12 @@
                         <ToggleGroup fx:id="coreAuthToggleGroup" />
                     </toggleGroup>
                     <buttons>
-                        <ToggleButton text="Default" toggleGroup="$coreAuthToggleGroup">
+                        <ToggleButton accessibleRole="RADIO_BUTTON" text="Default" toggleGroup="$coreAuthToggleGroup">
                             <userData>
                                 <CoreAuthType fx:constant="COOKIE"/>
                             </userData>
                         </ToggleButton>
-                        <ToggleButton text="User / Pass" toggleGroup="$coreAuthToggleGroup">
+                        <ToggleButton accessibleRole="RADIO_BUTTON" text="User / Pass" toggleGroup="$coreAuthToggleGroup">
                             <userData>
                                 <CoreAuthType fx:constant="USERPASS"/>
                             </userData>
@@ -127,7 +129,7 @@
             </Field>
             <Field fx:id="coreDataDirField" text="Data Folder:" styleClass="label-button">
                 <TextField fx:id="coreDataDir"/>
-                <Button fx:id="coreDataDirSelect" maxWidth="35" minWidth="-Infinity" prefWidth="35">
+                <Button accessibleText="Select Data Folder" fx:id="coreDataDirSelect" maxWidth="35" minWidth="-Infinity" prefWidth="35">
                     <graphic>
                         <Glyph fontFamily="FontAwesome" icon="EDIT" fontSize="13" />
                     </graphic>
@@ -143,6 +145,7 @@
             <Field text="Proxy URL:">
                 <TextField fx:id="coreProxyHost" promptText="e.g. 127.0.0.1" />
                 <TextField fx:id="coreProxyPort" maxWidth="120" promptText="e.g. 9050/9150" />
+                <Label text="Proxy port" labelFor="$coreProxyPort" visible="false" managed="false" />
             </Field>
         </Fieldset>
     </Form>
@@ -151,17 +154,18 @@
         <Fieldset inputGrow="SOMETIMES" text="Private Electrum Server">
             <Field text="URL:">
                 <StackPane>
-                    <ComboBox fx:id="recentElectrumServers" />
+                    <ComboBox fx:id="recentElectrumServers" accessibleText="Choose a recent server" />
                     <ComboBoxTextField fx:id="electrumHost" promptText="e.g. 127.0.0.1 or Tor hostname (.onion)" comboProperty="$recentElectrumServers" />
                 </StackPane>
                 <TextField fx:id="electrumPort" promptText="e.g. 50001" maxWidth="120" />
+                <Label text="Port" labelFor="$electrumPort" visible="false" managed="false" />
             </Field>
             <Field text="Use SSL:">
                 <UnlabeledToggleSwitch fx:id="electrumUseSsl"/>
             </Field>
             <Field text="Certificate:" styleClass="label-button">
                 <TextField fx:id="electrumCertificate" promptText="Optional server certificate (.crt)"/>
-                <Button fx:id="electrumCertificateSelect" maxWidth="35" minWidth="-Infinity" prefWidth="35">
+                <Button accessibleText="Select Certificate" fx:id="electrumCertificateSelect" maxWidth="35" minWidth="-Infinity" prefWidth="35">
                     <graphic>
                         <Glyph fontFamily="FontAwesome" icon="EDIT" fontSize="13" />
                     </graphic>
@@ -173,6 +177,7 @@
             <Field text="Proxy URL:">
                 <TextField fx:id="proxyHost" promptText="e.g. 127.0.0.1" />
                 <TextField fx:id="proxyPort" maxWidth="120" promptText="e.g. 9050/9150" />
+                <Label text="Proxy port" labelFor="$proxyPort" visible="false" managed="false" />
             </Field>
         </Fieldset>
     </Form>

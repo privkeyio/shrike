@@ -26,6 +26,7 @@ import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.ChainTip;
 import com.sparrowwallet.sparrow.EventManager;
 import com.sparrowwallet.sparrow.SparrowWallet;
+import com.sparrowwallet.sparrow.event.RequestWalletRefreshEvent;
 import com.sparrowwallet.sparrow.event.TransactionProofsFailedEvent;
 import com.sparrowwallet.sparrow.event.TransactionProofsRefusedEvent;
 import com.sparrowwallet.sparrow.event.WalletNodeHistoryChangedEvent;
@@ -324,6 +325,31 @@ public class TransactionProofTest {
         assertEquals(chain.get(PROVEN_HEIGHT - 1).getHash(), proven.getBlockHash());
         assertEquals(chain.get(PROVEN_HEIGHT - 1).getTimeAsDate(), proven.getDate());
         assertEquals(PROVEN_HEIGHT, proven.getHeight());
+    }
+
+    /**
+     * A transaction handed out before a reorg reached the wallet holding it still carries the block that was replaced, and is not shown as proven
+     * whichever object a form is redrawn from. Proven again against the block that replaced it, it carries that one. One carrying a block the store
+     * still holds is returned as it is, at a height a reorg this session has reached as well as below it.
+     */
+    @Test
+    public void doesNotCarryABlockAReorgHasReplaced() throws Exception {
+        Transaction transaction = blockTransactions.getFirst();
+        BlockHeader proven = chain.get(PROVEN_HEIGHT - 1);
+        BlockTransaction held = new BlockTransaction(transaction.getTxId(), PROVEN_HEIGHT, proven.getTimeAsDate(), 0L, transaction, proven.getHash());
+        assertSame(held, ElectrumServer.getProvenTransaction(held));
+        ElectrumServer.lastReorgForkHeight = PROVEN_HEIGHT - 1;
+        assertSame(held, ElectrumServer.getProvenTransaction(held));
+
+        List<BlockHeader> replacement = reorganiseStoreAbove(PROVEN_HEIGHT - 1);
+
+        BlockTransaction shown = ElectrumServer.getProvenTransaction(held);
+        assertFalse(ElectrumServer.isProven(shown));
+        assertEquals(PROVEN_HEIGHT, shown.getHeight());
+        assertNull(shown.getDate());
+
+        ElectrumServer.provenTransactionHeaders.put(transaction.getTxId() + ":" + PROVEN_HEIGHT, replacement.getFirst());
+        assertEquals(replacement.getFirst().getHash(), ElectrumServer.getProvenTransaction(held).getBlockHash());
     }
 
     /**
@@ -1021,6 +1047,208 @@ public class TransactionProofTest {
     }
 
     /**
+     * A reorg reconciled after a pass has proven a payment new to the wallet, but before the pass has given its node the outputs, finds nothing of the
+     * wallet's above the fork, so the wallet neither invalidates the node nor refreshes. The pass does both once the outputs are in, and the refresh
+     * proves the payment again against the block that replaced the one it was proven in.
+     */
+    @Test
+    public void invalidatesANodeGivenOutputsAboveAForkReconciledDuringThePass() throws Exception {
+        Wallet wallet = testWallet();
+        WalletNode node = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        String scriptHash = ElectrumServer.getScriptHash(node);
+        Transaction payment = newConfirmedPayment(wallet, node);
+
+        assertTrue(reorganisingBeforeOutputs().fetchAndCalculateHistory(wallet, null, null));
+
+        assertNull(ElectrumServer.retrievedScriptHashes.get(scriptHash), "the node must be fetched again");
+        assertTrue(ElectrumServer.reorgInvalidatedScriptHashes.contains(scriptHash));
+        assertEquals(1, listener.getRefreshRequests());
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+
+        assertEquals(0, wallet.getWalletTransaction(payment.getTxId()).getHeight());
+        assertEquals(0, node.getTransactionOutputs().iterator().next().getHeight());
+    }
+
+    /**
+     * A payment usually arrives on a fetch of the one node its status changed on. Invalidated during that pass, the node has no status left, which
+     * is not the server reporting it has no history: its outputs stay for the refresh rather than being cleared until it runs.
+     */
+    @Test
+    public void keepsTheOutputsOfANodeInvalidatedDuringAPassOfThatNode() throws Exception {
+        Wallet wallet = testWallet();
+        WalletNode node = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        String scriptHash = ElectrumServer.getScriptHash(node);
+        Transaction payment = newConfirmedPayment(wallet, node);
+
+        assertTrue(reorganisingBeforeOutputs().fetchAndCalculateHistory(wallet, null, Set.of(node)));
+
+        assertEquals(1, node.getTransactionOutputs().size());
+        assertEquals(payment.getTxId(), node.getTransactionOutputs().iterator().next().getHash());
+        assertNull(ElectrumServer.retrievedScriptHashes.get(scriptHash));
+        assertTrue(ElectrumServer.reorgInvalidatedScriptHashes.contains(scriptHash));
+        assertEquals(1, listener.getRefreshRequests());
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+
+        assertEquals(0, wallet.getWalletTransaction(payment.getTxId()).getHeight());
+        assertEquals(0, node.getTransactionOutputs().iterator().next().getHeight());
+    }
+
+    /**
+     * A payment to the node the wallet does not yet hold, confirmed in a chain whose block at the proven height includes it, so its proof
+     * reconstructs until that block is replaced.
+     */
+    private Transaction newConfirmedPayment(Wallet wallet, WalletNode node) throws Exception {
+        Transaction payment = new Transaction();
+        payment.addInput(Sha256Hash.ZERO_HASH, 0, new Script(new byte[0]));
+        payment.addOutput(10000L, wallet.getAddress(node));
+
+        blockTransactions = List.of(payment, transaction(1), transaction(2), transaction(3));
+        chain = mineChain(Network.REGTEST.getGenesisHeader(), CHAIN_LENGTH, merkleRoot(txids(blockTransactions)));
+        ElectrumServer.getHeaderStore().truncate(0);
+        seedStore(chain, CHAIN_LENGTH - 1);
+        server = new FakeProofServer(chain);
+        ElectrumServer.electrumServerRpc = server;
+        server.serveTransaction(payment);
+        server.serveProof(payment, PROVEN_HEIGHT, 0);
+        ScriptHashTx confirmed = new ScriptHashTx(PROVEN_HEIGHT, payment.getTxId().toString(), null);
+        server.serveHistory(node.getDerivationPath(), confirmed);
+        server.serveScriptHashStatus(ElectrumServer.getScriptHash(node), ElectrumServer.getScriptHashStatus(List.of(confirmed)));
+
+        return payment;
+    }
+
+    /**
+     * A server whose pass has the store reorganised above the payment's block after its proof is verified and before node outputs are installed,
+     * the wallet's own invalidation running in between as it does on the application thread.
+     */
+    private ElectrumServer reorganisingBeforeOutputs() {
+        return new ElectrumServer() {
+            @Override
+            public void calculateNodeHistory(Wallet calculatingWallet, Map<WalletNode, Set<BlockTransactionHash>> nodeTransactionMap) {
+                try {
+                    reorganiseStoreAbove(PROVEN_HEIGHT - 1);
+                } catch(Exception e) {
+                    throw new IllegalStateException(e);
+                }
+                ElectrumServer.lastReorgForkHeight = PROVEN_HEIGHT - 1;
+                ElectrumServer.reorgCount++;
+                assertFalse(ElectrumServer.invalidateScriptHashesForReorg(calculatingWallet, PROVEN_HEIGHT - 1), "the wallet holds nothing above the fork yet");
+                super.calculateNodeHistory(calculatingWallet, nodeTransactionMap);
+            }
+        };
+    }
+
+    /**
+     * A reorg reaches the wallets that are open when the store is rewound. One opened afterwards, in the same session or a later one, still holds what
+     * the replaced block proved at a height the server reports unchanged, so its node is never fetched and the stored height never looked at. The
+     * block recorded with the transaction is compared with the store as the wallet is first fetched, and the height stands only if it is proven again.
+     */
+    @Test
+    public void reprovesAStoredHeightWhoseBlockTheStoreNoLongerHolds() throws Exception {
+        Wallet wallet = testWallet();
+        WalletNode node = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Transaction transaction = confirmedPayment(wallet, node);
+        wallet.updateTransactions(Map.of(transaction.getTxId(), new BlockTransaction(transaction.getTxId(), PROVEN_HEIGHT, null, 0L, transaction, Sha256Hash.ZERO_HASH)));
+        //The deepest a reorg since could have reached: one that forked a hundred blocks below a tip at the height the wallet last stored
+        wallet.setStoredBlockHeight(PROVEN_HEIGHT + 99);
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+
+        //The payment is not in the block the store holds at that height, so the proof served for it does not reconstruct
+        assertTrue(server.getProofRequests() > 0);
+        assertEquals(0, wallet.getWalletTransaction(transaction.getTxId()).getHeight());
+        assertEquals(0, node.getTransactionOutputs().iterator().next().getHeight());
+        assertFalse(ElectrumServer.reorgInvalidatedScriptHashes.contains(ElectrumServer.getScriptHash(node)), "the fetch that acted on the invalidation clears it");
+    }
+
+    /**
+     * The comparison is made by whichever fetch comes first once transactions are being verified, which need not be one of every node: the store
+     * may not have reached a stored proof on the first, or the server may only then have caught up to the last pin. A fetch of other nodes is
+     * widened to all of them, since the comparison is not made again and nothing else would revisit the node it invalidated.
+     */
+    @Test
+    public void reprovesAStoredHeightFromAFetchOfOtherNodes() throws Exception {
+        Wallet wallet = testWallet();
+        List<WalletNode> nodes = new ArrayList<>(wallet.getNode(KeyPurpose.RECEIVE).getChildren());
+        Transaction transaction = confirmedPayment(wallet, nodes.get(0));
+        wallet.updateTransactions(Map.of(transaction.getTxId(), new BlockTransaction(transaction.getTxId(), PROVEN_HEIGHT, null, 0L, transaction, Sha256Hash.ZERO_HASH)));
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, Set.of(nodes.get(1)));
+
+        assertTrue(server.getProofRequests() > 0);
+        assertEquals(0, wallet.getWalletTransaction(transaction.getTxId()).getHeight());
+        assertFalse(ElectrumServer.reorgInvalidatedScriptHashes.contains(ElectrumServer.getScriptHash(nodes.get(0))));
+    }
+
+    /**
+     * A store that has not reached a stored proof cannot be compared with it, so the comparison waits for a later fetch. The fetch in between moves
+     * the wallet's stored height on to the current tip, which for a wallet closed long enough is far above the transaction: the comparison is made
+     * from the height it was first made from, or the wait would end with nothing compared.
+     */
+    @Test
+    public void comparesAStoredHeightTheStoreReachesOnALaterFetch() throws Exception {
+        Wallet wallet = testWallet();
+        WalletNode node = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Transaction transaction = confirmedPayment(wallet, node);
+        wallet.updateTransactions(Map.of(transaction.getTxId(), new BlockTransaction(transaction.getTxId(), PROVEN_HEIGHT, null, 0L, transaction, Sha256Hash.ZERO_HASH)));
+        wallet.setStoredBlockHeight(PROVEN_HEIGHT);
+        HeaderStore store = ElectrumServer.getHeaderStore();
+        store.truncate(PROVEN_HEIGHT - 1);
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+        assertEquals(0, server.getProofRequests());
+        assertEquals(PROVEN_HEIGHT, wallet.getWalletTransaction(transaction.getTxId()).getHeight());
+
+        //What a completed fetch does to the stored height, and the header sync to the store, before the next one
+        wallet.setStoredBlockHeight(PROVEN_HEIGHT + 200);
+        store.append(chain.subList(PROVEN_HEIGHT - 1, CHAIN_LENGTH - 1));
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+        assertTrue(server.getProofRequests() > 0);
+        assertEquals(0, wallet.getWalletTransaction(transaction.getTxId()).getHeight());
+    }
+
+    /**
+     * The path that must keep working: a wallet whose stored proofs are of blocks the store still holds is fetched as it always was, with nothing
+     * proven again and no node fetched that the server reports unchanged.
+     */
+    @Test
+    public void doesNotReproveAStoredHeightWhoseBlockTheStoreHolds() throws Exception {
+        Wallet wallet = testWallet();
+        WalletNode node = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Transaction transaction = confirmedPayment(wallet, node);
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+
+        assertEquals(0, server.getProofRequests());
+        assertEquals(Integer.MAX_VALUE, ElectrumServer.lastReorgForkHeight);
+        assertEquals(PROVEN_HEIGHT, wallet.getWalletTransaction(transaction.getTxId()).getHeight());
+        assertEquals(PROVEN_HEIGHT, node.getTransactionOutputs().iterator().next().getHeight());
+        assertEquals(0, listener.getRefreshRequests());
+    }
+
+    /**
+     * A wallet was told of every reorg up to the height it stored, and none since can have rewound the store by more than the depth it accepts. A
+     * transaction further below the stored height than that is not compared, which is what leaves an ordinary wallet load reading nothing.
+     */
+    @Test
+    public void doesNotCompareAStoredHeightNoReorgSinceCouldHaveReached() throws Exception {
+        Wallet wallet = testWallet();
+        WalletNode node = wallet.getNode(KeyPurpose.RECEIVE).getChildren().iterator().next();
+        Transaction transaction = confirmedPayment(wallet, node);
+        wallet.updateTransactions(Map.of(transaction.getTxId(), new BlockTransaction(transaction.getTxId(), PROVEN_HEIGHT, null, 0L, transaction, Sha256Hash.ZERO_HASH)));
+        wallet.setStoredBlockHeight(PROVEN_HEIGHT + 100);
+
+        new ElectrumServer().fetchAndCalculateHistory(wallet, null, null);
+
+        assertEquals(0, server.getProofRequests());
+        assertEquals(Integer.MAX_VALUE, ElectrumServer.lastReorgForkHeight);
+        assertEquals(PROVEN_HEIGHT, wallet.getWalletTransaction(transaction.getTxId()).getHeight());
+    }
+
+    /**
      * A payment to the node, stored as confirmed and reported so by the server, as a wallet is when a reorg reaches it.
      */
     private Transaction confirmedPayment(Wallet wallet, WalletNode node) throws Exception {
@@ -1070,6 +1298,24 @@ public class TransactionProofTest {
 
         assertEquals(Set.of(demoted), nodeTransactionMap.keySet());
         assertEquals(1, demoted.getTransactionOutputs().size());     //cache state only: the node's own outputs are untouched
+    }
+
+    /**
+     * Replaces the blocks the store holds above the given height with empty ones as far as it reached, returning those that replaced them.
+     */
+    private List<BlockHeader> reorganiseStoreAbove(int forkHeight) throws Exception {
+        HeaderStore store = ElectrumServer.getHeaderStore();
+        int tipHeight = store.getTipHeight();
+        store.truncate(forkHeight);
+        List<BlockHeader> replacement = new ArrayList<>();
+        BlockHeader previous = chain.get(forkHeight - 1);
+        for(int height = forkHeight + 1; height <= tipHeight; height++) {
+            previous = mineHeader(previous, Sha256Hash.ZERO_HASH, CHAIN_TIME + 100 + height);
+            store.append(previous);
+            replacement.add(previous);
+        }
+
+        return replacement;
     }
 
     private static Map<WalletNode, Set<BlockTransactionHash>> references(Wallet wallet, BlockTransactionHash... references) {
@@ -1459,6 +1705,12 @@ public class TransactionProofTest {
         private Wallet reportedWallet;
         private int failedEvents;
         private int refusedEvents;
+        private int refreshRequests;
+
+        @Subscribe
+        public void requestWalletRefresh(RequestWalletRefreshEvent event) {
+            refreshRequests++;
+        }
 
         @Subscribe
         public void transactionProofsFailed(TransactionProofsFailedEvent event) {
@@ -1492,6 +1744,10 @@ public class TransactionProofTest {
 
         public int getRefusedEvents() {
             return refusedEvents;
+        }
+
+        public int getRefreshRequests() {
+            return refreshRequests;
         }
 
         public boolean isEmpty() {

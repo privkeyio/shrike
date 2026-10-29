@@ -28,6 +28,8 @@ public class WalletTransactionsEntry extends Entry {
 
     public WalletTransactionsEntry(Wallet wallet, boolean includeAllChildWallets) {
         super(wallet, wallet.getDisplayName(), getWalletTransactions(wallet, includeAllChildWallets).stream().map(WalletTransaction::getTransactionEntry).collect(Collectors.toList()));
+        Map<HashIndex, BlockTransactionHashIndex> walletTxos = getWalletTxos(wallet, includeAllChildWallets);
+        getChildren().removeIf(entry -> !((TransactionEntry)entry).isComplete(walletTxos));
         calculateBalances(false); //No need to resort
     }
 
@@ -73,10 +75,7 @@ public class WalletTransactionsEntry extends Entry {
     }
 
     public void updateTransactions() {
-        Map<HashIndex, BlockTransactionHashIndex> walletTxos = getWallet().getWalletTxos().entrySet().stream()
-                .collect(Collectors.toUnmodifiableMap(entry -> new HashIndex(entry.getKey().getHash(), entry.getKey().getIndex()), Map.Entry::getKey,
-                        BinaryOperator.maxBy(BlockTransactionHashIndex::compareTo)));
-
+        Map<HashIndex, BlockTransactionHashIndex> walletTxos = getWalletTxos(getWallet(), false);
         Collection<WalletTransactionsEntry.WalletTransaction> entries = getWalletTransactions(getWallet(), false);
         Set<Entry> current = entries.stream().map(WalletTransaction::getTransactionEntry).collect(Collectors.toCollection(LinkedHashSet::new));
         Set<Entry> previous = new LinkedHashSet<>(getChildren());
@@ -88,13 +87,9 @@ public class WalletTransactionsEntry extends Entry {
         getChildren().removeAll(entriesRemoved);
         entriesRemoved.forEach(entry -> ((TransactionEntry)entry).unregisterForConfirmations());
 
-        calculateBalances(true);
-
+        //An incomplete entry is missing some of the wallet's inputs or outputs, so its value is not yet what the transaction moved. It is removed
+        //before the balances are calculated and left out of the notification, and is added again once the rest of the history has arrived
         List<Entry> entriesComplete = entriesAdded.stream().filter(txEntry -> ((TransactionEntry)txEntry).isComplete(walletTxos)).collect(Collectors.toList());
-        if(!entriesComplete.isEmpty()) {
-            EventManager.get().post(new NewWalletTransactionsEvent(getWallet(), entriesAdded.stream().map(entry -> (TransactionEntry)entry).collect(Collectors.toList())));
-        }
-
         if(entriesAdded.size() > entriesComplete.size()) {
             Set<Entry> incompleteEntries = new HashSet<>(entriesAdded);
             entriesComplete.forEach(incompleteEntries::remove);
@@ -106,6 +101,12 @@ public class WalletTransactionsEntry extends Entry {
             }
         }
 
+        calculateBalances(true);
+
+        if(!entriesComplete.isEmpty()) {
+            EventManager.get().post(new NewWalletTransactionsEvent(getWallet(), entriesComplete.stream().map(entry -> (TransactionEntry)entry).collect(Collectors.toList())));
+        }
+
         entriesComplete.forEach(entry -> ((TransactionEntry)entry).registerForConfirmations());
     }
 
@@ -115,6 +116,16 @@ public class WalletTransactionsEntry extends Entry {
 
     public void unregisterForConfirmations() {
         getChildren().forEach(entry -> ((TransactionEntry)entry).unregisterForConfirmations());
+    }
+
+    private static Map<HashIndex, BlockTransactionHashIndex> getWalletTxos(Wallet wallet, boolean includeAllChildWallets) {
+        List<Wallet> wallets = new ArrayList<>(List.of(wallet));
+        if(includeAllChildWallets) {
+            wallets.addAll(wallet.getChildWallets());
+        }
+
+        return wallets.stream().flatMap(txoWallet -> txoWallet.getWalletTxos().keySet().stream())
+                .collect(Collectors.toUnmodifiableMap(txo -> new HashIndex(txo.getHash(), txo.getIndex()), txo -> txo, BinaryOperator.maxBy(BlockTransactionHashIndex::compareTo)));
     }
 
     private static Collection<WalletTransaction> getWalletTransactions(Wallet wallet, boolean includeAllChildWallets) {
