@@ -49,7 +49,7 @@ public class Storage {
 
     private Persistence persistence;
     private File walletFile;
-    private ECKey encryptionPubKey;
+    private volatile ECKey encryptionPubKey;    //set where the wallet is saved, and read by the queued updates that follow on another thread
 
     public Storage(File walletFile) {
         this(!walletFile.exists() || walletFile.getName().endsWith("." + PersistenceType.DB.getExtension()) ? PersistenceType.DB : PersistenceType.JSON, walletFile);
@@ -229,8 +229,18 @@ public class Storage {
         }
     }
 
+    public boolean isInWalletsDir() {
+        //Resolve the folder rather than the file, so that a wallet file symlinked into the wallets folder is treated as being in it
+        Path walletDir = walletFile.getAbsoluteFile().getParentFile().toPath();
+        try {
+            return walletDir.toRealPath().startsWith(getWalletsDir().toPath().toRealPath());
+        } catch(IOException e) {
+            return walletDir.normalize().startsWith(getWalletsDir().toPath().toAbsolutePath().normalize());
+        }
+    }
+
     public void backupWallet() throws IOException {
-        if(walletFile.toPath().startsWith(getWalletsDir().toPath())) {
+        if(isInWalletsDir()) {
             backupWallet(null);
         }
     }
@@ -269,7 +279,10 @@ public class Storage {
     }
 
     public void deleteBackups() {
-        deleteBackups(null);
+        //Backups are only written for wallets in the wallets folder, so any backups matching the name of a wallet elsewhere belong to another wallet
+        if(isInWalletsDir()) {
+            deleteBackups(null);
+        }
     }
 
     private void deleteBackups(String prefix) {
@@ -306,15 +319,19 @@ public class Storage {
 
     private WalletAndKey migrateType(PersistenceType type, Wallet wallet, ECKey encryptionKey) throws IOException, StorageException {
         File existingFile = walletFile;
+        Persistence existingPersistence = persistence;
+        String walletName = persistence.getWalletName(walletFile, null);
+        File migratedFile = new File(walletFile.getParentFile(), walletName + "." + type.getExtension());
+        if(migratedFile.exists()) {
+            throw new StorageException("Cannot migrate " + existingFile.getName() + " as " + migratedFile.getName() + " already exists. Move or rename one of these files and try again.");
+        }
 
         try {
             AsymmetricKeyDeriver keyDeriver = persistence.getKeyDeriver();
             persistence = type.getInstance();
             persistence.setKeyDeriver(keyDeriver);
-            walletFile = new File(walletFile.getParentFile(), wallet.getName() + "." + type.getExtension());
-            if(walletFile.exists()) {
-                walletFile.delete();
-            }
+            walletFile = migratedFile;
+            wallet.setName(walletName);
 
             saveWallet(wallet);
             if(type == PersistenceType.DB) {
@@ -329,6 +346,11 @@ public class Storage {
 
             return persistence.loadWallet(this, null, encryptionKey);
         } catch(Exception e) {
+            //Remove the partial migration and return to the original file so opening it again can retry
+            persistence.close();
+            migratedFile.delete();
+            persistence = existingPersistence;
+            walletFile = existingFile;
             existingFile = null;
             throw e;
         } finally {

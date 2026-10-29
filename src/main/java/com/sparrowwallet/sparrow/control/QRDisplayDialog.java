@@ -10,7 +10,6 @@ import com.sparrowwallet.hummingbird.LegacyUREncoder;
 import com.sparrowwallet.hummingbird.registry.RegistryType;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
-import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.io.ImportException;
 import com.sparrowwallet.hummingbird.UR;
@@ -63,6 +62,8 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
 
     private QREncoding encoding = QREncoding.UR;
 
+    private QRDensity defaultDensity;
+
     private final ImageView qrImageView;
 
     private AnimateQRService animateQRService;
@@ -92,13 +93,22 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
         this.bbqr = bbqr;
         this.addLegacyEncodingOption = bbqr == null && addLegacyEncodingOption;
 
-        this.urEncoder = new UREncoder(ur, Config.get().getQrDensity().getMaxUrFragmentLength(), MIN_FRAGMENT_LENGTH, 0);
+        if(bbqr != null && (defaultEncoding == QREncoding.BBQR || Config.get().getQrEncoding() == QREncoding.BBQR)) {
+            encoding = QREncoding.BBQR;
+        }
+
+        //Until a density level is chosen, use the level closest to the previous density setting, which applied to each encoding separately
+        QRDensity legacyDensity = Config.get().getLegacyQrDensity();
+        if(encoding == QREncoding.BBQR) {
+            this.defaultDensity = legacyDensity == QRDensity.LOW ? QRDensity.NORMAL : QRDensity.HIGH;
+        } else {
+            this.defaultDensity = legacyDensity == QRDensity.LOW ? QRDensity.LOW : QRDensity.NORMAL;
+        }
+
+        this.urEncoder = new UREncoder(ur, getQRDensity().getMaxUrFragmentLength(), MIN_FRAGMENT_LENGTH, 0);
 
         if(bbqr != null) {
-            this.bbqrEncoder = new BBQREncoder(bbqr.type(), DEFAULT_BBQR_ENCODING, bbqr.data(), Config.get().getQrDensity().getMaxBbqrFragmentLength(), 0);
-            if(defaultEncoding == QREncoding.BBQR || Config.get().getQrEncoding() == QREncoding.BBQR) {
-                encoding = QREncoding.BBQR;
-            }
+            this.bbqrEncoder = new BBQREncoder(bbqr.type(), DEFAULT_BBQR_ENCODING, bbqr.data(), getQRDensity().getMaxBbqrFragmentLength(), 0);
         }
 
         this.raw = raw;
@@ -107,9 +117,11 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
         final DialogPane dialogPane = new QRDisplayDialogPane();
         setDialogPane(dialogPane);
         AppServices.setStageIcon(dialogPane.getScene().getWindow());
+        setTitle("QR Code");
 
         StackPane stackPane = new StackPane();
         qrImageView = new ImageView();
+        qrImageView.setAccessibleText("QR code");
         stackPane.getChildren().add(qrImageView);
 
         qrImageView.setOnScroll(scrollEvent -> {
@@ -180,9 +192,11 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
         final DialogPane dialogPane = new QRDisplayDialogPane();
         setDialogPane(dialogPane);
         AppServices.setStageIcon(dialogPane.getScene().getWindow());
+        setTitle("QR Code");
 
         StackPane stackPane = new StackPane();
         qrImageView = new ImageView();
+        qrImageView.setAccessibleText("QR code");
         stackPane.getChildren().add(qrImageView);
 
         dialogPane.setContent(Borders.wrap(stackPane).lineBorder().buildAll());
@@ -302,16 +316,20 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
         restartAnimation();
     }
 
+    private QRDensity getQRDensity() {
+        return Config.get().getQrDensity() == null ? defaultDensity : Config.get().getQrDensity();
+    }
+
     private void changeQRDensity() {
         if(animateQRService != null) {
             animateQRService.cancel();
         }
 
         if(bbqr != null) {
-            this.bbqrEncoder = new BBQREncoder(bbqr.type(), DEFAULT_BBQR_ENCODING, bbqr.data(), Config.get().getQrDensity().getMaxBbqrFragmentLength(), 0);
+            this.bbqrEncoder = new BBQREncoder(bbqr.type(), DEFAULT_BBQR_ENCODING, bbqr.data(), getQRDensity().getMaxBbqrFragmentLength(), 0);
         }
 
-        this.urEncoder = new UREncoder(ur, Config.get().getQrDensity().getMaxUrFragmentLength(), MIN_FRAGMENT_LENGTH, 0);
+        this.urEncoder = new UREncoder(ur, getQRDensity().getMaxUrFragmentLength(), MIN_FRAGMENT_LENGTH, 0);
 
         restartAnimation();
     }
@@ -365,29 +383,32 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
 
                     return legacy;
                 } else {
-                    Button density = new Button(buttonType.getText());
-                    density.setPrefWidth(160);
-                    density.setGraphicTextGap(5);
-                    updateDensityButton(density);
+                    ComboBox<QRDensity> densityComboBox = new ComboBox<>();
+                    densityComboBox.getItems().addAll(QRDensity.values());
+                    densityComboBox.setValue(getQRDensity());
 
                     final ButtonBar.ButtonData buttonData = buttonType.getButtonData();
-                    ButtonBar.setButtonData(density, buttonData);
-                    density.setOnAction(event -> {
+                    ButtonBar.setButtonData(densityComboBox, buttonData);
+                    densityComboBox.setOnAction(_ -> {
+                        if(densityComboBox.getValue() == getQRDensity()) {
+                            return;
+                        }
+
                         if(!initialDensityChange && !isSinglePart()) {
                             Optional<ButtonType> optButtonType = AppServices.showWarningDialog("Discard progress?", "Changing the QR code density means any progress on the receiving device must be discarded. Proceed?", ButtonType.NO, ButtonType.YES);
                             if(optButtonType.isPresent() && optButtonType.get() == ButtonType.YES) {
                                 initialDensityChange = true;
                             } else {
+                                densityComboBox.setValue(getQRDensity());
                                 return;
                             }
                         }
 
-                        Config.get().setQrDensity(Config.get().getQrDensity() == QRDensity.NORMAL ? QRDensity.LOW : QRDensity.NORMAL);
-                        updateDensityButton(density);
+                        Config.get().setQrDensity(densityComboBox.getValue());
                         changeQRDensity();
                     });
 
-                    return density;
+                    return densityComboBox;
                 }
             } else if(buttonType.getButtonData() == ButtonBar.ButtonData.OK_DONE) {
                 Button scanButton = (Button)super.createButton(buttonType);
@@ -410,6 +431,8 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
                 encodingComboBox.setCellFactory(_ -> new QREncodingListCell());
                 encodingComboBox.setButtonCell(new QREncodingButtonCell());
                 encodingComboBox.setValue(encoding);
+                //Named like the density pop-up beside it ("Medium Density"); the button shows only the encoding's name
+                encodingComboBox.accessibleTextProperty().bind(encodingComboBox.valueProperty().map(value -> value.getName() + " Encoding"));
                 encodingComboBox.setOnAction(_ -> {
                     setEncoding(encodingComboBox.getValue());
                     Config.get().setQrEncoding(encodingComboBox.getValue());
@@ -429,15 +452,6 @@ public class QRDisplayDialog extends Dialog<ButtonType> {
                 legacy.setGraphic(getGlyph(FontAwesome5.Glyph.CHECK_CIRCLE));
             } else {
                 legacy.setGraphic(getGlyph(FontAwesome5.Glyph.BAN));
-            }
-        }
-
-        private void updateDensityButton(Button density) {
-            density.setText(Config.get().getQrDensity() == QRDensity.NORMAL ? "Less Dense" : "More Dense");
-            if(Config.get().getQrDensity() == QRDensity.NORMAL) {
-                density.setGraphic(getGlyph(FontAwesome5.Glyph.MAGNIFYING_GLASS_PLUS));
-            } else {
-                density.setGraphic(getGlyph(FontAwesome5.Glyph.MAGNIFYING_GLASS_MINUS));
             }
         }
     }

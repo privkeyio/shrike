@@ -2,6 +2,8 @@ package com.sparrowwallet.sparrow.control;
 
 import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.UnitFormat;
+import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.net.FeeRatesSource;
 import javafx.application.Platform;
 import javafx.scene.Node;
@@ -27,6 +29,7 @@ public class FeeRangeSlider extends Slider {
         setShowTickLabels(true);
         setShowTickMarks(true);
         setBlockIncrement(Math.log(1.02) / Math.log(2));
+        updateAccessibleText();
 
         setLabelFormatter(new StringConverter<>() {
             @Override
@@ -50,6 +53,7 @@ public class FeeRangeSlider extends Slider {
             if(newValue != null) {
                 updateMaxFeeRange(newValue.doubleValue());
             }
+            updateAccessibleText();
         });
 
         setOnScroll(event -> {
@@ -135,6 +139,12 @@ public class FeeRangeSlider extends Slider {
             setMax(AppServices.getFeeRatesRange().size() - 1);
             updateTrackHighlight();
         }
+    }
+
+    private void updateAccessibleText() {
+        //Screen readers announce a slider's value as a percentage of its range, so the fee rate is given in the name
+        UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
+        setAccessibleText("Fee rate " + format.getCurrencyFormat().format(getFeeRate()) + " sats/vB");
     }
 
     public boolean isLongFeeRange() {

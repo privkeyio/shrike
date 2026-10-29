@@ -32,7 +32,7 @@
         <Fieldset inputGrow="ALWAYS">
             <Field text="Pay to:">
                 <StackPane>
-                    <ComboBox fx:id="openWallets" />
+                    <ComboBox fx:id="openWallets" accessibleText="Choose a wallet to pay to" />
                     <ComboBoxTextField fx:id="address" styleClass="address-text-field" comboProperty="$openWallets">
                         <tooltip>
                             <Tooltip text="Address, payment code or bitcoin: URI"/>
@@ -57,7 +57,7 @@
                         </FXCollections>
                     </items>
                 </ComboBox>
-                <Label style="-fx-pref-width: 15" />
+                <Region style="-fx-pref-width: 15" />
                 <FiatLabel fx:id="fiatAmount" />
                 <Group managed="false" translateY="38">
                     <Label fx:id="amountStatus" text="Insufficient funds">
@@ -85,7 +85,7 @@
     <Form GridPane.columnIndex="2" GridPane.rowIndex="0">
         <Fieldset inputGrow="ALWAYS" style="-fx-padding: 5 0 0 0">
             <HBox>
-                <Button text="" fx:id="scanQrButton" onAction="#scanQrAddress" prefHeight="30">
+                <Button accessibleText="Scan QR Code" text="" fx:id="scanQrButton" onAction="#scanQrAddress" prefHeight="30">
                     <graphic>
                         <Glyph fontFamily="Font Awesome 5 Free Solid" fontSize="12" icon="CAMERA" />
                     </graphic>

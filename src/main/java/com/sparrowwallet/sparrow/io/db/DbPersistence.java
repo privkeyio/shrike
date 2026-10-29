@@ -195,12 +195,18 @@ public class DbPersistence implements Persistence {
 
     @Override
     public void updateWallet(Storage storage, Wallet wallet, ECKey encryptionPubKey) throws StorageException {
-        String newPassword = getFilePassword(encryptionPubKey);
-        String currentPassword = getDatasourcePassword();
-
         updateExecutor.execute(() -> {
             try {
-                if(dataSource != null && currentPassword != null && newPassword == null) {
+                //An update can wait behind others while the wallet is saved with a password added or removed. The key it was queued with is then
+                //no longer the key of the storage, and it leaves the encryption of the file as it finds it
+                ECKey storagePubKey = storage.getEncryptionPubKey();
+                boolean queuedWithStorageKey = Objects.equals(encryptionPubKey, Storage.NO_PASSWORD_KEY.equals(storagePubKey) ? null : storagePubKey);
+                String newPassword = getFilePassword(encryptionPubKey);
+                String currentPassword = getDatasourcePassword();
+
+                if(!queuedWithStorageKey) {
+                    update(storage, wallet, currentPassword);
+                } else if(dataSource != null && currentPassword != null && newPassword == null) {
                     //Removing encryption: write data first
                     update(storage, wallet, currentPassword);
                     updatePassword(storage, encryptionPubKey);
@@ -675,7 +681,9 @@ public class DbPersistence implements Persistence {
     //created alongside the wallet file so that the replacement is an atomic move, and so that the copy is not written to a shared temp location.
     private void changeFileEncryption(File walletFile, String currentPassword, String newPassword) throws IOException, SQLException {
         File dbFile = walletFile.getAbsoluteFile();
-        Path encryptionDir = Files.createTempDirectory(dbFile.getParentFile().toPath(), "sparrowenc");
+        //A wallet file may be a symlink to a file stored elsewhere, so convert and replace the file it points to rather than the link
+        Path targetFile = dbFile.toPath().toRealPath();
+        Path encryptionDir = Files.createTempDirectory(targetFile.getParent(), "sparrowenc");
 
         try {
             Path encryptionFile = encryptionDir.resolve(dbFile.getName());
@@ -701,9 +709,9 @@ public class DbPersistence implements Persistence {
             }
 
             try {
-                Files.move(encryptionFile, dbFile.toPath(), StandardCopyOption.ATOMIC_MOVE);
+                Files.move(encryptionFile, targetFile, StandardCopyOption.ATOMIC_MOVE);
             } catch(AtomicMoveNotSupportedException e) {
-                Files.move(encryptionFile, dbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                Files.move(encryptionFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {
             File[] remainingFiles = encryptionDir.toFile().listFiles();
@@ -1030,23 +1038,6 @@ public class DbPersistence implements Persistence {
     public void walletTableChanged(WalletTableChangedEvent event) {
         if(persistsFor(event.getWallet()) && event.getTableType() != null && event.getWallet().getWalletTable(event.getTableType()) != null) {
             updateExecutor.execute(() -> dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).walletTable = event.getWalletTable());
-        }
-    }
-
-    @Subscribe
-    public void walletMixConfigChanged(WalletMixConfigChangedEvent event) {
-        if(persistsFor(event.getWallet()) && event.getWallet().getMixConfig() != null) {
-            updateExecutor.execute(() -> dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).mixConfig = true);
-        }
-    }
-
-    @Subscribe
-    public void walletUtxoMixesChanged(WalletUtxoMixesChangedEvent event) {
-        if(persistsFor(event.getWallet())) {
-            updateExecutor.execute(() -> {
-                dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).changedUtxoMixes.putAll(event.getChangedUtxoMixes());
-                dirtyPersistablesMap.computeIfAbsent(event.getWallet(), key -> new DirtyPersistables()).removedUtxoMixes.putAll(event.getRemovedUtxoMixes());
-            });
         }
     }
 

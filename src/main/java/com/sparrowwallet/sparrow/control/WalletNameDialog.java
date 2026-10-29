@@ -72,7 +72,7 @@ public class WalletNameDialog extends Dialog<WalletNameDialog.NameAndBirthDate> 
 
         Glyph wallet = new Glyph(FontAwesome5.FONT_NAME, FontAwesome5.Glyph.WALLET);
         wallet.setFontSize(50);
-        dialogPane.setGraphic(wallet);
+        dialogPane.setGraphic(new DecorativePane(wallet));
 
         final VBox content = new VBox(20);
         name = (CustomTextField)TextFields.createClearableTextField();
@@ -81,7 +81,12 @@ public class WalletNameDialog extends Dialog<WalletNameDialog.NameAndBirthDate> 
             change.setText(change.getText().replaceAll("[\\\\/:*?\"<>|;`]", "_"));
             return change;
         }));
-        content.getChildren().add(name);
+        //The dialog header is the field's only label, so a hidden label names it for screen readers with no visible change
+        Label nameLabel = new Label("Wallet name");
+        nameLabel.setLabelFor(name);
+        nameLabel.setVisible(false);
+        nameLabel.setManaged(false);
+        content.getChildren().addAll(name, nameLabel);
 
         HBox existingBox = new HBox(10);
         existingCheck = new CheckBox("Has existing transactions");

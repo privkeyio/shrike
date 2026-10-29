@@ -48,7 +48,7 @@
                         </Field>
                         <Field text="Transactions:">
                             <CopyableLabel fx:id="transactionCount" />
-                            <Button fx:id="exportCsv" maxHeight="25" onAction="#exportCSV" translateY="-1" styleClass="icon-button">
+                            <Button accessibleText="Export Transactions" fx:id="exportCsv" maxHeight="25" onAction="#exportCSV" translateY="-1" styleClass="icon-button">
                                 <graphic>
                                     <Glyph fontFamily="Font Awesome 5 Free Solid" icon="ARROW_CIRCLE_DOWN" fontSize="12" />
                                 </graphic>
@@ -68,7 +68,7 @@
                     </yAxis>
                 </BalanceChart>
             </GridPane>
-            <MasterDetailPane fx:id="transactionsMasterDetail" detailSide="BOTTOM" VBox.vgrow="ALWAYS">
+            <MasterDetailPane fx:id="transactionsMasterDetail" detailSide="BOTTOM" VBox.vgrow="ALWAYS" focusTraversable="false">
                 <masterNode>
                     <TransactionsTreeTable fx:id="transactionsTable" tableType="TRANSACTIONS" />
                 </masterNode>

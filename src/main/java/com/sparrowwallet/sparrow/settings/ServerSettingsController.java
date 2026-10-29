@@ -195,6 +195,8 @@ public class ServerSettingsController extends SettingsDetailController {
         publicElectrumForm.managedProperty().bind(publicElectrumForm.visibleProperty());
         coreForm.managedProperty().bind(coreForm.visibleProperty());
         electrumForm.managedProperty().bind(electrumForm.visibleProperty());
+        //The results area is blank until a connection is tested, and an empty, unnamed Tab stop tells a screen reader user nothing
+        testResults.focusTraversableProperty().bind(testResults.textProperty().isNotEmpty());
         serverTypeToggleGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
             if(serverTypeToggleGroup.getSelectedToggle() != null) {
                 ServerType existingType = config.getServerType();
@@ -291,7 +293,7 @@ public class ServerSettingsController extends SettingsDetailController {
         recentCoreServers.setCellFactory(value -> new ServerCell());
         recentCoreServers.setItems(getObservableServerList(Config.get().getRecentCoreServers()));
         recentCoreServers.prefWidthProperty().bind(coreHost.widthProperty());
-        recentCoreServers.valueProperty().addListener((observable, oldValue, newValue) -> {
+        coreHost.<Server>setOnChoose(newValue -> {
             if(newValue != null) {
                 if(newValue == MANAGE_ALIASES_SERVER) {
                     ServerAliasDialog serverAliasDialog = new ServerAliasDialog(ServerType.BITCOIN_CORE);
@@ -337,7 +339,7 @@ public class ServerSettingsController extends SettingsDetailController {
         recentElectrumServers.setCellFactory(value -> new ServerCell());
         recentElectrumServers.setItems(getObservableServerList(Config.get().getRecentElectrumServers()));
         recentElectrumServers.prefWidthProperty().bind(electrumHost.widthProperty());
-        recentElectrumServers.valueProperty().addListener((observable, oldValue, newValue) -> {
+        electrumHost.<Server>setOnChoose(newValue -> {
             if(newValue != null) {
                 if(newValue == MANAGE_ALIASES_SERVER) {
                     ServerAliasDialog serverAliasDialog = new ServerAliasDialog(ServerType.ELECTRUM_SERVER);
@@ -381,6 +383,13 @@ public class ServerSettingsController extends SettingsDetailController {
         });
 
         electrumUseSsl.selectedProperty().addListener((observable, oldValue, newValue) -> {
+            //An alias names a server at one protocol as it does at one port, so changing either leaves the host it names to be connected to as entered.
+            //The config is set whether or not the host field changed, since an alias that is also its server's host is replaced by the same text
+            Server aliasServer = config.getRecentElectrumServers().stream().filter(server -> electrumHost.getText().equals(server.getAlias())).findFirst().orElse(null);
+            if(aliasServer != null && !isElectrumAliasEntered(aliasServer)) {
+                electrumHost.setText(aliasServer.getHost());
+            }
+            electrumHost.setLeft(aliasServer != null && isElectrumAliasEntered(aliasServer) ? getGlyph(FontAwesome5.Glyph.TAG, null) : null);
             setElectrumServerInConfig(config);
             electrumCertificate.setDisable(!newValue);
             electrumCertificateSelect.setDisable(!newValue);
@@ -448,6 +457,8 @@ public class ServerSettingsController extends SettingsDetailController {
             setFieldsEditable(true);
             editConnection.setVisible(false);
             testConnection.setVisible(true);
+            //The button pressed is hidden, so focus moves to the one that takes its place rather than falling to the dialog's Close button
+            testConnection.requestFocus();
         });
 
         PublicElectrumServer configPublicElectrumServer = PublicElectrumServer.fromServer(config.getPublicElectrumServer());
@@ -468,10 +479,11 @@ public class ServerSettingsController extends SettingsDetailController {
             if(server != null) {
                 coreHost.setLeft(getGlyph(FontAwesome5.Glyph.TAG, null));
             }
-            coreHost.setText(server == null || server.getAlias() == null ? hostAndPort.getHost() : server.getAlias());
+            //The port is set first, as an alias in the host field is only kept while the port field holds the port of the server it names
             if(hostAndPort.hasPort()) {
                 corePort.setText(Integer.toString(hostAndPort.getPort()));
             }
+            coreHost.setText(server == null || server.getAlias() == null ? hostAndPort.getHost() : server.getAlias());
         } else {
             coreHost.setText("127.0.0.1");
             corePort.setText(String.valueOf(Network.get().getDefaultPort()));
@@ -502,10 +514,10 @@ public class ServerSettingsController extends SettingsDetailController {
             if(server != null) {
                 electrumHost.setLeft(getGlyph(FontAwesome5.Glyph.TAG, null));
             }
-            electrumHost.setText(server == null || server.getAlias() == null ? hostAndPort.getHost() : server.getAlias());
             if(hostAndPort.hasPort()) {
                 electrumPort.setText(Integer.toString(hostAndPort.getPort()));
             }
+            electrumHost.setText(server == null || server.getAlias() == null ? hostAndPort.getHost() : server.getAlias());
         }
 
         File certificateFile = config.getElectrumServerCert();
@@ -670,6 +682,8 @@ public class ServerSettingsController extends SettingsDetailController {
         if(serverBanner != null) {
             testResults.setText(testResults.getText() + "\nServer Banner: " + serverBanner);
         }
+        //Focus moves to the result so it is read out once the test finishes
+        testResults.requestFocus();
     }
 
     private void showConnectionFailure(Throwable exception) {
@@ -718,6 +732,7 @@ public class ServerSettingsController extends SettingsDetailController {
 
         testResults.setText("Could not connect:\n\n" + reason);
         testConnection.setGraphic(getGlyph(FontAwesome5.Glyph.EXCLAMATION_CIRCLE, "failure"));
+        testResults.requestFocus();
     }
 
     private void setupValidation() {
@@ -785,7 +800,7 @@ public class ServerSettingsController extends SettingsDetailController {
     private ChangeListener<String> getBitcoinCoreListener(Config config) {
         return (observable, oldValue, newValue) -> {
             Server existingServer = config.getRecentCoreServers().stream().filter(server -> coreHost.getText().equals(server.getAlias())).findFirst().orElse(null);
-            if(existingServer != null && !existingServer.portEquals(corePort.getText())) {
+            if(existingServer != null && !isCoreAliasEntered(existingServer)) {
                 coreHost.setText(existingServer.getHost());
                 existingServer = null;
             }
@@ -811,7 +826,7 @@ public class ServerSettingsController extends SettingsDetailController {
 
     private void setCoreServerInConfig(Config config) {
         Server existingServer = config.getRecentCoreServers().stream().filter(server -> coreHost.getText().equals(server.getAlias())).findFirst().orElse(null);
-        if(existingServer != null) {
+        if(existingServer != null && isCoreAliasEntered(existingServer)) {
             config.setCoreServer(existingServer);
             return;
         }
@@ -821,6 +836,9 @@ public class ServerSettingsController extends SettingsDetailController {
         if(hostAsString != null && !hostAsString.isEmpty() && portAsInteger != null && isValidPort(portAsInteger)) {
             Protocol protocol = portAsInteger == Protocol.HTTPS.getDefaultPort() || hostAsString.equalsIgnoreCase(coreHttpsHost) ? Protocol.HTTPS : Protocol.HTTP;
             config.setCoreServer(new Server(protocol.toUrlString(hostAsString, portAsInteger)));
+        } else if(hostAsString != null && !hostAsString.isEmpty() && !corePort.getText().isBlank()) {
+            //An invalid port leaves the server as it was, rather than connecting to the default port as an empty one does
+            return;
         } else if(hostAsString != null && !hostAsString.isEmpty()) {
             Protocol protocol = hostAsString.equalsIgnoreCase(coreHttpsHost) ? Protocol.HTTPS : Protocol.HTTP;
             config.setCoreServer(new Server(protocol.toUrlString(hostAsString)));
@@ -832,6 +850,13 @@ public class ServerSettingsController extends SettingsDetailController {
     //An entered https is retained for the host it was entered on only, so that editing the host to another server returns to http as a typed or scanned host without a scheme does
     private void setCoreProtocol(Protocol protocol, String host) {
         coreHttpsHost = protocol == Protocol.HTTPS ? host : null;
+    }
+
+    //Whether an alias in the host field still names its server: an alias names a server at one port and one protocol, and an https entered for a
+    //host that is also the alias of an http server is not that server. Only such an alias can be the host an entered https leaves in the field
+    private boolean isCoreAliasEntered(Server aliasServer) {
+        return aliasServer.portEquals(corePort.getText()) && !(aliasServer.getProtocol() == Protocol.HTTP && aliasServer.getHost().equalsIgnoreCase(coreHttpsHost)
+                && aliasServer.getHost().equalsIgnoreCase(aliasServer.getAlias()));
     }
 
     private void showRemoteCoreServerWarning(Config config) {
@@ -892,7 +917,7 @@ public class ServerSettingsController extends SettingsDetailController {
     private ChangeListener<String> getElectrumServerListener(Config config) {
         return (observable, oldValue, newValue) -> {
             Server existingServer = config.getRecentElectrumServers().stream().filter(server -> electrumHost.getText().equals(server.getAlias())).findFirst().orElse(null);
-            if(existingServer != null && !existingServer.portEquals(electrumPort.getText())) {
+            if(existingServer != null && !isElectrumAliasEntered(existingServer)) {
                 electrumHost.setText(existingServer.getHost());
                 existingServer = null;
             }
@@ -916,9 +941,14 @@ public class ServerSettingsController extends SettingsDetailController {
         };
     }
 
+    //Whether an alias in the host field still names its server at the port and protocol entered
+    private boolean isElectrumAliasEntered(Server aliasServer) {
+        return aliasServer.portEquals(electrumPort.getText()) && aliasServer.getProtocol() == getProtocol();
+    }
+
     private void setElectrumServerInConfig(Config config) {
         Server existingServer = config.getRecentElectrumServers().stream().filter(server -> electrumHost.getText().equals(server.getAlias())).findFirst().orElse(null);
-        if(existingServer != null) {
+        if(existingServer != null && isElectrumAliasEntered(existingServer)) {
             config.setElectrumServer(existingServer);
             return;
         }
@@ -927,6 +957,9 @@ public class ServerSettingsController extends SettingsDetailController {
         Integer portAsInteger = getPort(electrumPort.getText());
         if(hostAsString != null && !hostAsString.isEmpty() && portAsInteger != null && isValidPort(portAsInteger)) {
             config.setElectrumServer(new Server(getProtocol().toUrlString(hostAsString, portAsInteger)));
+        } else if(hostAsString != null && !hostAsString.isEmpty() && !electrumPort.getText().isBlank()) {
+            //An invalid port leaves the server as it was, rather than connecting to the default port as an empty one does
+            return;
         } else if(hostAsString != null && !hostAsString.isEmpty()) {
             config.setElectrumServer(new Server(getProtocol().toUrlString(hostAsString)));
         } else {
@@ -951,6 +984,10 @@ public class ServerSettingsController extends SettingsDetailController {
         String proxyServer = null;
         if(hostAsString != null && !hostAsString.isBlank() && portAsInteger != null && isValidPort(portAsInteger)) {
             proxyServer = HostAndPort.fromParts(hostAsString, portAsInteger).toString();
+        } else if(hostAsString != null && !hostAsString.isBlank() && !proxyPort.getText().isBlank()) {
+            //An invalid port leaves the proxy as it was, rather than connecting to the default port as an empty one does. With no proxy to leave, the
+            //default port is used all the same, since a proxy that fails to connect is better than connecting without one
+            proxyServer = config.getProxyServer() != null ? config.getProxyServer() : HostAndPort.fromHost(hostAsString).toString();
         } else if(hostAsString != null && !hostAsString.isBlank()) {
             proxyServer = HostAndPort.fromHost(hostAsString).toString();
         }

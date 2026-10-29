@@ -35,6 +35,7 @@ import org.controlsfx.validation.decoration.StyleClassValidationDecoration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tornadofx.control.Field;
+import tornadofx.control.Form;
 
 import javax.smartcardio.CardException;
 import java.net.URL;
@@ -47,6 +48,9 @@ public class KeystoreController extends WalletFormController implements Initiali
     private static final Logger log = LoggerFactory.getLogger(KeystoreController.class);
 
     private Keystore keystore;
+
+    @FXML
+    private Form keystoreForm;
 
     @FXML
     private StackPane selectSourcePane;
@@ -141,6 +145,8 @@ public class KeystoreController extends WalletFormController implements Initiali
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         EventManager.get().register(this);
+        AppServices.moveFocusOnTab(xpub);
+        AppServices.moveFocusOnTab(spScan);
     }
 
     public void setKeystore(WalletForm walletForm, Keystore keystore) {
@@ -153,6 +159,8 @@ public class KeystoreController extends WalletFormController implements Initiali
         Platform.runLater(this::setupValidation);
 
         selectSourcePane.managedProperty().bind(selectSourcePane.visibleProperty());
+        //The source choice covers the keystore form, so its fields must not be reachable by keyboard or screen reader underneath
+        keystoreForm.visibleProperty().bind(selectSourcePane.visibleProperty().not());
         if(keystore.isValid() || keystore.getExtendedPublicKey() != null) {
             selectSourcePane.setVisible(false);
         } else if(!getWalletForm().getWallet().isMasterWallet() && keystore.getKeyDerivation() != null) {
@@ -294,6 +302,7 @@ public class KeystoreController extends WalletFormController implements Initiali
             xpubField.setText(Network.get().getXpubHeader().getDisplayName() + " / " + header.getDisplayName() + ":");
             switchXpubHeader.setDisable(false);
             switchXpubHeader.setTooltip(new Tooltip("Show as " + header.getDisplayName()));
+            switchXpubHeader.setAccessibleText("Show as " + header.getDisplayName());
         } else {
             xpubField.setText(Network.get().getXpubHeader().getDisplayName() + ":");
             switchXpubHeader.setDisable(true);
@@ -329,6 +338,7 @@ public class KeystoreController extends WalletFormController implements Initiali
             derivation.setText(getWalletForm().getWallet().getPolicyType() == PolicyType.SINGLE_SP ? KeyDerivation.writePath(KeyDerivation.getBip352Derivation(0))
                     : getWalletForm().getWallet().getScriptType().getDefaultDerivationPath());
             selectSourcePane.setVisible(false);
+            label.requestFocus();
         }
     }
 
@@ -359,7 +369,7 @@ public class KeystoreController extends WalletFormController implements Initiali
                     }
 
                     ExtendedKey extendedPublicKey = ExtendedKey.fromDescriptor(newValue);
-                    return walletForm.getWallet().getKeystores().stream().filter(k -> k != keystore && extendedPublicKey.equals(k.getExtendedPublicKey())).findFirst()
+                    return walletForm.getWallet().getKeystores().stream().filter(k -> k != keystore && extendedPublicKey.hasSameKey(k.getExtendedPublicKey())).findFirst()
                             .map(k -> ValidationResult.fromError(c, "Extended key matches " + k.getLabel())).orElseGet(ValidationResult::new);
                 }
         ));
@@ -486,6 +496,7 @@ public class KeystoreController extends WalletFormController implements Initiali
         Optional<Keystore> result = dlg.showAndWait();
         if(result.isPresent()) {
             selectSourcePane.setVisible(false);
+            label.requestFocus();
 
             Keystore importedKeystore = result.get();
             if(keystore.getSource() == KeystoreSource.SW_SEED && importedKeystore.getSource() != KeystoreSource.SW_SEED) {
@@ -548,6 +559,12 @@ public class KeystoreController extends WalletFormController implements Initiali
                 Storage.DecryptWalletService decryptWalletService = new Storage.DecryptWalletService(copy, password.get());
                 decryptWalletService.setOnSucceeded(workerStateEvent -> {
                     EventManager.get().post(new StorageEvent(getWalletForm().getWalletId(), TimedEvent.Action.END, "Done"));
+
+                    if(getWalletForm().isLocked()) {
+                        AppServices.showErrorDialog("Wallet Locked", "The wallet was locked before the keystore could be displayed.");
+                        return;
+                    }
+
                     Wallet decryptedWallet = decryptWalletService.getValue();
                     showPrivate(decryptedWallet.getKeystores().get(keystoreIndex));
                 });
@@ -759,10 +776,12 @@ public class KeystoreController extends WalletFormController implements Initiali
                 String otherPub = keystore.getExtendedPublicKey().getExtendedKey(header);
                 xpub.setText(otherPub);
                 switchXpubHeader.setTooltip(new Tooltip("Show as " + Network.get().getXpubHeader().getDisplayName()));
+                switchXpubHeader.setAccessibleText("Show as " + Network.get().getXpubHeader().getDisplayName());
             } else {
                 String xPub = keystore.getExtendedPublicKey().getExtendedKey();
                 xpub.setText(xPub);
                 switchXpubHeader.setTooltip(new Tooltip("Show as " + header.getDisplayName()));
+                switchXpubHeader.setAccessibleText("Show as " + header.getDisplayName());
             }
         }
     }

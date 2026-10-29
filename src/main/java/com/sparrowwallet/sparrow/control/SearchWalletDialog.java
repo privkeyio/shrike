@@ -17,9 +17,8 @@ import javafx.application.Platform;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.collections.ListChangeListener;
 import javafx.event.ActionEvent;
+import javafx.scene.AccessibleAttribute;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -59,7 +58,8 @@ public class SearchWalletDialog extends Dialog<Entry> {
         dialogPane.getStylesheets().add(AppServices.class.getResource("wallet/wallet.css").toExternalForm());
         dialogPane.getStylesheets().add(AppServices.class.getResource("search.css").toExternalForm());
         AppServices.setStageIcon(dialogPane.getScene().getWindow());
-        dialogPane.setHeaderText(showWallet ? "Search All Wallets" : "Search Wallet " + walletForms.get(0).getMasterWallet().getName());
+        setTitle(showWallet ? "Search All Wallets" : "Search Wallet " + walletForms.get(0).getMasterWallet().getName());
+        dialogPane.setHeaderText(getTitle());
         dialogPane.setGraphic(new DialogImage(DialogImage.Type.SPARROW));
 
         VBox vBox = new VBox();
@@ -137,6 +137,10 @@ public class SearchWalletDialog extends Dialog<Entry> {
         amountCol.setCellFactory(p -> new CoinCell());
         results.getColumns().add(amountCol);
 
+        @SuppressWarnings("unchecked")
+        TreeTableColumn<Entry, String> firstColumn = (TreeTableColumn<Entry, String>)results.getColumns().getFirst();
+        firstColumn.setCellFactory(_ -> new RowSummaryCell());
+
         vBox.getChildren().addAll(form, results);
         dialogPane.setContent(vBox);
 
@@ -160,7 +164,7 @@ public class SearchWalletDialog extends Dialog<Entry> {
         setResultConverter(buttonType -> buttonType == showButtonType ? results.getSelectionModel().getSelectedItem().getValue() : null);
 
         results.getSelectionModel().getSelectedIndices().addListener((ListChangeListener<Integer>) c -> {
-            showButton.setDisable(results.getSelectionModel().getSelectedCells().isEmpty()
+            showButton.setDisable(results.getSelectionModel().getSelectedItem() == null
                     || walletForms.stream().map(WalletForm::getWallet).noneMatch(wallet -> wallet == results.getSelectionModel().getSelectedItem().getValue().getWallet()));
         });
 
@@ -384,6 +388,21 @@ public class SearchWalletDialog extends Dialog<Entry> {
         @Override
         public Function getWalletFunction() {
             return null;
+        }
+    }
+
+    //The first column reads the whole row as the results are moved through
+    private static class RowSummaryCell extends TreeTableCell<Entry, String> {
+        @Override
+        protected void updateItem(String item, boolean empty) {
+            super.updateItem(item, empty);
+            setText(empty ? null : item);
+        }
+
+        @Override
+        public Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+            String summary = attribute == AccessibleAttribute.TEXT ? CoinTreeTable.getRowSummary(this) : null;
+            return summary != null ? summary : super.queryAccessibleAttribute(attribute, parameters);
         }
     }
 

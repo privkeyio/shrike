@@ -95,6 +95,8 @@ public class CodexKeystoreImportPane extends TitledDescriptionPane {
 
     private void createImportButton() {
         importButton = new SplitMenuButton();
+        //A split button is not named by its text for screen readers
+        importButton.accessibleTextProperty().bind(importButton.textProperty());
         importButton.setAlignment(Pos.CENTER_RIGHT);
         importButton.setText("Import Keystore");
         setDefaultButton(importButton);
@@ -197,6 +199,8 @@ public class CodexKeystoreImportPane extends TitledDescriptionPane {
             showHideLink.setText("Show Derivation...");
             showHideLink.setVisible(false);
             setContent(getDerivationEntry(getDefaultDerivation()));
+            //The create button goes with the replaced content, so focus moves on to the import button that replaces it
+            importButton.requestFocus();
         });
 
         rightBox.getChildren().add(calculateButton);
@@ -214,6 +218,11 @@ public class CodexKeystoreImportPane extends TitledDescriptionPane {
     private Node getDerivationEntry(List<ChildNumber> derivation) {
         TextField derivationField = new TextField();
         derivationField.setPromptText("Derivation path");
+        //Screen readers do not read prompt text, and accessible text on a text field would replace the path it reads, so it is named by an unshown label
+        Label derivationLabel = new Label("Derivation path");
+        derivationLabel.setVisible(false);
+        derivationLabel.setManaged(false);
+        derivationLabel.setLabelFor(derivationField);
         derivationField.setText(KeyDerivation.writePath(derivation));
         HBox.setHgrow(derivationField, Priority.ALWAYS);
 
@@ -241,6 +250,7 @@ public class CodexKeystoreImportPane extends TitledDescriptionPane {
         HBox contentBox = new HBox();
         contentBox.setAlignment(Pos.TOP_RIGHT);
         contentBox.setSpacing(20);
+        contentBox.getChildren().add(derivationLabel);
         contentBox.getChildren().add(derivationField);
         contentBox.getChildren().add(importDerivationButton);
         contentBox.setPadding(new Insets(10, 30, 10, 30));

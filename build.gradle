@@ -21,7 +21,7 @@ def headless = "true".equals(System.getProperty("java.awt.headless"))
 def skipInstallers = "true".equals(findProperty("skipInstallers"))
 
 group = 'com.sparrowwallet'
-version = '2.5.5'
+version = '2.5.6'
 
 /*
     The Debian revision, taken from the fork release number so apt can order releases.
@@ -87,7 +87,7 @@ tasks.withType(AbstractArchiveTask).configureEach {
 }
 
 javafx {
-    version = "26"
+    version = "27.0.1"
     modules = [ 'javafx.controls', 'javafx.fxml', 'javafx.swing', 'javafx.graphics' ]
 }
 
@@ -125,10 +125,10 @@ dependencies {
     implementation('com.github.arteam:simple-json-rpc-server:1.3') {
         exclude group: 'org.slf4j'
     }
-    implementation('com.fasterxml.jackson.core:jackson-databind:2.21.1')
-    implementation('com.sparrowwallet:hummingbird:1.7.5')
+    implementation('com.fasterxml.jackson.core:jackson-databind:2.21.8')
+    implementation('com.sparrowwallet:hummingbird:1.7.6')
     implementation('co.nstant.in:cbor:0.9')
-    implementation('io.github.doblon8:openpnp-capture-java:0.0.3')
+    implementation('io.github.doblon8:openpnp-capture-java:0.0.4')
     implementation("io.matthewnelson.kmp-tor:runtime:2.5.0")
     implementation("io.matthewnelson.kmp-tor:resource-exec-tor-gpl:409.5.0")
     implementation('org.jetbrains.kotlinx:kotlinx-coroutines-javafx:1.10.2') {
@@ -387,6 +387,52 @@ jlink {
     }
 }
 
+if(os.macOsX) {
+    tasks.jpackageImage.finalizedBy('patchLauncherUuid')
+    tasks.jpackage.dependsOn('patchLauncherUuid')
+}
+
+// Give the launcher a Shrike LC_UUID, since the stock jpackage launcher shares its Mach-O UUID with every app packaged by the same JDK
+tasks.register('patchLauncherUuid') {
+    dependsOn tasks.jpackageImage
+    def appDir = layout.buildDirectory.dir('jpackage/Shrike.app').get().asFile
+    //Seeded from the bundle identifier, not upstream's, so Shrike and Sparrow installed side by side do not share one
+    def launcherUuid = UUID.nameUUIDFromBytes("io.privkey.shrike.${osArch}".getBytes('UTF-8'))
+    doLast {
+        def launcher = new File(appDir, 'Contents/MacOS/Shrike')
+        byte[] bytes = launcher.bytes
+        def buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        if(Integer.toUnsignedLong(buffer.getInt(0)) != 0xfeedfacfL) {
+            throw new GradleException("Launcher ${launcher} is not a thin 64-bit Mach-O binary")
+        }
+
+        int ncmds = buffer.getInt(16)
+        int offset = 32
+        int uuidOffset = -1
+        for(int i = 0; i < ncmds && uuidOffset < 0; i++) {
+            if(buffer.getInt(offset) == 0x1b) {
+                uuidOffset = offset + 8
+            } else {
+                offset += buffer.getInt(offset + 4)
+            }
+        }
+        if(uuidOffset < 0) {
+            throw new GradleException("Launcher ${launcher} has no LC_UUID load command")
+        }
+
+        buffer.order(java.nio.ByteOrder.BIG_ENDIAN)
+        buffer.putLong(uuidOffset, launcherUuid.mostSignificantBits)
+        buffer.putLong(uuidOffset + 8, launcherUuid.leastSignificantBits)
+        launcher.bytes = bytes
+
+        //Patching invalidates the ad hoc signature applied by jpackage, so re-sign
+        def codesign = new ProcessBuilder('codesign', '--force', '--sign', '-', appDir.path).inheritIO().start()
+        if(codesign.waitFor() != 0) {
+            throw new GradleException("Ad hoc signing ${appDir} failed")
+        }
+    }
+}
+
 if(os.linux) {
     tasks.jlink.finalizedBy('addUserWritePermission', 'copyUdevRules', 'extractNativeLibraries')
     tasks.jpackageImage.finalizedBy('prepareResourceDir')
@@ -578,6 +624,7 @@ tasks.register('extractNativeLibraries') {
 extraJavaModuleInfo {
     module('no.tornado:tornadofx-controls', 'tornadofx.controls') {
         exports('tornadofx.control')
+        exports('tornadofx.control.skin')
         requires('javafx.controls')
     }
     module('com.github.arteam:simple-json-rpc-core', 'simple.json.rpc.core') {

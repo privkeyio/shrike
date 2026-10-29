@@ -14,10 +14,12 @@ import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -207,6 +209,93 @@ public class DbPersistenceTest {
         Assertions.assertTrue(storage.getWalletFile().exists(), "wallet was written to a file other than the one tracked");
         Assertions.assertTrue(isWalletValid(storage.getWalletFile(), null));
         Assertions.assertEquals(otherHash, getFileHash(otherFile), "another wallet file was written by a wallet name containing the extension");
+    }
+
+    /**
+     * An update is queued with the key the storage held at the time, and can still be waiting when the wallet is saved with a password added. Run
+     * after that save, it must leave the file as the save left it.
+     */
+    @Test
+    public void updateQueuedBeforeAPasswordWasAddedLeavesTheFileEncrypted() throws Exception {
+        Persistence persistence = PersistenceType.DB.getInstance();
+        Storage storage = new Storage(persistence, tempDir.resolve("Savings." + PersistenceType.DB.getExtension()).toFile());
+        storage.setKeyDeriver(new Argon2KeyDeriver());
+        storage.setEncryptionPubKey(Storage.NO_PASSWORD_KEY);
+        Wallet wallet = createWallet("Savings");
+        storage.saveWallet(wallet);
+
+        setPassword(storage, "pass");
+        persistence.updateWallet(storage, wallet);      //as it was queued, with no key
+        storage.closeAndWait();
+
+        Assertions.assertTrue(Storage.isEncrypted(storage.getWalletFile()));
+        Assertions.assertTrue(isWalletValid(storage.getWalletFile(), "pass"));
+    }
+
+    /**
+     * The same in the other direction: an update queued while the wallet had a password does not put it back once it has been removed.
+     */
+    @Test
+    public void updateQueuedBeforeAPasswordWasRemovedLeavesTheFileUnencrypted() throws Exception {
+        Persistence persistence = PersistenceType.DB.getInstance();
+        Storage storage = new Storage(persistence, tempDir.resolve("Savings." + PersistenceType.DB.getExtension()).toFile());
+        storage.setKeyDeriver(new Argon2KeyDeriver());
+        storage.setEncryptionPubKey(Storage.NO_PASSWORD_KEY);
+        Wallet wallet = createWallet("Savings");
+        storage.saveWallet(wallet);
+        setPassword(storage, "pass");
+        ECKey queuedKey = storage.getEncryptionPubKey();
+
+        setPassword(storage, null);
+        persistence.updateWallet(storage, wallet, queuedKey);
+        storage.closeAndWait();
+
+        Assertions.assertFalse(Storage.isEncrypted(storage.getWalletFile()));
+        Assertions.assertTrue(isWalletValid(storage.getWalletFile(), null));
+    }
+
+    /**
+     * The path that must keep working: a password added without a full save reaches the file through the update queued with the new key.
+     */
+    @Test
+    public void updateQueuedWithANewPasswordEncryptsTheFile() throws Exception {
+        Storage storage = createUnencryptedWallet("Savings");
+        Wallet wallet = createWallet("Savings");
+        storage.saveWallet(wallet);
+
+        storage.setEncryptionPubKey(ECKey.fromPublicOnly(storage.getKeyDeriver().deriveECKey("pass")));
+        storage.updateWallet(wallet);
+        storage.closeAndWait();
+
+        Assertions.assertTrue(Storage.isEncrypted(storage.getWalletFile()));
+        Assertions.assertTrue(isWalletValid(storage.getWalletFile(), "pass"));
+    }
+
+    @Test
+    public void passwordChangeKeepsSymlinkedWalletInPlace() throws Exception {
+        Storage targetStorage = createUnencryptedWallet("Volume");
+        targetStorage.closeAndWait();
+        Path walletsDir = Files.createDirectory(tempDir.resolve("wallets"));
+        Path link;
+        try {
+            link = Files.createSymbolicLink(walletsDir.resolve("Savings." + PersistenceType.DB.getExtension()), targetStorage.getWalletFile().toPath());
+        } catch(UnsupportedOperationException | IOException e) {
+            //Windows only allows symbolic links to be created in Developer Mode or when elevated
+            throw Assumptions.<RuntimeException>abort("Symbolic links cannot be created: " + e.getMessage());
+        }
+
+        Storage storage = new Storage(PersistenceType.DB, link.toFile());
+        storage.setKeyDeriver(new Argon2KeyDeriver());
+        storage.loadUnencryptedWallet();
+        setPassword(storage, "pass");
+        storage.closeAndWait();
+
+        Assertions.assertTrue(Files.isSymbolicLink(link), "the symlink was replaced by the wallet file");
+        Assertions.assertTrue(isWalletValid(targetStorage.getWalletFile(), "pass"));
+        String[] walletsDirFiles = walletsDir.toFile().list();
+        Assertions.assertEquals(1, walletsDirFiles == null ? -1 : walletsDirFiles.length, "files were left in the wallets directory");
+        String[] tempFiles = tempDir.toFile().list((dir, name) -> name.equals("temp.db") || name.startsWith("sparrowenc"));
+        Assertions.assertEquals(0, tempFiles == null ? -1 : tempFiles.length, "temporary files were left alongside the wallet file");
     }
 
     @Test

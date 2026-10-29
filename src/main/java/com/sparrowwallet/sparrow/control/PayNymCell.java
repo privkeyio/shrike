@@ -6,8 +6,11 @@ import com.sparrowwallet.sparrow.event.WalletLabelChangedEvent;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.paynym.PayNym;
 import com.sparrowwallet.sparrow.paynym.PayNymController;
+import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.AccessibleAttribute;
+import javafx.scene.AccessibleRole;
 import javafx.scene.control.*;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
@@ -38,6 +41,7 @@ public class PayNymCell extends ListCell<PayNym> {
         if(empty || payNym == null) {
             setText(null);
             setGraphic(null);
+            setAccessibleText(null);
         } else {
             BorderPane pane = new BorderPane();
             pane.setPadding(new Insets(5, 5,5, 5));
@@ -54,10 +58,12 @@ public class PayNymCell extends ListCell<PayNym> {
             labelBox.getChildren().add(label);
             pane.setLeft(labelBox);
 
+            boolean linked = false;
             if(getListView().getUserData() == Boolean.TRUE || (!contact && payNymController != null && payNymController.isFollowing(payNym) == Boolean.FALSE)) {
                 HBox hBox = new HBox();
                 hBox.setAlignment(Pos.CENTER);
                 Button button = new Button("Add Contact");
+                button.setAccessibleText("Add Contact " + payNym.nymName());
                 hBox.getChildren().add(button);
                 pane.setRight(hBox);
                 button.setOnAction(event -> {
@@ -69,12 +75,14 @@ public class PayNymCell extends ListCell<PayNym> {
                 hBox.setAlignment(Pos.CENTER);
                 pane.setRight(hBox);
 
-                if(payNymController.isLinked(payNym)) {
+                linked = payNymController.isLinked(payNym);
+                if(linked) {
                     Label linkedLabel = new Label("Linked", getLinkGlyph());
                     linkedLabel.setTooltip(new Tooltip("You can send non-collaboratively to this contact."));
                     hBox.getChildren().add(linkedLabel);
                 } else {
                     Button linkButton = new Button("Link Contact", getLinkGlyph());
+                    linkButton.setAccessibleText("Link Contact " + payNym.nymName());
                     linkButton.setTooltip(new Tooltip("Create a transaction that will enable you to send non-collaboratively to this contact."));
                     hBox.getChildren().add(linkButton);
                     linkButton.setOnAction(event -> {
@@ -87,12 +95,9 @@ public class PayNymCell extends ListCell<PayNym> {
 
             setText(null);
             setGraphic(pane);
-
-            if(contact && payNymController != null && payNymController.isLinked(payNym)) {
-                setContextMenu(new PayNymCellContextMenu(payNym));
-            } else {
-                setContextMenu(null);
-            }
+            //The name is drawn in the graphic, so the row is named after the contact, and whether it is linked, for screen readers
+            setAccessibleText(payNym.nymName() + (linked ? ", linked" : ""));
+            setContextMenu(linked ? new PayNymCellContextMenu(payNym) : null);
         }
     }
 
@@ -100,6 +105,20 @@ public class PayNymCell extends ListCell<PayNym> {
         Glyph failGlyph = new Glyph(FontAwesome5.FONT_NAME, FontAwesome5.Glyph.LINK);
         failGlyph.setFontSize(12);
         return failGlyph;
+    }
+
+    @Override
+    public Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+        //Empty cells fill the space below the last PayNym and have nothing to read
+        if(isEmpty()) {
+            if(attribute == AccessibleAttribute.ROLE) {
+                return AccessibleRole.NODE;
+            } else if(attribute == AccessibleAttribute.CHILDREN) {
+                return FXCollections.emptyObservableList();
+            }
+        }
+
+        return super.queryAccessibleAttribute(attribute, parameters);
     }
 
     private class PayNymCellContextMenu extends ContextMenu {

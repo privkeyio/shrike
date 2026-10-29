@@ -144,6 +144,14 @@
                         <MenuItem fx:id="showWalletSummary" mnemonicParsing="false" text="Show Wallet Summary" onAction="#showWalletSummary"/>
                         <MenuItem fx:id="showAllWalletsSummary" mnemonicParsing="false" text="Show All Wallets Summary" onAction="#showAllWalletsSummary"/>
                         <SeparatorMenuItem />
+                        <Menu fx:id="goToMenu" mnemonicParsing="false" text="Go To">
+                            <MenuItem mnemonicParsing="false" text="Transactions" accelerator="Shortcut+1" userData="TRANSACTIONS" onAction="#goToFunction"/>
+                            <MenuItem mnemonicParsing="false" text="Send" accelerator="Shortcut+2" userData="SEND" onAction="#goToFunction"/>
+                            <MenuItem mnemonicParsing="false" text="Receive" accelerator="Shortcut+3" userData="RECEIVE" onAction="#goToFunction"/>
+                            <MenuItem mnemonicParsing="false" text="Addresses" accelerator="Shortcut+4" userData="ADDRESSES" onAction="#goToFunction"/>
+                            <MenuItem mnemonicParsing="false" text="UTXOs" accelerator="Shortcut+5" userData="UTXOS" onAction="#goToFunction"/>
+                            <MenuItem mnemonicParsing="false" text="Settings" accelerator="Shortcut+6" userData="SETTINGS" onAction="#goToFunction"/>
+                        </Menu>
                         <MenuItem fx:id="refreshWallet" mnemonicParsing="false" text="Refresh Wallet" accelerator="Shortcut+R" onAction="#refreshWallet"/>
                     </items>
                 </Menu>
@@ -171,21 +179,23 @@
             </menus>
         </MenuBar>
         <DecorationPane fx:id="rootStack" VBox.vgrow="ALWAYS">
-            <Rectangle styleClass="background-box" width="450" height="230" />
-            <HBox alignment="CENTER">
-                <VBox alignment="CENTER" spacing="15">
-                    <HBox><Text styleClass="background-text" text="File menu → "/><Hyperlink onAction="#newWallet" styleClass="background-text,background-link" text="New Wallet"/><Text styleClass="background-text" text=" or"/></HBox>
-                    <HBox><Text styleClass="background-text" text="File menu → "/><Hyperlink onAction="#openWallet" styleClass="background-text,background-link" text="Open Wallet"/><Text styleClass="background-text" text=" or"/></HBox>
-                    <HBox><Text styleClass="background-text" text="File menu → "/><Hyperlink onAction="#importWallet" styleClass="background-text,background-link" text="Import Wallet"/><Text styleClass="background-text" text=" or"/></HBox>
-                    <Text styleClass="background-text" text="drag files to open" />
-                </VBox>
-            </HBox>
+            <StackPane fx:id="noTabsPane">
+                <Rectangle styleClass="background-box" width="450" height="230" />
+                <HBox alignment="CENTER">
+                    <VBox alignment="CENTER" spacing="15">
+                        <HBox><Text styleClass="background-text" text="File menu → "/><Hyperlink onAction="#newWallet" styleClass="background-text,background-link" text="New Wallet"/><Text styleClass="background-text" text=" or"/></HBox>
+                        <HBox><Text styleClass="background-text" text="File menu → "/><Hyperlink onAction="#openWallet" styleClass="background-text,background-link" text="Open Wallet"/><Text styleClass="background-text" text=" or"/></HBox>
+                        <HBox><Text styleClass="background-text" text="File menu → "/><Hyperlink onAction="#importWallet" styleClass="background-text,background-link" text="Import Wallet"/><Text styleClass="background-text" text=" or"/></HBox>
+                        <Text styleClass="background-text" text="drag files to open" />
+                    </VBox>
+                </HBox>
+            </StackPane>
             <TabPane fx:id="tabs" />
         </DecorationPane>
 
-        <StatusBar fx:id="statusBar" text="" minHeight="36">
+        <StatusBar fx:id="statusBar" text="" minHeight="36" focusTraversable="false">
             <rightItems>
-                <UnlabeledToggleSwitch fx:id="serverToggle">
+                <UnlabeledToggleSwitch fx:id="serverToggle" accessibleText="Server connection">
                     <tooltip>
                         <Tooltip text="Disconnected" />
                     </tooltip>
