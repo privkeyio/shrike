@@ -46,7 +46,7 @@
                         <Field fx:id="maturesField" text="Matures in:" visible="false" managed="false">
                             <Label fx:id="immatureDuration" />
                         </Field>
-                        <Field fx:id="securityHashrateField" text="Security hashrate:" visible="false" managed="false">
+                        <Field fx:id="securityHashrateField" text="Your Security Hashrate:" visible="false" managed="false">
                             <Label fx:id="securityHashrate">
                                 <tooltip>
                                     <Tooltip text="The share of the network hashrate that matches the coins in this wallet,&#10;being the network hashrate × the balance ÷ the coins issued so far.&#10;The network hashrate is estimated from the difficulty of the latest block." />
