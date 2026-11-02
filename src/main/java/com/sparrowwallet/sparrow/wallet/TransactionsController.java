@@ -2,6 +2,8 @@ package com.sparrowwallet.sparrow.wallet;
 
 import com.google.common.eventbus.Subscribe;
 import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.ChainTip;
+import com.sparrowwallet.sparrow.SecurityHashrate;
 import com.sparrowwallet.sparrow.EventManager;
 import com.sparrowwallet.sparrow.control.*;
 import tornadofx.control.Field;
@@ -67,6 +69,12 @@ public class TransactionsController extends WalletFormController implements Init
     private Label immatureDuration;
 
     @FXML
+    private Field securityHashrateField;
+
+    @FXML
+    private Label securityHashrate;
+
+    @FXML
     private CopyableLabel transactionCount;
 
     @FXML
@@ -107,6 +115,7 @@ public class TransactionsController extends WalletFormController implements Init
         });
         mempoolBalance.setValue(walletTransactionsEntry.getMempoolBalance());
         updateImmatureBalance();
+        updateSecurityHashrate(AppServices.getAnnouncedTip());
         setTransactionCount(walletTransactionsEntry);
         balanceChart.initialize(walletTransactionsEntry);
 
@@ -131,6 +140,18 @@ public class TransactionsController extends WalletFormController implements Init
         immatureDuration.setText(immature > 0 ? AppServices.immatureDuration(getWalletForm().getWallet()) : "");
         maturesField.setVisible(!immatureDuration.getText().isEmpty());
         maturesField.setManaged(!immatureDuration.getText().isEmpty());
+    }
+
+    //Shown once there is a tip to read the difficulty from, and hidden with the amounts since it gives the balance away
+    private void updateSecurityHashrate(ChainTip tip) {
+        boolean show = tip != null && tip.header() != null;
+        securityHashrateField.setVisible(show);
+        securityHashrateField.setManaged(show);
+        if(show) {
+            long walletBalance = getWalletForm().getWalletTransactionsEntry().getBalance();
+            securityHashrate.setText(Config.get().isHideAmounts() ? CoinLabel.HIDDEN_AMOUNT_TEXT :
+                    SecurityHashrate.format(SecurityHashrate.getSecurityHashrate(walletBalance, tip.height(), tip.header().getDifficultyTarget())));
+        }
     }
 
     private void setTransactionCount(WalletTransactionsEntry walletTransactionsEntry) {
@@ -187,6 +208,7 @@ public class TransactionsController extends WalletFormController implements Init
             balance.setValue(walletTransactionsEntry.getBalance());
             mempoolBalance.setValue(walletTransactionsEntry.getMempoolBalance());
         updateImmatureBalance();
+            updateSecurityHashrate(AppServices.getAnnouncedTip());
             balanceChart.update(walletTransactionsEntry);
             setTransactionCount(walletTransactionsEntry);
         }
@@ -204,6 +226,7 @@ public class TransactionsController extends WalletFormController implements Init
             balance.setValue(walletTransactionsEntry.getBalance());
             mempoolBalance.setValue(walletTransactionsEntry.getMempoolBalance());
         updateImmatureBalance();
+            updateSecurityHashrate(AppServices.getAnnouncedTip());
             balanceChart.update(walletTransactionsEntry);
             setTransactionCount(walletTransactionsEntry);
         }
@@ -239,6 +262,12 @@ public class TransactionsController extends WalletFormController implements Init
         immatureBalance.refresh();
         fiatBalance.refresh();
         fiatMempoolBalance.refresh();
+        updateSecurityHashrate(AppServices.getAnnouncedTip());
+    }
+
+    @Subscribe
+    public void newBlock(NewBlockEvent event) {
+        updateSecurityHashrate(new ChainTip(event.getHeight(), event.getBlockHeader()));
     }
 
     @Subscribe

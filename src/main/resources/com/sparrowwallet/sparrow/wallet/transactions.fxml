@@ -33,7 +33,7 @@
                     <RowConstraints />
                 </rowConstraints>
                 <Form GridPane.columnIndex="0" GridPane.rowIndex="0">
-                    <Fieldset inputGrow="SOMETIMES" text="Transactions" styleClass="header">
+                    <Fieldset inputGrow="SOMETIMES" text="Transactions" styleClass="header,transactions-fieldset">
                         <Field text="Balance:">
                             <CopyableCoinLabel fx:id="balance"/><Region HBox.hgrow="ALWAYS"/><FiatLabel fx:id="fiatBalance" minWidth="110" />
                         </Field>
@@ -45,6 +45,13 @@
                         </Field>
                         <Field fx:id="maturesField" text="Matures in:" visible="false" managed="false">
                             <Label fx:id="immatureDuration" />
+                        </Field>
+                        <Field fx:id="securityHashrateField" text="Security hashrate:" visible="false" managed="false">
+                            <Label fx:id="securityHashrate">
+                                <tooltip>
+                                    <Tooltip text="The share of the network hashrate that matches the coins in this wallet,&#10;being the network hashrate × the balance ÷ the coins issued so far.&#10;The network hashrate is estimated from the difficulty of the latest block." />
+                                </tooltip>
+                            </Label>
                         </Field>
                         <Field text="Transactions:">
                             <CopyableLabel fx:id="transactionCount" />

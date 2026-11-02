@@ -17,3 +17,7 @@
 .chart-line-symbol.selected {
     -fx-background-color: rgba(195, 64, 42, 0.6);
 }
+
+.form .transactions-fieldset.fieldset:horizontal .label-container {
+    -fx-pref-width: 145px;
+}
