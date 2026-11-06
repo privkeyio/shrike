@@ -27,6 +27,7 @@
             <rowConstraints>
                 <RowConstraints />
                 <RowConstraints />
+                <RowConstraints vgrow="ALWAYS" />
             </rowConstraints>
 
             <Form GridPane.columnIndex="0" GridPane.rowIndex="0">
@@ -104,8 +105,8 @@
             </Form>
 
             <Form GridPane.columnIndex="0" GridPane.columnSpan="2" GridPane.rowIndex="2">
-                <Fieldset inputGrow="SOMETIMES" text="Keystores">
-                        <StackPane styleClass="keystore-padding-border">
+                <Fieldset VBox.vgrow="ALWAYS" inputGrow="SOMETIMES" text="Keystores">
+                        <StackPane VBox.vgrow="ALWAYS" styleClass="keystore-padding-border">
                             <StackPane styleClass="etched-raised-border">
                                 <StackPane fx:id="keystoreTabsPane"/>
                             </StackPane>
