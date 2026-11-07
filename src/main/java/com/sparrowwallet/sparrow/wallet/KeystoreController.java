@@ -50,9 +50,6 @@ public class KeystoreController extends WalletFormController implements Initiali
     private Keystore keystore;
 
     @FXML
-    private ScrollPane keystoreScrollPane;
-
-    @FXML
     private Form keystoreForm;
 
     @FXML
@@ -165,7 +162,6 @@ public class KeystoreController extends WalletFormController implements Initiali
         //The source choice covers the keystore form, so its fields must not be reachable by keyboard or screen reader underneath
         keystoreForm.visibleProperty().bind(selectSourcePane.visibleProperty().not());
         keystoreForm.managedProperty().bind(keystoreForm.visibleProperty());
-        keystoreScrollPane.fitToHeightProperty().bind(selectSourcePane.visibleProperty());
         if(keystore.isValid() || keystore.getExtendedPublicKey() != null) {
             selectSourcePane.setVisible(false);
         } else if(!getWalletForm().getWallet().isMasterWallet() && keystore.getKeyDerivation() != null) {
