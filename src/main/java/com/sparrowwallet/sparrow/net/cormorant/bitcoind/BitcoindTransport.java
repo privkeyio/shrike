@@ -108,6 +108,13 @@ public class BitcoindTransport implements Transport {
         try(OutputStream os = connection.getOutputStream()) {
             byte[] jsonBytes = request.getBytes(StandardCharsets.UTF_8);
             os.write(jsonBytes);
+        } catch(SocketException e) {
+            //The close can also reset the connection before the connect completes, where other socket errors (refused, unreachable) never reached the node.
+            //A reset from a SOCKS proxy or during a TLS handshake (only a TLS terminating proxy in front of the node speaks TLS) is that proxy's own failure
+            if(!useProxy && !(connection instanceof HttpsURLConnection) && isConnectionReset(e)) {
+                throw closedWithoutResponse(e);
+            }
+            throw e;
         }
 
         int statusCode;
@@ -117,7 +124,7 @@ public class BitcoindTransport implements Transport {
             throw e;
         } catch(IOException e) {
             //From v32.1 Bitcoin Core closes the connection from a client outside rpcallowip without answering, where earlier versions answered 403 below
-            throw new IOException("Bitcoin Knots at " + bitcoindUrl.getAuthority() + " closed the connection without responding, check its rpcallowip settings", e);
+            throw closedWithoutResponse(e);
         }
 
         //Trust on first use, as for non-CA-certified Electrum servers: the certificate presented by the node on the first connection is saved, and required on all connections thereafter
@@ -164,6 +171,14 @@ public class BitcoindTransport implements Transport {
         }
 
         return response;
+    }
+
+    private IOException closedWithoutResponse(IOException e) {
+        return new IOException("Bitcoin Knots at " + bitcoindUrl.getAuthority() + " closed the connection without responding, check its rpcallowip settings", e);
+    }
+
+    static boolean isConnectionReset(SocketException e) {
+        return e.getMessage() != null && e.getMessage().contains("Connection reset");
     }
 
     //Parses the method as TcpTransport does for Electrum notifications, so that a parameter value cannot match
