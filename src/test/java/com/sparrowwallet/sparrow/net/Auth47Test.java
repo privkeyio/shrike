@@ -66,6 +66,7 @@ public class Auth47Test {
                 InvocationTargetException thrown = assertTimeoutPreemptively(Duration.ofSeconds(20),
                         () -> assertThrows(InvocationTargetException.class, () -> send.invoke(auth47, "{}")));
                 assertInstanceOf(Auth47.Auth47Exception.class, thrown.getCause());
+                assertTrue(thrown.getCause().getMessage().contains("redirect"), thrown.getCause().getMessage());
                 assertEquals(List.of(CALLBACK_ONION + ":80"), callback.connectTargets);
             } finally {
                 Config.get().setUseProxy(false);

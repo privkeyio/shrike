@@ -143,6 +143,9 @@ public class Auth47 {
             if(e.getStatusCode() == 404) {
                 throw new Auth47Exception("Could not authenticate. Callback URL of " + callback + " returned a 404 response.");
             }
+            if(e.getStatusCode() / 100 == 3) {
+                throw new Auth47Exception("Could not authenticate. Callback URL of " + callback + " tried to redirect the response elsewhere, which is not followed.");
+            }
 
             throw new Auth47Exception("Could not authenticate. Server returned " + e.getResponseBody());
         }
