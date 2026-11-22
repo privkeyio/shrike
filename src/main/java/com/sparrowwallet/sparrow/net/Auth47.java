@@ -12,6 +12,7 @@ import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletNode;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.tern.http.client.HttpResponseException;
+import com.sparrowwallet.tern.http.client.HttpUsage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +21,8 @@ import java.util.*;
 
 public class Auth47 {
     private static final Logger log = LoggerFactory.getLogger(Auth47.class);
+    //The response carries the wallet's payment code and signature, which a redirect from a callback that passed the https or onion check could send anywhere
+    private static final HttpUsage HTTP_USAGE = new HttpUsage("Auth47", false);
 
     public static final String SCHEME = "auth47";
     public static final String VERSION = "1.0";
@@ -132,7 +135,7 @@ public class Auth47 {
         }
 
         try {
-            String response = httpClientService.postString(callback.toString(), null, "application/json", json);
+            String response = httpClientService.postString(HTTP_USAGE, callback.toString(), null, "application/json", json);
             if(log.isDebugEnabled()) {
                 log.debug("Received " + response);
             }
