@@ -12,6 +12,7 @@ import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.drongo.wallet.WalletNode;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.tern.http.client.HttpResponseException;
+import com.sparrowwallet.tern.http.client.HttpUsage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -20,6 +21,8 @@ import java.util.*;
 
 public class Auth47 {
     private static final Logger log = LoggerFactory.getLogger(Auth47.class);
+    //The response carries the wallet's payment code and signature, which a redirect from a callback that passed the https or onion check could send anywhere
+    private static final HttpUsage HTTP_USAGE = new HttpUsage("Auth47", false);
 
     public static final String SCHEME = "auth47";
     public static final String VERSION = "1.0";
@@ -132,13 +135,16 @@ public class Auth47 {
         }
 
         try {
-            String response = httpClientService.postString(callback.toString(), null, "application/json", json);
+            String response = httpClientService.postString(HTTP_USAGE, callback.toString(), null, "application/json", json);
             if(log.isDebugEnabled()) {
                 log.debug("Received " + response);
             }
         } catch(HttpResponseException e) {
             if(e.getStatusCode() == 404) {
                 throw new Auth47Exception("Could not authenticate. Callback URL of " + callback + " returned a 404 response.");
+            }
+            if(e.getStatusCode() / 100 == 3) {
+                throw new Auth47Exception("Could not authenticate. Callback URL of " + callback + " tried to redirect the response elsewhere, which is not followed.");
             }
 
             throw new Auth47Exception("Could not authenticate. Server returned " + e.getResponseBody());
