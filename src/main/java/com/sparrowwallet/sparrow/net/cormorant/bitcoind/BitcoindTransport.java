@@ -109,9 +109,9 @@ public class BitcoindTransport implements Transport {
             byte[] jsonBytes = request.getBytes(StandardCharsets.UTF_8);
             os.write(jsonBytes);
         } catch(SocketException e) {
-            //The close can also reset the connection before the connect completes, where other socket errors (refused, unreachable) never reached the node,
-            //and a reset from a proxy is the proxy's own failure
-            if(!useProxy && isConnectionReset(e)) {
+            //The close can also reset the connection before the connect completes, where other socket errors (refused, unreachable) never reached the node.
+            //A reset from a SOCKS proxy or during a TLS handshake (only a TLS terminating proxy in front of the node speaks TLS) is that proxy's own failure
+            if(!useProxy && !(connection instanceof HttpsURLConnection) && isConnectionReset(e)) {
                 throw closedWithoutResponse(e);
             }
             throw e;
@@ -178,7 +178,7 @@ public class BitcoindTransport implements Transport {
     }
 
     static boolean isConnectionReset(SocketException e) {
-        return !(e instanceof ConnectException) && e.getMessage() != null && e.getMessage().contains("Connection reset");
+        return e.getMessage() != null && e.getMessage().contains("Connection reset");
     }
 
     //Parses the method as TcpTransport does for Electrum notifications, so that a parameter value cannot match
