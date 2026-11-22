@@ -50,7 +50,7 @@ public class HttpClientServiceTest {
         }
 
         @Override
-        public synchronized void stop() {
+        public void stop() {
             super.stop();
             if(requestDuringStop) {
                 requestDuringStop = false;
