@@ -28,6 +28,7 @@ import com.sparrowwallet.drongo.protocol.Transaction;
 import com.sparrowwallet.drongo.protocol.TransactionSignature;
 import com.sparrowwallet.drongo.psbt.PSBT;
 import com.sparrowwallet.drongo.psbt.PSBTInput;
+import com.sparrowwallet.drongo.silentpayments.InvalidSilentPaymentException;
 import com.sparrowwallet.drongo.uri.BitcoinURI;
 import com.sparrowwallet.sparrow.control.TrayManager;
 import com.sparrowwallet.sparrow.event.*;
@@ -357,7 +358,7 @@ public class AppServices {
 
             if(failEvent.getSource().getException() instanceof TlsServerException tlsServerException && failEvent.getSource().getException().getCause() != null) {
                 connectionService.setRestartOnFailure(false);
-                if(tlsServerException.getCause().getMessage().contains("PKIX path building failed")) {
+                if(tlsServerException.isCertificatePathFailure()) {
                     File crtFile = Config.get().getElectrumServerCert();
                     if(crtFile != null && Config.get().getServerType() == ServerType.ELECTRUM_SERVER) {
                         AppServices.showErrorDialog("SSL Handshake Failed", "The configured server certificate at " + crtFile.getAbsolutePath() + " did not match the certificate provided by the server at " + tlsServerException.getServer().getHost() + "." +
@@ -369,7 +370,10 @@ public class AppServices {
                             crtFile = Storage.getCaCertificateFile(tlsServerException.getServer().getHost());
                         }
                         if(crtFile != null) {
-                            Optional<ButtonType> optButton = AppServices.showErrorDialog("SSL Handshake Failed", "The certificate provided by the server at " + tlsServerException.getServer().getHost() + " appears to have changed." +
+                            Date expiredAt = TcpOverTlsTransport.getExpiredAt(crtFile);
+                            String problem = expiredAt != null ? "The saved certificate for the server at " + tlsServerException.getServer().getHost() + " expired at " + expiredAt + ", and the certificate the server provided could not be verified."
+                                    : "The certificate provided by the server at " + tlsServerException.getServer().getHost() + " appears to have changed.";
+                            Optional<ButtonType> optButton = AppServices.showErrorDialog("SSL Handshake Failed", problem +
                                     "\n\nThis may be simply due to a certificate renewal, or it may indicate a man-in-the-middle attack." +
                                     "\n\nDo you still want to proceed?", ButtonType.NO, ButtonType.YES);
                             if(optButton.isPresent() && optButton.get() == ButtonType.YES) {
@@ -396,6 +400,9 @@ public class AppServices {
 
             if(failEvent.getSource().getException() instanceof ProxyServerException && Config.get().isUseProxy() && Config.get().isAutoSwitchProxy() && Config.get().requiresTor()) {
                 Config.get().setUseProxy(false);
+                //These are started again once Tor is running
+                ratesService.cancel();
+                versionCheckService.cancel();
                 Platform.runLater(() -> restartService(torService));
                 return;
             }
@@ -490,7 +497,9 @@ public class AppServices {
         if(Config.get().getMode() != Mode.OFFLINE && event.isEnabled() && Network.get() == Network.MAINNET
                 && Interface.get() == Interface.DESKTOP) {
             versionCheckService = createVersionCheckService();
-            versionCheckService.start();
+            if(!isWaitingForTor()) {
+                versionCheckService.start();
+            }
         }
     }
 
@@ -593,6 +602,11 @@ public class AppServices {
         return Tor.getDefault() != null;
     }
 
+    //Until internal Tor is running there is no proxy for requests that must use it, and these would otherwise be made directly
+    public static boolean isWaitingForTor() {
+        return Config.get().requiresInternalTor() && !isTorRunning();
+    }
+
     public static boolean isUsingProxy() {
         return isTorRunning() || Config.get().isUseProxy();
     }
@@ -669,7 +683,7 @@ public class AppServices {
             scene.getStylesheets().add(AppServices.class.getResource("app.css").toExternalForm());
 
             stage.setTitle(SparrowWallet.APP_NAME);
-            stage.setMinWidth(650);
+            stage.setMinWidth(750);
             stage.setMinHeight(708);
             stage.setScene(scene);
             stage.getIcons().add(getWindowIcon());
@@ -808,6 +822,19 @@ public class AppServices {
         }
 
         return openWallets;
+    }
+
+    public static void verifySilentPaymentScripts(Wallet signingWallet, PSBT psbt) throws InvalidSilentPaymentException {
+        if(signingWallet != null) {
+            signingWallet.verifySilentPaymentScripts(psbt);
+        } else if(psbt != null && psbt.hasSilentPaymentOutputs()) {
+            //A PSBT has no signing wallet until it is finalized, so its outputs are proven against the open wallet providing all of its inputs
+            Optional<Wallet> optInputWallet = get().getOpenWallets().keySet().stream()
+                    .filter(wallet -> wallet.getSigningNodes(psbt).size() == psbt.getPsbtInputs().size()).findFirst();
+            if(optInputWallet.isPresent()) {
+                optInputWallet.get().verifySilentPaymentScripts(psbt);
+            }
+        }
     }
 
     public Wallet getWallet(String walletId) {
@@ -2087,6 +2114,58 @@ public class AppServices {
         return showAlertDialog(title, content, Alert.AlertType.WARNING, buttons);
     }
 
+    /**
+     * Warns, without blocking the connection, that the configured Bitcoin Core node is neither on this computer or local network nor an onion address.
+     * Returns whether the warning was shown, so that each settings view can show it once.
+     */
+    public static boolean showRemoteCoreServerWarning(Config config) {
+        Server coreServer = config.getCoreServer();
+        if(config.getServerType() == ServerType.BITCOIN_CORE && isRemoteNode(coreServer)) {
+            //A host that is not an IP literal is not resolved here, so it can only be reported as unconfirmed
+            String location = IpAddressMatcher.isIpLiteral(coreServer.getHost()) ? " is not on" : " could not be confirmed to be on";
+            StringBuilder warning = new StringBuilder("Bitcoin Knots at " + coreServer.getHostAndPort() + location + " this computer or your local network.\n");
+            if(isUsingProxy()) {
+                String proxy = config.isUseProxy() ? "configured proxy" : "internal Tor proxy";
+                warning.append("\nConnections to Bitcoin Knots are made directly, and the " + proxy + " is only used for onion addresses. ");
+                warning.append("Your IP address will be visible to the node.\n");
+            }
+            if(coreServer.getProtocol() == Protocol.HTTP) {
+                warning.append("\nThe RPC credentials and wallet descriptors sent to it are unencrypted, and can be read by anyone on the network path.\n");
+            } else if(Storage.getCertificateFile(coreServer.getHost()) == null) {
+                warning.append("\nThe certificate presented by the node on the first connection will be trusted and required on all connections thereafter.\n");
+            }
+            warning.append("\nConnecting to the Bitcoin Knots RPC interface over an untrusted network is not recommended by either Sparrow or Bitcoin Knots. ");
+            warning.append("Consider using a node on this computer or your local network, connecting over a Tor onion address, or tunnelling to it over a VPN or SSH.");
+
+            showWarningDialog("Remote Bitcoin Knots node", warning.toString());
+            return true;
+        }
+
+        return false;
+    }
+
+    private static boolean isRemoteNode(Server coreServer) {
+        if(coreServer == null || coreServer.isOnionAddress()) {
+            return false;
+        }
+
+        String host = coreServer.getHost();
+        if(IpAddressMatcher.isLocalNetworkName(host)) {
+            return false;
+        }
+
+        if(!IpAddressMatcher.isIpLiteral(host)) {
+            //Resolving a hostname here would block the user interface thread, and an unresolved host cannot be shown to be local
+            return true;
+        }
+
+        try {
+            return !IpAddressMatcher.isLocalNetworkAddress(host);
+        } catch(IllegalArgumentException e) {
+            return true;
+        }
+    }
+
     public static Optional<ButtonType> showErrorDialog(String title, String content, ButtonType... buttons) {
         return showAlertDialog(title, content == null ? "See log file (Help menu)" : content, Alert.AlertType.ERROR, buttons);
     }
@@ -2350,6 +2429,11 @@ public class AppServices {
     }
 
     private static void openAuth47Uri(URI uri) {
+        if(isWaitingForTor()) {
+            showErrorDialog("Tor Not Running", "Authentication must be done over Tor, which is not yet running. Try again once Sparrow is connected.");
+            return;
+        }
+
         try {
             Auth47 auth47 = new Auth47(uri);
             List<ScriptType> scriptTypes = PaymentCode.SEGWIT_SCRIPT_TYPES;
@@ -2371,6 +2455,11 @@ public class AppServices {
     }
 
     private static void openLnurlAuthUri(URI uri) {
+        if(isWaitingForTor()) {
+            showErrorDialog("Tor Not Running", "Authentication must be done over Tor, which is not yet running. Try again once Sparrow is connected.");
+            return;
+        }
+
         try {
             LnurlAuth lnurlAuth = new LnurlAuth(uri);
             List<ScriptType> scriptTypes = ScriptType.getAddressableScriptTypes(PolicyType.SINGLE_HD);
@@ -2582,6 +2671,15 @@ public class AppServices {
     }
 
     @Subscribe
+    public void walletPasswordChangeFailed(WalletPasswordChangeFailedEvent event) {
+        //Removing a password writes the wallet first, so its changes are saved under the password the file keeps
+        String consequence = event.isPasswordRemoved() ? "The wallet file still has its previous password, and changes to the wallet continue to be saved with it."
+                : "The wallet file keeps its previous password, and changes to the wallet cannot be saved until the password has been changed.";
+        String content = event.getException().getMessage() + "\n\n" + consequence;
+        Platform.runLater(() -> showErrorDialog("Error saving " + event.getWallet().getMasterName(), content));
+    }
+
+    @Subscribe
     public void mempoolRateSizes(MempoolRateSizesUpdatedEvent event) {
         if(event.getMempoolRateSizes() != null) {
             addMempoolRateSizes(event.getMempoolRateSizes());
@@ -2602,7 +2700,9 @@ public class AppServices {
 
             if(Config.get().getMode() != Mode.OFFLINE && event.getExchangeSource() != ExchangeSource.NONE) {
                 ratesService = createRatesService(event.getExchangeSource(), event.getCurrency());
-                ratesService.start();
+                if(!isWaitingForTor()) {
+                    ratesService.start();
+                }
             }
         }
     }

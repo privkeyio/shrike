@@ -4,7 +4,6 @@ import com.github.arteam.simplejsonrpc.client.exception.JsonRpcException;
 import com.google.common.base.Throwables;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.net.HostAndPort;
-import com.google.common.net.InetAddresses;
 import com.sparrowwallet.drongo.Network;
 import com.sparrowwallet.drongo.OsType;
 import com.sparrowwallet.drongo.policy.PolicyType;
@@ -332,6 +331,8 @@ public class ServerSettingsController extends SettingsDetailController {
                         coreHost.setText(hostAndPort.getHost());
                     }
                     coreHost.positionCaret(coreHost.getText().length());
+                    //A server differing from the one shown only in its protocol changes neither field, so the field listeners do not save it
+                    setCoreServerInConfig(config);
                 }
             }
         });
@@ -429,6 +430,10 @@ public class ServerSettingsController extends SettingsDetailController {
         });
 
         boolean isConnected = AppServices.isConnecting() || AppServices.isConnected();
+        //A connection waiting to retry would read these settings while they are being edited, so it is stopped and restarted once they are closed
+        if(!isConnected && AppServices.cancelConnection()) {
+            getMasterController().reconnectOnClosingProperty().set(true);
+        }
 
         if(Config.get().getServerType() == ServerType.BITCOIN_CORE && AppServices.isConnecting()) {
             testResults.appendText("Connecting to server, please wait...");
@@ -698,16 +703,18 @@ public class ServerSettingsController extends SettingsDetailController {
 
         if(exception instanceof TlsServerException && exception.getCause() != null) {
             TlsServerException tlsServerException = (TlsServerException)exception;
-            if(exception.getCause().getMessage().contains("PKIX path building failed")) {
+            if(tlsServerException.isCertificatePathFailure()) {
                 File configCrtFile = Config.get().getElectrumServerCert();
                 File savedCrtFile = Storage.getCertificateFile(tlsServerException.getServer().getHost());
                 if(savedCrtFile == null) {
                     savedCrtFile = Storage.getCaCertificateFile(tlsServerException.getServer().getHost());
                 }
                 if(configCrtFile == null && savedCrtFile != null) {
-                    Optional<ButtonType> optButton = AppServices.showErrorDialog("SSL Handshake Failed", "The certificate provided by the server at " + tlsServerException.getServer().getHost() + " appears to have changed." +
-                            "\n\nThis may indicate a man-in-the-middle attack!" +
-                            "\n\nDo you still want to proceed?", ButtonType.NO, ButtonType.YES);
+                    Date expiredAt = TcpOverTlsTransport.getExpiredAt(savedCrtFile);
+                    String problem = expiredAt != null ? "The saved certificate for the server at " + tlsServerException.getServer().getHost() + " expired at " + expiredAt + ", and the certificate the server provided could not be verified." +
+                            "\n\nThis may be simply due to a certificate renewal, or it may indicate a man-in-the-middle attack."
+                            : "The certificate provided by the server at " + tlsServerException.getServer().getHost() + " appears to have changed.\n\nThis may indicate a man-in-the-middle attack!";
+                    Optional<ButtonType> optButton = AppServices.showErrorDialog("SSL Handshake Failed", problem + "\n\nDo you still want to proceed?", ButtonType.NO, ButtonType.YES);
                     if(optButton.isPresent() && optButton.get() == ButtonType.YES) {
                         if(savedCrtFile.delete()) {
                             Platform.runLater(this::startElectrumConnection);
@@ -716,6 +723,15 @@ public class ServerSettingsController extends SettingsDetailController {
                             AppServices.showErrorDialog("Could not delete certificate", "The certificate file at " + savedCrtFile.getAbsolutePath() + " could not be deleted.\n\nPlease delete this file manually.");
                         }
                     }
+                }
+            } else if(exception.getCause().getCause() instanceof UnknownCertificateExpiredException expiredException) {
+                Optional<ButtonType> optButton = AppServices.showErrorDialog("SSL Handshake Failed", "The certificate provided by the server at " + tlsServerException.getServer().getHost() + " has expired. "
+                        + tlsServerException.getMessage() + "." +
+                        "\n\nDo you still want to proceed?", ButtonType.NO, ButtonType.YES);
+                if(optButton.isPresent() && optButton.get() == ButtonType.YES) {
+                    Storage.saveCertificate(tlsServerException.getServer().getHost(), expiredException.getCertificate());
+                    Platform.runLater(this::startElectrumConnection);
+                    return;
                 }
             }
 
@@ -777,7 +793,7 @@ public class ServerSettingsController extends SettingsDetailController {
 
         validationSupport.registerValidator(proxyHost, Validator.combine(
                 (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Proxy host required", useProxy.isSelected() && newValue.isBlank()),
-                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Invalid host name", getHost(newValue) == null)
+                (Control c, String newValue) -> ValidationResult.fromErrorIf( c, "Invalid host name", getHost(newValue) == null && getHostWithPort(newValue) == null)
         ));
 
         validationSupport.registerValidator(proxyPort, Validator.combine(
@@ -860,49 +876,8 @@ public class ServerSettingsController extends SettingsDetailController {
     }
 
     private void showRemoteCoreServerWarning(Config config) {
-        Server coreServer = config.getCoreServer();
-        if(!coreServerWarningShown && config.getServerType() == ServerType.BITCOIN_CORE && isRemoteNode(coreServer)) {
-            coreServerWarningShown = true;
-
-            //A host that is not an IP literal is not resolved here, so it can only be reported as unconfirmed
-            String location = InetAddresses.isInetAddress(coreServer.getHost()) ? " is not on" : " could not be confirmed to be on";
-            StringBuilder warning = new StringBuilder("Bitcoin Knots at " + coreServer.getHostAndPort() + location + " this computer or your local network.\n");
-            if(AppServices.isUsingProxy()) {
-                String proxy = config.isUseProxy() ? "configured proxy" : "internal Tor proxy";
-                warning.append("\nConnections to Bitcoin Knots are made directly, and the " + proxy + " is only used for onion addresses. ");
-                warning.append("Your IP address will be visible to the node.\n");
-            }
-            if(coreServer.getProtocol() == Protocol.HTTP) {
-                warning.append("\nThe RPC credentials and wallet descriptors sent to it are unencrypted, and can be read by anyone on the network path.\n");
-            } else if(Storage.getCertificateFile(coreServer.getHost()) == null) {
-                warning.append("\nThe certificate presented by the node on the first connection will be trusted and required on all connections thereafter.\n");
-            }
-            warning.append("\nConnecting to the Bitcoin Knots RPC interface over an untrusted network is not recommended by either Sparrow or Bitcoin Knots. ");
-            warning.append("Consider using a node on this computer or your local network, connecting over a Tor onion address, or tunnelling to it over a VPN or SSH.");
-
-            AppServices.showWarningDialog("Remote Bitcoin Knots node", warning.toString());
-        }
-    }
-
-    private boolean isRemoteNode(Server coreServer) {
-        if(coreServer == null || coreServer.isOnionAddress()) {
-            return false;
-        }
-
-        String host = coreServer.getHost();
-        if(IpAddressMatcher.isLocalNetworkName(host)) {
-            return false;
-        }
-
-        if(!InetAddresses.isInetAddress(host)) {
-            //Resolving a hostname here would block the user interface thread, and an unresolved host cannot be shown to be local
-            return true;
-        }
-
-        try {
-            return !IpAddressMatcher.isLocalNetworkAddress(host);
-        } catch(IllegalArgumentException e) {
-            return true;
+        if(!coreServerWarningShown) {
+            coreServerWarningShown = AppServices.showRemoteCoreServerWarning(config);
         }
     }
 
@@ -981,6 +956,14 @@ public class ServerSettingsController extends SettingsDetailController {
     private void setProxyConfig(Config config) {
         String hostAsString = getHost(proxyHost.getText());
         Integer portAsInteger = getPort(proxyPort.getText());
+        HostAndPort hostWithPort = hostAsString == null ? getHostWithPort(proxyHost.getText()) : null;
+        if(hostWithPort != null) {
+            hostAsString = hostWithPort.getHost();
+            if(proxyPort.getText().isBlank()) {
+                portAsInteger = hostWithPort.getPort();
+            }
+        }
+
         String proxyServer = null;
         if(hostAsString != null && !hostAsString.isBlank() && portAsInteger != null && isValidPort(portAsInteger)) {
             proxyServer = HostAndPort.fromParts(hostAsString, portAsInteger).toString();
@@ -990,6 +973,9 @@ public class ServerSettingsController extends SettingsDetailController {
             proxyServer = config.getProxyServer() != null ? config.getProxyServer() : HostAndPort.fromHost(hostAsString).toString();
         } else if(hostAsString != null && !hostAsString.isBlank()) {
             proxyServer = HostAndPort.fromHost(hostAsString).toString();
+        } else if(hostAsString == null && !proxyHost.getText().isBlank()) {
+            //An invalid host leaves the proxy as it was, as an invalid port does
+            proxyServer = config.getProxyServer();
         }
 
         config.setProxyServer(proxyServer);
@@ -1003,6 +989,16 @@ public class ServerSettingsController extends SettingsDetailController {
     private String getHost(String text) {
         try {
             return HostAndPort.fromHost(text.trim()).getHost();
+        } catch(IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    //A port given with the proxy host is taken as the port where the port field is empty, the port field otherwise taking precedence
+    private HostAndPort getHostWithPort(String text) {
+        try {
+            HostAndPort hostAndPort = HostAndPort.fromString(text.trim());
+            return hostAndPort.hasPort() ? hostAndPort : null;
         } catch(IllegalArgumentException e) {
             return null;
         }

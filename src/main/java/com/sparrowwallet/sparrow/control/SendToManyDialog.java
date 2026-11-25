@@ -220,7 +220,7 @@ public class SendToManyDialog extends Dialog<List<Payment>> {
         for(int row = 0; row < spreadsheetView.getGrid().getRowCount(); row++) {
             ObservableList<SpreadsheetCell> rowCells = spreadsheetView.getItems().get(row);
             SendToAddress sendToAddress = (SendToAddress)rowCells.getFirst().getItem();
-            if(sendToAddress != null && sendToAddress.hrn != null && DnsPaymentCache.getDnsPayment(sendToAddress.hrn) == null) {
+            if(sendToAddress != null && sendToAddress.hrn != null && sendToAddress.address == null && sendToAddress.silentPaymentAddress == null && DnsPaymentCache.getDnsPayment(sendToAddress.hrn) == null) {
                 return true;
             }
         }
@@ -476,7 +476,7 @@ public class SendToManyDialog extends Dialog<List<Payment>> {
             if(str == null || str.isEmpty()) {
                 return null;
             }
-            String normalised = str.trim().replaceAll(Pattern.quote(unitFormat.getGroupingSeparator()), "").replaceAll(Pattern.quote(unitFormat.getDecimalSeparator()), ".");
+            String normalised = unitFormat.normaliseGroupingSeparators(str).trim().replaceAll(Pattern.quote(unitFormat.getGroupingSeparator()), "").replaceAll(Pattern.quote(unitFormat.getDecimalSeparator()), ".");
             try {
                 //Read as an exact decimal, which takes the exponent a script writes a small amount with, but not the hexadecimal, NaN or Infinity a double parses
                 BigDecimal sats = new BigDecimal(normalised).scaleByPowerOfTen(bitcoinUnit == BitcoinUnit.BTC ? 8 : 0);
@@ -577,6 +577,12 @@ public class SendToManyDialog extends Dialog<List<Payment>> {
             this.silentPaymentAddress = null;
         }
 
+        private SendToAddress(String hrn, Address address, SilentPaymentAddress silentPaymentAddress) {
+            this.hrn = hrn;
+            this.address = address;
+            this.silentPaymentAddress = silentPaymentAddress;
+        }
+
         public SendToAddress(Address address) {
             this.hrn = null;
             this.address = address;
@@ -595,14 +601,15 @@ public class SendToManyDialog extends Dialog<List<Payment>> {
 
         public static SendToAddress fromPayment(Payment payment) {
             DnsPayment dnsPayment = DnsPaymentCache.getDnsPayment(payment);
-            if(dnsPayment != null) {
-                return new SendToAddress(dnsPayment.hrn());
+            if(payment instanceof SilentPayment silentPayment) {
+                return new SendToAddress(dnsPayment == null ? null : dnsPayment.hrn(), null, silentPayment.getSilentPaymentAddress());
             }
-            return payment instanceof SilentPayment ? new SendToAddress(((SilentPayment)payment).getSilentPaymentAddress()) : new SendToAddress(payment.getAddress());
+            return new SendToAddress(dnsPayment == null ? null : dnsPayment.hrn(), payment.getAddress(), null);
         }
 
         public Payment toPayment(Wallet wallet, String label, long value, boolean sendMax) throws DnsPaymentValidationException, IOException, ExecutionException, InterruptedException, BitcoinURIParseException {
-            if(hrn != null) {
+            //A name shown for a payment's own recipient is not resolved again
+            if(hrn != null && address == null && silentPaymentAddress == null) {
                 DnsPayment dnsPayment = DnsPaymentCache.getDnsPayment(hrn);
                 if(dnsPayment == null) {
                     DnsPaymentResolver resolver = new DnsPaymentResolver(hrn);
@@ -638,6 +645,10 @@ public class SendToManyDialog extends Dialog<List<Payment>> {
                 return new SilentPayment(dnsPayment.bitcoinURI().getSilentPaymentAddress(), label, value, sendMax);
             } else if(dnsPayment.hasAddress()) {
                 return new Payment(dnsPayment.bitcoinURI().getAddress(), label, value, sendMax);
+            } else if(dnsPayment.hasMisplacedSilentPaymentAddress()) {
+                throw new IllegalArgumentException("Payment to " + dnsPayment + " is set incorrectly, placing its silent payment address under the parameter for a different network.");
+            } else if(dnsPayment.hasOtherNetworkSilentPaymentAddress()) {
+                throw new IllegalArgumentException("Payment to " + dnsPayment + " contains a silent payment address for a different network.");
             } else {
                 throw new IllegalArgumentException("Payment to " + dnsPayment + " has no associated address.");
             }

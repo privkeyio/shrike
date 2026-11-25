@@ -212,9 +212,7 @@ public class TransactionsController extends WalletFormController implements Init
     @Subscribe
     public void walletEntryLabelChanged(WalletEntryLabelsChangedEvent event) {
         if(event.fromThisOrNested(walletForm.getWallet())) {
-            for(Entry entry : event.getEntries()) {
-                transactionsTable.updateLabel(entry);
-            }
+            transactionsTable.updateLabels(event.getEntries());
             balanceChart.update(getWalletForm().getWalletTransactionsEntry());
         }
     }
@@ -303,7 +301,7 @@ public class TransactionsController extends WalletFormController implements Init
 
     @Subscribe
     public void walletUtxoStatusChanged(WalletUtxoStatusChangedEvent event) {
-        if(event.getWallet().equals(getWalletForm().getWallet())) {
+        if(event.fromThisOrNested(getWalletForm().getWallet())) {
             transactionsTable.refresh();
         }
     }

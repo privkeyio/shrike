@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
@@ -20,8 +21,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -30,7 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Regression tests for the read timeout in TcpTransport#readResponse. Only acquiring readLock via tryLock() was
  * time bounded, but the read thread releases readLock while blocked on the socket, so tryLock returned almost
  * immediately regardless of the requested timeout and the actual wait for a response was an unbounded
- * readingCondition.await() that a server which stopped replying would never signal.
+ * readingCondition.await() that a server which stopped replying would never signal. Also covers reading response
+ * lines across socket read timeouts and the response size limit.
  */
 public class TcpTransportTimeoutTest {
     @TempDir
@@ -62,6 +67,7 @@ public class TcpTransportTimeoutTest {
                 //Must fail within the configured read timeout - if this test hangs instead of throwing, the regression is back
                 Duration limit = Duration.ofSeconds(transport.readTimeouts[0] + 5);
                 assertTimeoutPreemptively(limit, () -> assertThrows(IOException.class, () -> transport.pass(pingRequest(1))));
+                assertEquals(1, transport.getTimeoutCount(), "A request left unanswered must count as a timeout, which halves batch page sizes");
             } finally {
                 //Let the server thread unwind and close the accepted socket rather than parking on the gate until JVM exit
                 firstReplyGate.countDown();
@@ -82,8 +88,8 @@ public class TcpTransportTimeoutTest {
                 Duration limit = Duration.ofSeconds(transport.readTimeouts[0] + 5);
                 assertTimeoutPreemptively(limit, () -> assertThrows(IOException.class, () -> transport.pass(pingRequest(1))));
 
-                //A read timeout must not fail the connection - the escalating timeouts and halved batch page sizes
-                //that follow depend on retrying over the same transport, discarding the stale response when it arrives
+                //A read timeout must not fail the connection - the retry with a halved batch page size that follows is sent
+                //over the same transport, discarding the stale response when it arrives
                 assertTrue(transport.isConnected(), "Transport must remain connected after a read timeout");
 
                 //Release the first reply only now, so it is guaranteed to arrive after the timeout rather than after a sleep
@@ -92,6 +98,141 @@ public class TcpTransportTimeoutTest {
             } finally {
                 //No-op unless an assertion above failed before the gate was released
                 firstReplyGate.countDown();
+                transport.close();
+            }
+        }
+    }
+
+    /**
+     * A server that answers requests in turn, as electrs does, still has a request queued when the first read timeout passes, so sending it again only
+     * doubles the work. The response must be waited for over the longer timeouts, and a slow response must not count as a timeout that halves page sizes.
+     */
+    @Test
+    public void slowResponseIsWaitedForWithoutResending() throws Exception {
+        try(ServerSocket serverSocket = createServerSocket()) {
+            TcpTransport transport = connectTransport(serverSocket);
+            Arrays.fill(transport.readTimeouts, 1, transport.readTimeouts.length, 3);
+
+            AtomicInteger received = new AtomicInteger();
+            Thread serverThread = new Thread(() -> {
+                try(Socket accepted = serverSocket.accept()) {
+                    BufferedReader in = new BufferedReader(new InputStreamReader(accepted.getInputStream(), StandardCharsets.UTF_8));
+                    PrintWriter out = new PrintWriter(new OutputStreamWriter(accepted.getOutputStream(), StandardCharsets.UTF_8));
+                    int id = 1;
+                    while(in.readLine() != null) {
+                        received.incrementAndGet();
+                        if(id == 1) {
+                            Thread.sleep(1500);
+                        }
+                        out.println(pingResponse(id++));
+                        out.flush();
+                    }
+                } catch(Exception e) {
+                    //Expected once the test tears down the server and transport
+                }
+            });
+            serverThread.setDaemon(true);
+            serverThread.start();
+
+            try {
+                Duration limit = Duration.ofSeconds(transport.readTimeouts[1] + 5);
+                assertEquals(pingResponse(1), assertTimeoutPreemptively(limit, () -> transport.pass(pingRequest(1))));
+                assertEquals(1, received.get(), "The request must not be sent again while its response is awaited");
+                assertEquals(0, transport.getTimeoutCount(), "A slow response must not count as a timeout");
+
+                assertEquals(pingResponse(2), assertTimeoutPreemptively(limit, () -> transport.pass(pingRequest(2))));
+            } finally {
+                transport.close();
+            }
+        }
+    }
+
+    @Test
+    public void requestIsPendingUntilItsResponseArrives() throws Exception {
+        try(ServerSocket serverSocket = createServerSocket()) {
+            TcpTransport transport = connectTransport(serverSocket);
+            CountDownLatch firstReplyGate = new CountDownLatch(1);
+            startServer(serverSocket, firstReplyGate);
+
+            try {
+                assertFalse(transport.isRequestPending());
+
+                AtomicReference<Object> result = new AtomicReference<>();
+                Thread requestThread = new Thread(() -> {
+                    try {
+                        result.set(transport.pass(pingRequest(1)));
+                    } catch(IOException e) {
+                        result.set(e);
+                    }
+                });
+                requestThread.setDaemon(true);
+                requestThread.start();
+
+                assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+                    while(!transport.isRequestPending()) {
+                        Thread.onSpinWait();
+                    }
+                });
+
+                firstReplyGate.countDown();
+                requestThread.join(Duration.ofSeconds(transport.readTimeouts[0] + 5));
+                assertFalse(requestThread.isAlive(), "The request must complete once its reply is released");
+                assertEquals(pingResponse(1), result.get(), "The request must return its reply rather than fail");
+                assertFalse(transport.isRequestPending(), "No request may be pending once its response has arrived");
+            } finally {
+                firstReplyGate.countDown();
+                transport.close();
+            }
+        }
+    }
+
+    @Test
+    public void responseSplitBySocketReadTimeoutIsReassembled() throws Exception {
+        try(ServerSocket serverSocket = createServerSocket()) {
+            TcpTransport transport = connectTransport(serverSocket);
+            transport.socket.setSoTimeout(100);
+            String response = pingResponse(1);
+            int split = response.length() / 2;
+
+            //Pause between the two halves for several socket read timeouts, but well within the response read timeout
+            startServer(serverSocket, out -> {
+                out.write(response.substring(0, split).getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                Thread.sleep(500);
+                out.write((response.substring(split) + "\n").getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            });
+
+            try {
+                Duration limit = Duration.ofSeconds(transport.readTimeouts[0] + 5);
+                assertEquals(response, assertTimeoutPreemptively(limit, () -> transport.pass(pingRequest(1))));
+            } finally {
+                transport.close();
+            }
+        }
+    }
+
+    @Test
+    public void oversizedResponseFailsTheConnection() throws Exception {
+        try(ServerSocket serverSocket = createServerSocket()) {
+            TcpTransport transport = connectTransport(serverSocket);
+            transport.maxResponseChars = 1024;
+
+            CountDownLatch done = new CountDownLatch(1);
+            startServer(serverSocket, out -> {
+                byte[] chunk = new byte[4096];
+                Arrays.fill(chunk, (byte)'a');
+                out.write(chunk);
+                out.flush();
+                done.await();
+            });
+
+            try {
+                Duration limit = Duration.ofSeconds(transport.readTimeouts[0] + 5);
+                assertTimeoutPreemptively(limit, () -> assertThrows(IOException.class, () -> transport.pass(pingRequest(1))));
+                assertFalse(transport.isConnected(), "Transport must fail the connection");
+            } finally {
+                done.countDown();
                 transport.close();
             }
         }
@@ -144,6 +285,28 @@ public class TcpTransportTimeoutTest {
         });
         serverThread.setDaemon(true);
         serverThread.start();
+    }
+
+    /**
+     * Reads the first request and writes the reply with the given responder, then holds the connection open until the test tears it down.
+     */
+    private void startServer(ServerSocket serverSocket, Responder responder) {
+        Thread serverThread = new Thread(() -> {
+            try(Socket accepted = serverSocket.accept()) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(accepted.getInputStream(), StandardCharsets.UTF_8));
+                in.readLine();
+                responder.respond(accepted.getOutputStream());
+                in.readLine();
+            } catch(Exception e) {
+                //Expected once the test tears down the server and transport
+            }
+        });
+        serverThread.setDaemon(true);
+        serverThread.start();
+    }
+
+    private interface Responder {
+        void respond(OutputStream out) throws Exception;
     }
 
     private static String pingRequest(int id) {

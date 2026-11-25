@@ -150,9 +150,9 @@ public class PagedBatchRequestBuilder<K, V> extends AbstractBuilder {
      * later pages from being sent, which is what makes a per-key error meaningful when the request spans more than one page.
      *
      * @param maxAttempts     number of times to try each page
-     * @param errorValue      the value to record for keys the server returned an error for
+     * @param errorValue      the value to record for keys the server returned an error for, or null to leave those keys out
      * @param batchErrorCheck applied to each page's errors before they are substituted, to let the caller classify whole-batch failures
-     * @return map of responses by request ids, covering every requested id
+     * @return map of responses by request ids, covering every requested id unless errorValue is null
      */
     @NotNull
     @SuppressWarnings("unchecked")
@@ -166,8 +166,10 @@ public class PagedBatchRequestBuilder<K, V> extends AbstractBuilder {
             } catch(JsonRpcBatchException e) {
                 batchErrorCheck.accept(e);
                 allResults.putAll((Map<K, V>)e.getSuccesses());
-                for(Object key : e.getErrors().keySet()) {
-                    allResults.put((K)key, errorValue);
+                if(errorValue != null) {
+                    for(Object key : e.getErrors().keySet()) {
+                        allResults.put((K)key, errorValue);
+                    }
                 }
             }
         }
@@ -176,10 +178,44 @@ public class PagedBatchRequestBuilder<K, V> extends AbstractBuilder {
     }
 
     /**
-     * Executes a single page, mapping any batch exception back to the request ids the caller supplied
+     * Executes a single page, sending again the requests a server left unprocessed once its response reached a size limit, which it answers normally
+     * in a smaller batch. A page is resent only when part of it was answered, so each resend is smaller than the page before it.
      */
     @NotNull
+    @SuppressWarnings("unchecked")
     private Map<K, V> executePage(JsonRpcClient client, List<Request<K>> page, int maxAttempts) throws Exception {
+        try {
+            return executeBatch(client, page, maxAttempts);
+        } catch(JsonRpcBatchException e) {
+            List<Request<K>> skipped = page.stream().filter(request -> ElectrumServerRpc.isResponseTooLarge(e.getErrors().get(request.id))).map(request -> new Request<K>(request.id, counter == null ? null : counter.incrementAndGet(), request.method, request.params)).toList();
+
+            if(skipped.isEmpty() || skipped.size() == page.size()) {
+                throw e;
+            }
+
+            Map<Object, Object> successes = new HashMap<>(e.getSuccesses());
+            Map<Object, ErrorMessage> errors = new HashMap<>(e.getErrors());
+            skipped.forEach(request -> errors.remove(request.id));
+            try {
+                successes.putAll(executePage(client, skipped, maxAttempts));
+            } catch(JsonRpcBatchException resent) {
+                successes.putAll(resent.getSuccesses());
+                errors.putAll(resent.getErrors());
+            }
+
+            if(errors.isEmpty()) {
+                return (Map<K, V>)successes;
+            }
+
+            throw new JsonRpcBatchException(e.getMessage(), successes, errors);
+        }
+    }
+
+    /**
+     * Executes a single batch, mapping any batch exception back to the request ids the caller supplied
+     */
+    @NotNull
+    private Map<K, V> executeBatch(JsonRpcClient client, List<Request<K>> page, int maxAttempts) throws Exception {
         if(counter != null) {
             Map<Long, K> counterIdMap = new HashMap<>();
             BatchRequestBuilder<Long, V> batchRequest = client.createBatchRequest().keysType(Long.class).returnType(returnType);

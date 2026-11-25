@@ -14,6 +14,7 @@ import java.net.Socket;
 import java.nio.file.Path;
 import java.time.Duration;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,6 +45,47 @@ public class BitcoindTransportRejectionTest {
     @Test
     public void resetConnectionPointsToRpcAllowIp() throws Exception {
         assertRpcAllowIpHint(true);
+    }
+
+    @Test
+    public void resetDuringTlsHandshakeDoesNotPointToRpcAllowIp() throws Exception {
+        try(ServerSocket serverSocket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            Thread acceptor = new Thread(() -> {
+                try {
+                    while(!serverSocket.isClosed()) {
+                        Socket socket = serverSocket.accept();
+                        //Wait for the ClientHello, so the reset lands inside the handshake
+                        socket.getInputStream().read();
+                        socket.setSoLinger(true, 0);
+                        socket.close();
+                    }
+                } catch(IOException e) {
+                    //Server socket closed at the end of the test
+                }
+            });
+            acceptor.setDaemon(true);
+            acceptor.start();
+
+            BitcoindTransport transport = new BitcoindTransport(new Server("https://127.0.0.1:" + serverSocket.getLocalPort()), "test", "user:pass");
+            assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
+                IOException thrown = assertThrows(IOException.class, () -> transport.pass("{\"id\":1,\"method\":\"getblockchaininfo\",\"params\":[]}"));
+                assertFalse(thrown.getMessage().contains("rpcallowip"), "Expected no rpcallowip hint, got: " + thrown);
+            });
+        }
+    }
+
+    @Test
+    public void refusedConnectionDoesNotPointToRpcAllowIp() throws Exception {
+        int port;
+        try(ServerSocket serverSocket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            port = serverSocket.getLocalPort();
+        }
+
+        BitcoindTransport transport = new BitcoindTransport(new Server("http://127.0.0.1:" + port), "test", "user:pass");
+        assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
+            IOException thrown = assertThrows(IOException.class, () -> transport.pass("{\"id\":1,\"method\":\"getblockchaininfo\",\"params\":[]}"));
+            assertFalse(thrown.getMessage().contains("rpcallowip"), "Expected no rpcallowip hint, got: " + thrown);
+        });
     }
 
     private static void assertRpcAllowIpHint(boolean reset) throws Exception {

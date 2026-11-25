@@ -131,9 +131,103 @@ public class StorageTest extends IoTest {
         File backupDir = createBackupDir("Savings-20250101120000.mv.db", "Savings-2025010112000.mv.db", "Savings-202501011200000.mv.db",
                 "Savings-20250101120000.json", "Savings-20250101120000", "Savings.mv.db", "Savings-notes.txt");
 
-        assertBackups(backupDir, PersistenceType.DB, "Savings.mv.db", "Savings-20250101120000.mv.db");
+        assertBackups(backupDir, PersistenceType.DB, "Savings.mv.db", "Savings-20250101120000.mv.db", "Savings-20250101120000.json", "Savings-20250101120000");
         assertBackups(backupDir, PersistenceType.JSON, "Savings.json", "Savings-20250101120000.json");
         assertBackups(backupDir, PersistenceType.JSON, "Savings", "Savings-20250101120000");
+    }
+
+    @Test
+    public void getBackupsIncludesBackupsMadeBeforeMigration() throws Exception {
+        File walletsDir = Files.createDirectory(tempDir.resolve("wallets")).toFile();
+        File backupDir = createBackupDir("Migrated-20250101120000.mv.db", "Migrated-20210101120000.json", "Migrated-20200101120000",
+                "Migrated-20210101120000.txt", "Migrated-2021-20210101120000.json", "MigratedX-20210101120000.json");
+        File json = writeJsonWallet(new File(walletsDir, "Migrated.json"), watchOnly("Migrated", existingXpub));
+
+        Storage storage = new Storage(json);
+        try {
+            Assertions.assertArrayEquals(new String[] {"Migrated-20210101120000.json"}, Arrays.stream(storage.getBackups(backupDir, null)).map(File::getName).toArray(String[]::new));
+            storage.loadUnencryptedWallet();
+            Assertions.assertEquals(PersistenceType.DB, storage.getType());
+            Assertions.assertArrayEquals(new String[] {"Migrated-20250101120000.mv.db", "Migrated-20210101120000.json", "Migrated-20200101120000"},
+                    Arrays.stream(storage.getBackups(backupDir, null)).map(File::getName).toArray(String[]::new));
+        } finally {
+            storage.closeAndWait();
+        }
+    }
+
+    @Test
+    public void getBackupsExcludesBackupsOfAnExistingJsonWallet() throws IOException {
+        File backupDir = createBackupDir("Separate-20250101120000.mv.db", "Separate-20210101120000.json", "Separate-20200101120000");
+
+        Assertions.assertTrue(new File(tempDir.toFile(), "Separate.json").createNewFile());
+        assertBackups(backupDir, PersistenceType.DB, "Separate.mv.db", "Separate-20250101120000.mv.db", "Separate-20200101120000");
+        assertBackups(backupDir, PersistenceType.JSON, "Separate.json", "Separate-20210101120000.json");
+
+        Assertions.assertTrue(new File(tempDir.toFile(), "Separate").createNewFile());
+        assertBackups(backupDir, PersistenceType.DB, "Separate.mv.db", "Separate-20250101120000.mv.db");
+        assertBackups(backupDir, PersistenceType.JSON, "Separate", "Separate-20200101120000");
+    }
+
+    @Test
+    public void deleteBackupsInPreviousWalletsFolder() throws IOException {
+        File walletFile = new File(tempDir.toFile(), "Savings.mv.db");
+        Storage storage = new Storage(PersistenceType.DB, walletFile);
+        Assertions.assertFalse(storage.isInWalletsDir());
+        Assertions.assertFalse(storage.hasBackups());
+
+        File backupDir = new File(tempDir.toFile(), Storage.WALLETS_BACKUP_DIR);
+        Assertions.assertTrue(backupDir.mkdir());
+        File backup = new File(backupDir, "Savings-20250101120000.mv.db");
+        File otherBackup = new File(backupDir, "Other-20250101120000.mv.db");
+        Assertions.assertTrue(backup.createNewFile());
+        Assertions.assertTrue(otherBackup.createNewFile());
+
+        Assertions.assertTrue(storage.hasBackups());
+        storage.deleteBackups();
+        Assertions.assertFalse(backup.exists());
+        Assertions.assertTrue(otherBackup.exists());
+        Assertions.assertFalse(storage.hasBackups());
+    }
+
+    @Test
+    public void renameBackupsMovesBackupsToTheRenamedWalletsBackupFolder() throws IOException {
+        File previousBackupDir = createBackupDir("Old-20250101120000.mv.db", "Other-20250101120000.mv.db");
+        File walletsBackupDir = createBackupDir();
+
+        Storage oldStorage = new Storage(PersistenceType.DB, new File(previousBackupDir.getParentFile(), "Old.mv.db"));
+        Storage newStorage = new Storage(PersistenceType.DB, new File(walletsBackupDir.getParentFile(), "New.mv.db"));
+        oldStorage.renameBackups(previousBackupDir, walletsBackupDir, newStorage);
+
+        assertBackups(previousBackupDir, PersistenceType.DB, "Old.mv.db");
+        assertBackups(previousBackupDir, PersistenceType.DB, "Other.mv.db", "Other-20250101120000.mv.db");
+        assertBackups(walletsBackupDir, PersistenceType.DB, "New.mv.db", "New-20250101120000.mv.db");
+    }
+
+    @Test
+    public void renameBackupsMovesBackupsToTheRenamedWallet() throws IOException {
+        File backupDir = createBackupDir("Old-20250101120000.mv.db", "Old-20210101120000.json", "Old-20200101120000",
+                "OldX-20250101120000.mv.db", "Old-2021-20250101120000.mv.db", "New-20240101120000.mv.db");
+
+        Storage oldStorage = new Storage(PersistenceType.DB, new File(tempDir.toFile(), "Old.mv.db"));
+        oldStorage.renameBackups(backupDir, new Storage(PersistenceType.DB, new File(tempDir.toFile(), "New.mv.db")));
+
+        assertBackups(backupDir, PersistenceType.DB, "Old.mv.db");
+        assertBackups(backupDir, PersistenceType.DB, "New.mv.db", "New-20250101120000.mv.db", "New-20240101120000.mv.db", "New-20210101120000.json", "New-20200101120000");
+        assertBackups(backupDir, PersistenceType.DB, "OldX.mv.db", "OldX-20250101120000.mv.db");
+        assertBackups(backupDir, PersistenceType.DB, "Old-2021.mv.db", "Old-2021-20250101120000.mv.db");
+    }
+
+    @Test
+    public void renameBackupsDoesNotReplaceAnExistingBackup() throws IOException {
+        File backupDir = createBackupDir("Old-20250101120000.mv.db", "New-20250101120000.mv.db");
+        Files.writeString(backupDir.toPath().resolve("Old-20250101120000.mv.db"), "old");
+        Files.writeString(backupDir.toPath().resolve("New-20250101120000.mv.db"), "new");
+
+        Storage oldStorage = new Storage(PersistenceType.DB, new File(tempDir.toFile(), "Old.mv.db"));
+        oldStorage.renameBackups(backupDir, new Storage(PersistenceType.DB, new File(tempDir.toFile(), "New.mv.db")));
+
+        Assertions.assertEquals("new", Files.readString(backupDir.toPath().resolve("New-20250101120000.mv.db")));
+        assertBackups(backupDir, PersistenceType.DB, "Old.mv.db", "Old-20250101120000.mv.db");
     }
 
     @Test
@@ -241,7 +335,7 @@ public class StorageTest extends IoTest {
     }
 
     private void assertBackups(File backupDir, PersistenceType persistenceType, String walletFileName, String... expectedBackupNames) {
-        Storage storage = new Storage(persistenceType, new File(backupDir.getParentFile(), walletFileName));
+        Storage storage = new Storage(persistenceType, new File(tempDir.toFile(), walletFileName));
         File[] backups = storage.getBackups(backupDir, null);
         Assertions.assertArrayEquals(expectedBackupNames, Arrays.stream(backups).map(File::getName).toArray(String[]::new));
     }

@@ -22,6 +22,7 @@ import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
 import com.sparrowwallet.sparrow.io.Config;
 import com.sparrowwallet.sparrow.net.ExchangeSource;
 import com.sparrowwallet.sparrow.wallet.OptimizationStrategy;
+import javafx.beans.binding.DoubleBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -72,6 +73,9 @@ public class TransactionDiagram extends GridPane {
     private static final int TOOLTIP_SHOW_DELAY = 50;
     private static final int RELATIVE_SIZE_MAX_RADIUS = 7;
     private static final int ROW_HEIGHT = 27;
+    private static final double MIN_CONNECTOR_WIDTH = 80;
+    private static final double LABELS_PREF_WIDTH = 200;
+    private static final double MAX_LABELS_MIN_WIDTH = 150;
 
     private WalletTransaction walletTx;
     private final BooleanProperty finalProperty = new SimpleBooleanProperty(false);
@@ -151,7 +155,7 @@ public class TransactionDiagram extends GridPane {
 
         ColumnConstraints col2 = new ColumnConstraints();
         col2.setHgrow(Priority.ALWAYS);
-        col2.setPercentWidth(25);
+        col2.setPrefWidth(LABELS_PREF_WIDTH);
         col2.setFillWidth(true);
 
         ColumnConstraints col3 = new ColumnConstraints();
@@ -170,7 +174,7 @@ public class TransactionDiagram extends GridPane {
 
         ColumnConstraints col6 = new ColumnConstraints();
         col6.setHgrow(Priority.ALWAYS);
-        col6.setPercentWidth(25);
+        col6.setPrefWidth(LABELS_PREF_WIDTH);
         col6.setFillWidth(true);
 
         getColumnConstraints().addAll(col1, col2, col3, col4, col5, col6);
@@ -182,7 +186,7 @@ public class TransactionDiagram extends GridPane {
         setMaxHeight(getDiagramHeight());
 
         if(walletTx == null) {
-            getChildren().clear();
+            clear();
         } else {
             this.walletTx = walletTx;
             update();
@@ -190,10 +194,10 @@ public class TransactionDiagram extends GridPane {
             if(expandedDiagram != null) {
                 updateDerivedDiagram(expandedDiagram);
             }
-        }
 
-        if(getLabel() != null) {
-            getLabel().update(this);
+            if(getLabel() != null) {
+                getLabel().update(this);
+            }
         }
     }
 
@@ -201,7 +205,7 @@ public class TransactionDiagram extends GridPane {
         setMinHeight(getDiagramHeight());
         setMaxHeight(getDiagramHeight());
 
-        getChildren().clear();
+        clear();
 
         VBox messagePane = new VBox();
         messagePane.setPrefHeight(getDiagramHeight());
@@ -218,6 +222,9 @@ public class TransactionDiagram extends GridPane {
     }
 
     public void clear() {
+        walletTx = null;
+        setOnMouseClicked(null);
+        setOnContextMenuRequested(null);
         getChildren().clear();
     }
 
@@ -284,8 +291,8 @@ public class TransactionDiagram extends GridPane {
                 saveAsImage();
             });
             contextMenu.getItems().add(menuItem);
-            setOnContextMenuRequested(contextMenuHandler);
         }
+        setOnContextMenuRequested(contextMenuHandler);
     }
 
     private List<Map<BlockTransactionHashIndex, WalletNode>> getDisplayedUtxoSets() {
@@ -440,7 +447,7 @@ public class TransactionDiagram extends GridPane {
     }
 
     private Pane getInputsLabels(List<Map<BlockTransactionHashIndex, WalletNode>> displayedUtxoSets) {
-        VBox inputsBox = new VBox();
+        VBox inputsBox = createLabelsBox();
         inputsBox.setPadding(new Insets(0, 10, 0, 10));
         inputsBox.minHeightProperty().bind(minHeightProperty());
         inputsBox.setAlignment(Pos.BASELINE_RIGHT);
@@ -452,6 +459,9 @@ public class TransactionDiagram extends GridPane {
                 WalletNode walletNode = displayedUtxos.get(input);
                 String desc = getInputDescription(input);
                 Label label = new Label(desc);
+                if(input.getLabel() == null || input.getLabel().isEmpty()) {
+                    label.setMinWidth(Region.USE_PREF_SIZE);
+                }
                 label.setPrefHeight(labelHeight);
                 label.setAlignment(Pos.BASELINE_LEFT);
                 label.getStyleClass().add("utxo-label");
@@ -591,6 +601,7 @@ public class TransactionDiagram extends GridPane {
         displayedUtxoSets.forEach(displayedUtxos::putAll);
 
         VBox pane = new VBox();
+        pane.setMinWidth(MIN_CONNECTOR_WIDTH);
         Group group = new Group();
         VBox.setVgrow(group, Priority.ALWAYS);
 
@@ -602,7 +613,7 @@ public class TransactionDiagram extends GridPane {
         yaxisLine.getStyleClass().add("boundary");
         group.getChildren().add(yaxisLine);
 
-        double width = 140.0;
+        DoubleBinding curveWidth = pane.widthProperty().subtract(RELATIVE_SIZE_MAX_RADIUS);
         List<BlockTransactionHashIndex> inputs = new ArrayList<>(displayedUtxos.keySet());
         long sum = walletTx.getTotal();
         int numUtxos = displayedUtxos.size();
@@ -621,12 +632,12 @@ public class TransactionDiagram extends GridPane {
             int nodeHeight = 17;
             double additional = (0.5 - scaleFactor) * ((double)nodeHeight);
             curve.setStartY(scale(getDiagramHeight(), scaleFactor, additional));
-            curve.setEndX(width);
+            curve.endXProperty().bind(pane.widthProperty());
             curve.setEndY(scale(getDiagramHeight(), 0.5, 0));
 
-            curve.setControlX1(scale(width - RELATIVE_SIZE_MAX_RADIUS, 0.2, 0));
+            curve.controlX1Property().bind(curveWidth.multiply(0.8));
             curve.setControlY1(curve.getStartY());
-            curve.setControlX2(scale(width - RELATIVE_SIZE_MAX_RADIUS, 0.8, 0));
+            curve.controlX2Property().bind(curveWidth.multiply(0.2));
             curve.setControlY2(curve.getEndY());
 
             group.getChildren().add(curve);
@@ -641,6 +652,16 @@ public class TransactionDiagram extends GridPane {
 
         pane.getChildren().add(group);
         return pane;
+    }
+
+    private VBox createLabelsBox() {
+        return new VBox() {
+            @Override
+            protected double computeMinWidth(double height) {
+                double minWidth = super.computeMinWidth(height);
+                return isExpanded() ? minWidth : Math.max(minWidth, Math.min(computePrefWidth(height), MAX_LABELS_MIN_WIDTH));
+            }
+        };
     }
 
     private static double scale(Double value, double scaleFactor, double additional) {
@@ -690,6 +711,7 @@ public class TransactionDiagram extends GridPane {
 
     private Pane getOutputsLines(List<WalletTransaction.Output> displayedOutputs) {
         VBox pane = new VBox();
+        pane.setMinWidth(MIN_CONNECTOR_WIDTH);
         Group group = new Group();
         VBox.setVgrow(group, Priority.ALWAYS);
 
@@ -701,7 +723,7 @@ public class TransactionDiagram extends GridPane {
         yaxisLine.getStyleClass().add("boundary");
         group.getChildren().add(yaxisLine);
 
-        double width = 140.0;
+        DoubleBinding curveWidth = pane.widthProperty().subtract(RELATIVE_SIZE_MAX_RADIUS);
         long sum = walletTx.getTotal();
         List<Long> values = displayedOutputs.stream().map(o -> o.getTransactionOutput().getValue()).collect(Collectors.toList());
         values.add(walletTx.getFee());
@@ -712,22 +734,23 @@ public class TransactionDiagram extends GridPane {
 
             curve.setStartX(0);
             curve.setStartY(scale(getDiagramHeight(), 0.5, 0));
-            curve.setEndX(width - RELATIVE_SIZE_MAX_RADIUS);
+            curve.endXProperty().bind(curveWidth);
             double scaleFactor = (double)i / (numOutputs + 1);
             int nodeHeight = 20;
             double additional = (0.5 - scaleFactor) * ((double)nodeHeight);
             curve.setEndY(scale(getDiagramHeight(), scaleFactor, additional));
 
-            curve.setControlX1(scale(width - RELATIVE_SIZE_MAX_RADIUS, 0.2, 0));
+            curve.controlX1Property().bind(curveWidth.multiply(0.8));
             curve.controlY1Property().bind(curve.startYProperty());
-            curve.setControlX2(scale(width - RELATIVE_SIZE_MAX_RADIUS, 0.8, 0));
+            curve.controlX2Property().bind(curveWidth.multiply(0.2));
             curve.controlY2Property().bind(curve.endYProperty());
 
             group.getChildren().add(curve);
 
             if(sum > 0) {
                 long radius = Math.min(RELATIVE_SIZE_MAX_RADIUS, Math.round((double)values.get(numOutputs-i) * (RELATIVE_SIZE_MAX_RADIUS - 1) / sum) + 1);
-                Circle circle = new Circle(curve.getEndX(), curve.getEndY(), radius);
+                Circle circle = new Circle(0, curve.getEndY(), radius);
+                circle.centerXProperty().bind(curve.endXProperty());
                 circle.getStyleClass().add("size-indicator");
                 group.getChildren().add(circle);
             }
@@ -738,7 +761,7 @@ public class TransactionDiagram extends GridPane {
     }
 
     private Pane getOutputsLabels(List<WalletTransaction.Output> displayedOutputs) {
-        VBox outputsBox = new VBox();
+        VBox outputsBox = createLabelsBox();
         outputsBox.setPadding(new Insets(0, 20, 0, 10));
         outputsBox.setAlignment(Pos.BASELINE_LEFT);
         outputsBox.getChildren().add(createSpacer());
@@ -767,7 +790,8 @@ public class TransactionDiagram extends GridPane {
         boolean highFee = (walletTx.getFeePercentage() > 0.1);
         Label feeLabel = highFee ? new Label("High Fee", getFeeWarningGlyph()) : new Label("Fee", getFeeGlyph());
         feeLabel.getStyleClass().addAll("output-label", "fee-label");
-        String percentage = walletTx.getFeePercentage() < 0.0001d ? "<0.01" : String.format("%.2f", walletTx.getFeePercentage() * 100.0);
+        UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
+        String percentage = walletTx.getFeePercentage() < 0.0001d ? "<" + format.formatDecimalValue(0.01, 2) : format.formatDecimalValue(walletTx.getFeePercentage() * 100.0, 2);
         Tooltip feeTooltip = new Tooltip(walletTx.getFee() < 0 ? "Unknown fee" : "Fee of " + getCoinValue(walletTx.getFee()) + " (" + percentage + "%)");
         feeTooltip.getStyleClass().add("fee-tooltip");
         feeTooltip.setShowDelay(new Duration(TOOLTIP_SHOW_DELAY));
@@ -790,7 +814,7 @@ public class TransactionDiagram extends GridPane {
         outputsBox.getChildren().add(feeBox);
         outputsBox.getChildren().add(createSpacer());
 
-        if(walletTx.getFee() >= 0) {
+        if(walletTx.getFee() >= 0 && !Config.get().isHideAmounts()) {
             ContextMenu contextMenu = new LabelContextMenu(null, walletTx.getFee());
             feeLabel.setContextMenu(contextMenu);
         }
@@ -810,6 +834,7 @@ public class TransactionDiagram extends GridPane {
         recipientLabel.getStyleClass().add(labelledPayment ? "payment-label" : "recipient-label");
         if(addressLabel) {
             recipientLabel.setSkin(new AddressLabelSkin(recipientLabel));
+            recipientLabel.setMinWidth(Region.USE_PREF_SIZE);
         }
         Wallet toWallet = walletTx.getToWallet(AppServices.get().getOpenWallets().keySet(), payment);
         WalletNode toNode = payment instanceof WalletNodePayment walletNodePayment ? walletNodePayment.getWalletNode() : null;
@@ -866,6 +891,7 @@ public class TransactionDiagram extends GridPane {
         Label changeLabel = new Label(changeDesc, overGapLimit ? getChangeWarningGlyph() : getChangeGlyph());
         changeLabel.getStyleClass().addAll("output-label", "change-label");
         changeLabel.setSkin(new AddressLabelSkin(changeLabel));
+        changeLabel.setMinWidth(Region.USE_PREF_SIZE);
         Tooltip changeTooltip = new Tooltip("Change of " + getCoinValue(value) + " to " + changeNode + "\n" + changeAddress.toString() + (overGapLimit ? "\nAddress is beyond the gap limit!" : ""));
         changeTooltip.getStyleClass().add("change-label");
         changeTooltip.setShowDelay(new Duration(TOOLTIP_SHOW_DELAY));
@@ -914,6 +940,7 @@ public class TransactionDiagram extends GridPane {
         Label changeLabel = new Label("Change", getChangeGlyph());
         changeLabel.getStyleClass().addAll("output-label", "payment-label");
         changeLabel.setSkin(new AddressLabelSkin(changeLabel));
+        changeLabel.setMinWidth(Region.USE_PREF_SIZE);
         Tooltip changeTooltip = new Tooltip("Change of " + getCoinValue(silentPayment.getAmount()) + "\n" + silentPayment.getDisplayAddress());
         changeTooltip.getStyleClass().add("change-label");
         changeTooltip.setShowDelay(new Duration(TOOLTIP_SHOW_DELAY));
@@ -945,9 +972,10 @@ public class TransactionDiagram extends GridPane {
         String txDesc = "Transaction";
         Label txLabel = new Label(txDesc);
         boolean isFinalized = walletTx.getTransaction().hasScriptSigs() || walletTx.getTransaction().hasWitnesses();
+        UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
         Tooltip tooltip = new Tooltip(walletTx.getTransaction().getLength() + " bytes\n"
-                + String.format("%.2f", walletTx.getVirtualSize()) + " vBytes"
-                + (walletTx.getFee() < 0 ? "" : "\n" + String.format("%.2f", walletTx.getFee() / walletTx.getVirtualSize()) + " sats/vB" + (isFinalized ? "" : " (non-final)")));
+                + format.formatDecimalValue(walletTx.getVirtualSize(), 2) + " vBytes"
+                + (walletTx.getFee() < 0 ? "" : "\n" + format.formatDecimalValue(walletTx.getFee() / walletTx.getVirtualSize(), 2) + " sats/vB" + (isFinalized ? "" : " (non-final)")));
         tooltip.setShowDelay(new Duration(TOOLTIP_SHOW_DELAY));
         tooltip.setShowDuration(Duration.INDEFINITE);
         tooltip.getStyleClass().add("transaction-tooltip");
@@ -1061,7 +1089,7 @@ public class TransactionDiagram extends GridPane {
     }
 
     private boolean isReducedHeight() {
-        return !isFinal() && AppServices.isReducedWindowHeight(this);
+        return getScene() == null ? AppServices.isReducedWindowHeight() : AppServices.isReducedWindowHeight(this);
     }
 
     private Node createSpacer() {
@@ -1146,6 +1174,8 @@ public class TransactionDiagram extends GridPane {
 
     public void setExpanded(boolean expanded) {
         this.expanded = expanded;
+        getColumnConstraints().get(1).setPrefWidth(expanded ? USE_COMPUTED_SIZE : LABELS_PREF_WIDTH);
+        getColumnConstraints().get(5).setPrefWidth(expanded ? USE_COMPUTED_SIZE : LABELS_PREF_WIDTH);
     }
 
     private static class PayjoinBlockTransactionHashIndex extends BlockTransactionHashIndex {
@@ -1266,22 +1296,24 @@ public class TransactionDiagram extends GridPane {
                 getItems().add(showAddress);
             }
 
-            MenuItem copySatsValue = new MenuItem("Copy Value in sats");
-            copySatsValue.setOnAction(event -> {
-                hide();
-                ClipboardContent content = new ClipboardContent();
-                content.putString(Long.toString(value));
-                Clipboard.getSystemClipboard().setContent(content);
-            });
-            MenuItem copyBtcValue = new MenuItem("Copy Value in BTC");
-            copyBtcValue.setOnAction(event -> {
-                hide();
-                ClipboardContent content = new ClipboardContent();
-                UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
-                content.putString(format.formatBtcValue(value));
-                Clipboard.getSystemClipboard().setContent(content);
-            });
-            getItems().addAll(copySatsValue, copyBtcValue);
+            if(!Config.get().isHideAmounts()) {
+                MenuItem copySatsValue = new MenuItem("Copy Value in sats");
+                copySatsValue.setOnAction(event -> {
+                    hide();
+                    ClipboardContent content = new ClipboardContent();
+                    content.putString(Long.toString(value));
+                    Clipboard.getSystemClipboard().setContent(content);
+                });
+                MenuItem copyBtcValue = new MenuItem("Copy Value in BTC");
+                copyBtcValue.setOnAction(event -> {
+                    hide();
+                    ClipboardContent content = new ClipboardContent();
+                    UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
+                    content.putString(format.formatBtcValue(value));
+                    Clipboard.getSystemClipboard().setContent(content);
+                });
+                getItems().addAll(copySatsValue, copyBtcValue);
+            }
 
             if(paymentCode != null) {
                 MenuItem copyPaymentCode = new MenuItem("Copy Payment Code");

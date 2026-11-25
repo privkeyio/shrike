@@ -11,6 +11,7 @@ import com.sparrowwallet.drongo.silentpayments.SilentPaymentAddress;
 import com.sparrowwallet.drongo.wallet.*;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.EventManager;
+import com.sparrowwallet.sparrow.UnitFormat;
 import com.sparrowwallet.sparrow.event.*;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.io.Config;
@@ -34,6 +35,8 @@ import java.security.SecureRandom;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -469,67 +472,68 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
                 .anyMatch(e -> e.getType().equals(HashIndexEntry.Type.OUTPUT));
     }
 
-    private static void sendSelectedUtxos(TreeTableView<Entry> treeTableView, HashIndexEntry hashIndexEntry) {
+    /**
+     * The outputs a row's menu action applies to: the selected outputs where the selection includes that row, and otherwise the row alone, since a
+     * menu opened from the keyboard is for the focused row whether or not it is selected.
+     */
+    private static List<HashIndexEntry> getMenuUtxoEntries(TreeTableView<Entry> treeTableView, HashIndexEntry hashIndexEntry, Predicate<HashIndexEntry> filter) {
         List<HashIndexEntry> utxoEntries = treeTableView.getSelectionModel().getSelectedCells().stream()
                 .map(tp -> tp.getTreeItem().getValue())
                 .filter(e -> e instanceof HashIndexEntry)
                 .map(e -> (HashIndexEntry)e)
-                .filter(e -> e.getType().equals(HashIndexEntry.Type.OUTPUT) && e.isSpendable())
+                .filter(e -> e.getType().equals(HashIndexEntry.Type.OUTPUT) && filter.test(e))
                 .collect(Collectors.toList());
 
-        if(!utxoEntries.contains(hashIndexEntry)) {
-            utxoEntries = List.of(hashIndexEntry);
-        }
+        return utxoEntries.contains(hashIndexEntry) ? utxoEntries : List.of(hashIndexEntry);
+    }
 
+    private static void sendSelectedUtxos(TreeTableView<Entry> treeTableView, HashIndexEntry hashIndexEntry) {
+        List<HashIndexEntry> utxoEntries = getMenuUtxoEntries(treeTableView, hashIndexEntry, HashIndexEntry::isSpendable);
         final List<BlockTransactionHashIndex> spendingUtxos = utxoEntries.stream().map(HashIndexEntry::getHashIndex).collect(Collectors.toList());
         EventManager.get().post(new SendActionEvent(hashIndexEntry.getWallet(), spendingUtxos));
         Platform.runLater(() -> EventManager.get().post(new SpendUtxoEvent(hashIndexEntry.getWallet(), spendingUtxos)));
     }
 
     private static void freezeUtxo(TreeTableView<Entry> treeTableView, HashIndexEntry hashIndexEntry) {
-        List<BlockTransactionHashIndex> utxos = treeTableView.getSelectionModel().getSelectedCells().stream()
-                .map(tp -> tp.getTreeItem().getValue())
-                .filter(e -> e instanceof HashIndexEntry && ((HashIndexEntry)e).getType().equals(HashIndexEntry.Type.OUTPUT))
-                .map(e -> ((HashIndexEntry)e).getHashIndex())
-                .filter(ref -> ref.getStatus() != Status.FROZEN)
-                .collect(Collectors.toList());
-
-        utxos.forEach(ref -> ref.setStatus(Status.FROZEN));
-        EventManager.get().post(new WalletUtxoStatusChangedEvent(hashIndexEntry.getWallet(), utxos));
+        setUtxoStatus(getMenuUtxoEntries(treeTableView, hashIndexEntry, e -> !e.getHashIndex().isSpent() && e.getHashIndex().getStatus() != Status.FROZEN), Status.FROZEN);
     }
 
     private static void unfreezeUtxo(TreeTableView<Entry> treeTableView, HashIndexEntry hashIndexEntry) {
-        List<BlockTransactionHashIndex> utxos = treeTableView.getSelectionModel().getSelectedCells().stream()
-                .map(tp -> tp.getTreeItem().getValue())
-                .filter(e -> e instanceof HashIndexEntry && ((HashIndexEntry)e).getType().equals(HashIndexEntry.Type.OUTPUT))
-                .map(e -> ((HashIndexEntry)e).getHashIndex())
-                .filter(ref -> ref.getStatus() == Status.FROZEN)
-                .collect(Collectors.toList());
+        setUtxoStatus(getMenuUtxoEntries(treeTableView, hashIndexEntry, e -> !e.getHashIndex().isSpent() && e.getHashIndex().getStatus() == Status.FROZEN), null);
+    }
 
-        utxos.forEach(ref -> ref.setStatus(null));
-        EventManager.get().post(new WalletUtxoStatusChangedEvent(hashIndexEntry.getWallet(), utxos));
+    //A selection can span a wallet and its nested wallets, and each change is saved by the wallet that stores the output
+    private static void setUtxoStatus(List<HashIndexEntry> utxoEntries, Status status) {
+        Map<Wallet, List<BlockTransactionHashIndex>> walletUtxos = new LinkedHashMap<>();
+        for(HashIndexEntry utxoEntry : utxoEntries) {
+            utxoEntry.getHashIndex().setStatus(status);
+            walletUtxos.computeIfAbsent(utxoEntry.getOwningWallet(), wallet -> new ArrayList<>()).add(utxoEntry.getHashIndex());
+        }
+
+        walletUtxos.forEach((wallet, utxos) -> EventManager.get().post(new WalletUtxoStatusChangedEvent(wallet, utxos)));
     }
 
     private String getTooltip(TransactionEntry transactionEntry) {
         String tooltip = transactionEntry.getBlockTransaction().getHash().toString();
         if(transactionEntry.getBlockTransaction().getHeight() <= 0) {
+            UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
             Double feeRate = transactionEntry.getBlockTransaction().getFeeRate();
             Long vSizefromTip = transactionEntry.getVSizeFromTip();
             if(feeRate != null && vSizefromTip != null) {
                 long blocksFromTip = (long)Math.ceil((double)vSizefromTip / Transaction.MAX_BLOCK_SIZE_VBYTES);
 
-                String amount = vSizefromTip + " vB";
+                String amount = format.formatSatsValue(vSizefromTip) + " vB";
                 if(vSizefromTip > 1000 * 1000) {
-                    amount = String.format("%.2f", (double)vSizefromTip / (1000 * 1000)) + " MvB";
+                    amount = format.formatDecimalValue((double)vSizefromTip / (1000 * 1000), 2) + " MvB";
                 } else if(vSizefromTip > 1000) {
-                    amount = String.format("%.2f", (double)vSizefromTip / 1000) + " kvB";
+                    amount = format.formatDecimalValue((double)vSizefromTip / 1000, 2) + " kvB";
                 }
 
                 tooltip += "\nConfirms in: " + (blocksFromTip > 1 ? blocksFromTip + "+ blocks" : "1 block") + " (" + amount + " from tip)";
             }
 
             if(feeRate != null) {
-                tooltip += "\nFee rate: " + String.format("%.2f", feeRate) + " sats/vB";
+                tooltip += "\nFee rate: " + format.formatDecimalValue(feeRate, 2) + " sats/vB";
             }
 
             tooltip += "\nRBF: " + (canRBF(transactionEntry.getBlockTransaction(), transactionEntry.getWallet()) ? "Enabled" : "Disabled");
@@ -714,60 +718,65 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
 
     public static class AddressContextMenu extends ContextMenu {
         public AddressContextMenu(Address address, String outputDescriptor, NodeEntry nodeEntry, boolean addUtxoItems, TreeTableView<Entry> treetable) {
-            if(nodeEntry == null || (!nodeEntry.getWallet().isBip47() && nodeEntry.getWallet().getPolicyType() != PolicyType.SINGLE_SP)) {
+            this(address, outputDescriptor, nodeEntry == null ? null : nodeEntry.getWallet(), nodeEntry == null ? null : nodeEntry.getNode(), () -> nodeEntry, addUtxoItems, treetable);
+        }
+
+        public AddressContextMenu(Address address, String outputDescriptor, Wallet wallet, WalletNode node, Supplier<NodeEntry> nodeEntrySupplier, boolean addUtxoItems, TreeTableView<Entry> treetable) {
+            if(node == null || (!wallet.isBip47() && wallet.getPolicyType() != PolicyType.SINGLE_SP)) {
                 MenuItem receiveToAddress = new MenuItem("Receive To");
                 receiveToAddress.setGraphic(getReceiveGlyph());
                 receiveToAddress.setOnAction(event -> {
                     hide();
+                    NodeEntry nodeEntry = nodeEntrySupplier.get();
                     EventManager.get().post(new ReceiveActionEvent(nodeEntry));
                     Platform.runLater(() -> EventManager.get().post(new ReceiveToEvent(nodeEntry)));
                 });
                 getItems().add(receiveToAddress);
             }
 
-            if(nodeEntry != null && canSignMessage(nodeEntry.getNode())) {
+            if(node != null && canSignMessage(node)) {
                 MenuItem signVerifyMessage = new MenuItem("Sign/Verify Message");
                 signVerifyMessage.setGraphic(getSignMessageGlyph());
                 signVerifyMessage.setOnAction(AE -> {
                     hide();
-                    MessageSignDialog messageSignDialog = new MessageSignDialog(nodeEntry.getWallet(), nodeEntry.getNode());
+                    MessageSignDialog messageSignDialog = new MessageSignDialog(wallet, node);
                     messageSignDialog.initOwner(treetable.getScene().getWindow());
                     messageSignDialog.showAndWait();
                 });
                 getItems().add(signVerifyMessage);
             }
 
-            if(addUtxoItems && nodeEntry != null && !nodeEntry.getNode().getUnspentTransactionOutputs().isEmpty()) {
-                List<BlockTransactionHashIndex> utxos = nodeEntry.getNode().getUnspentTransactionOutputs().stream().collect(Collectors.toList());
+            if(addUtxoItems && node != null && !node.getUnspentTransactionOutputs().isEmpty()) {
+                List<BlockTransactionHashIndex> utxos = node.getUnspentTransactionOutputs().stream().collect(Collectors.toList());
                 MenuItem spendUtxos = new MenuItem("Spend UTXOs");
                 spendUtxos.setGraphic(getSendGlyph());
                 spendUtxos.setOnAction(AE -> {
                     hide();
-                    EventManager.get().post(new SendActionEvent(nodeEntry.getWallet(), utxos));
-                    Platform.runLater(() -> EventManager.get().post(new SpendUtxoEvent(nodeEntry.getWallet(), utxos)));
+                    EventManager.get().post(new SendActionEvent(wallet, utxos));
+                    Platform.runLater(() -> EventManager.get().post(new SpendUtxoEvent(wallet, utxos)));
                 });
                 getItems().add(spendUtxos);
 
-                List<BlockTransactionHashIndex> unfrozenUtxos = nodeEntry.getNode().getUnspentTransactionOutputs().stream().filter(utxo -> utxo.getStatus() != Status.FROZEN).collect(Collectors.toList());
+                List<BlockTransactionHashIndex> unfrozenUtxos = node.getUnspentTransactionOutputs().stream().filter(utxo -> utxo.getStatus() != Status.FROZEN).collect(Collectors.toList());
                 if(!unfrozenUtxos.isEmpty()) {
                     MenuItem freezeUtxos = new MenuItem("Freeze UTXOs");
                     freezeUtxos.setGraphic(getFreezeGlyph());
                     freezeUtxos.setOnAction(AE -> {
                         hide();
                         unfrozenUtxos.forEach(utxo -> utxo.setStatus(Status.FROZEN));
-                        EventManager.get().post(new WalletUtxoStatusChangedEvent(nodeEntry.getWallet(), unfrozenUtxos));
+                        EventManager.get().post(new WalletUtxoStatusChangedEvent(node.getWallet(), unfrozenUtxos));
                     });
                     getItems().add(freezeUtxos);
                 }
 
-                List<BlockTransactionHashIndex> frozenUtxos = nodeEntry.getNode().getUnspentTransactionOutputs().stream().filter(utxo -> utxo.getStatus() == Status.FROZEN).collect(Collectors.toList());
+                List<BlockTransactionHashIndex> frozenUtxos = node.getUnspentTransactionOutputs().stream().filter(utxo -> utxo.getStatus() == Status.FROZEN).collect(Collectors.toList());
                 if(!frozenUtxos.isEmpty()) {
                     MenuItem unfreezeUtxos = new MenuItem("Unfreeze UTXOs");
                     unfreezeUtxos.setGraphic(getUnfreezeGlyph());
                     unfreezeUtxos.setOnAction(AE -> {
                         hide();
                         frozenUtxos.forEach(utxo -> utxo.setStatus(null));
-                        EventManager.get().post(new WalletUtxoStatusChangedEvent(nodeEntry.getWallet(), frozenUtxos));
+                        EventManager.get().post(new WalletUtxoStatusChangedEvent(node.getWallet(), frozenUtxos));
                     });
                     getItems().add(unfreezeUtxos);
                 }
@@ -791,11 +800,11 @@ public class EntryCell extends TreeTableCell<Entry, Entry> implements Confirmati
 
             getItems().addAll(copyAddress, copyOutputDescriptor);
 
-            if(nodeEntry != null) {
+            if(node != null) {
                 MenuItem copyHex = new MenuItem("Copy Script Output Bytes");
                 copyHex.setOnAction(AE -> {
                     hide();
-                    Script outputScript = nodeEntry.getWallet().getOutputScript(nodeEntry.getNode());
+                    Script outputScript = wallet.getOutputScript(node);
                     ClipboardContent content = new ClipboardContent();
                     content.putString(Utils.bytesToHex(outputScript.getProgram()));
                     Clipboard.getSystemClipboard().setContent(content);
