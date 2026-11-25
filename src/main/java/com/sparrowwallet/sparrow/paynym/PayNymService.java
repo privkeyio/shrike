@@ -1,5 +1,6 @@
 package com.sparrowwallet.sparrow.paynym;
 
+import com.sparrowwallet.drongo.address.Address;
 import com.sparrowwallet.drongo.bip47.InvalidPaymentCodeException;
 import com.sparrowwallet.drongo.bip47.PaymentCode;
 import com.sparrowwallet.drongo.crypto.ChildNumber;
@@ -8,6 +9,7 @@ import com.sparrowwallet.drongo.protocol.ScriptType;
 import com.sparrowwallet.drongo.wallet.Keystore;
 import com.sparrowwallet.drongo.wallet.Wallet;
 import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.net.Auth47;
 import io.reactivex.Observable;
 import io.reactivex.rxjavafx.schedulers.JavaFxScheduler;
 import io.reactivex.schedulers.Schedulers;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -203,7 +206,8 @@ public class PayNymService {
 
             //A payment code identifies itself, so a PayNym looked up by payment code must share its key and chain code, differing at most in the segwit feature bit
             PaymentCode requestedCode = getRequestedPaymentCode(nymIdentifier);
-            if(requestedCode != null && !requestedCode.getNotificationAddress().equals(code.getNotificationAddress())) {
+            Address notificationAddress = code.getNotificationAddress();
+            if(requestedCode != null && !requestedCode.getNotificationAddress().equals(notificationAddress)) {
                 throw new IllegalStateException("PayNym server returned payment code " + code + " for requested payment code " + requestedCode);
             }
 
@@ -212,7 +216,7 @@ public class PayNymService {
             }
 
             List<Map<String, Object>> followingMaps = (List<Map<String, Object>>)nymMap.get("following");
-            //An entry whose payment code does not parse is omitted rather than failing the whole PayNym
+            //An entry whose payment code does not parse or has no valid key is omitted rather than failing the whole PayNym
             List<PayNym> following = followingMaps.stream().flatMap(followingMap -> {
                 return PayNym.fromString((String)followingMap.get("code"), (String)followingMap.get("nymId"), (String)followingMap.get("nymName"), (Boolean)followingMap.get("segwit"), Collections.emptyList(), Collections.emptyList()).stream();
             }).collect(Collectors.toList());
@@ -247,6 +251,10 @@ public class PayNymService {
     }
 
     public static String getSignature(Wallet wallet, String authToken) {
+        if(authToken.toLowerCase(Locale.ROOT).startsWith(Auth47.SCHEME + ":") || authToken.contains("://")) {
+            throw new IllegalArgumentException("Invalid PayNym authentication token");
+        }
+
         Wallet masterWallet = wallet.isMasterWallet() ? wallet : wallet.getMasterWallet();
         Keystore keystore = masterWallet.getKeystores().get(0);
         List<ChildNumber> derivation = keystore.getKeyDerivation().getDerivation();

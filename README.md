@@ -105,7 +105,7 @@ or for those without SSH credentials:
 `git clone --recursive https://github.com/sparrowwallet/sparrow.git`
 
 In order to build, Sparrow requires Java 25 or higher to be installed. 
-The release binaries are built with [Eclipse Temurin 25.0.5+8](https://github.com/adoptium/temurin25-binaries/releases/tag/jdk-25.0.5%2B8).
+The release binaries are built with [Eclipse Temurin 25.0.5.1+2](https://github.com/adoptium/temurin25-binaries/releases/tag/jdk-25.0.5.1%2B2).
 If you are using [SDKMAN](https://sdkman.io/), you can use `sdk env install` to ensure you have the correct version.
 
 Other packages may also be necessary to build depending on the platform. On Debian/Ubuntu systems:
@@ -156,12 +156,12 @@ Usage: sparrow [options]
       Possible Values: [ERROR, WARN, INFO, DEBUG, TRACE]      
     --network, -n
       Network to use
-      Possible Values: [mainnet, testnet, regtest, signet, testnet4]
+      Possible Values: [mainnet, testnet, regtest, signet, testnet4, testnet5]
 ```
 
 Note that testnet currently refers to testnet3.
 
-As a fallback, the network (mainnet, testnet, testnet4, regtest or signet) can also be set using an environment variable `SPARROW_NETWORK`. For example:
+As a fallback, the network (mainnet, testnet, testnet4, testnet5, regtest or signet) can also be set using an environment variable `SPARROW_NETWORK`. For example:
 
 `export SPARROW_NETWORK=testnet`
 
@@ -177,7 +177,7 @@ When not explicitly configured using the command line argument above, Sparrow st
 | Linux    | ~/.sparrow |
 | Windows  | %APPDATA%/Sparrow |
 
-Testnet3, testnet4, regtest and signet configurations (along with their wallets) are stored in subfolders to allow easy switching between networks.
+Testnet3, testnet4, testnet5, regtest and signet configurations (along with their wallets) are stored in subfolders to allow easy switching between networks.
 
 On macOS and Linux, Sparrow also supports the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir-spec/latest/). 
 This is opt in: for each category below, if the corresponding directory already exists, Sparrow uses it, otherwise it continues to use the home folder above. Categories are resolved independently, so files can be moved across one at a time.

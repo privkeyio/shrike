@@ -372,12 +372,12 @@ public class SendController extends WalletFormController implements Initializabl
 
         BitcoinUnit unit = getBitcoinUnit(Config.get().getBitcoinUnit());
         feeAmountUnit.getSelectionModel().select(BitcoinUnit.BTC.equals(unit) ? 0 : 1);
-        fee.setTextFormatter(new CoinTextFormatter(Config.get().getUnitFormat(), feeAmountUnit.getValue()));
+        fee.setTextFormatter(createFeeFormatter(Config.get().getUnitFormat(), feeAmountUnit.getValue()));
         fee.textProperty().addListener(feeListener);
 
         feeAmountUnit.valueProperty().addListener((observable, oldValue, newValue) -> {
             Long value = getFeeValueSats(oldValue);
-            fee.setTextFormatter(new CoinTextFormatter(Config.get().getUnitFormat(), newValue));
+            fee.setTextFormatter(createFeeFormatter(Config.get().getUnitFormat(), newValue));
             if(value != null) {
                 setFeeValueSats(value);
             }
@@ -809,6 +809,14 @@ public class SendController extends WalletFormController implements Initializabl
         }
     }
 
+    private CoinTextFormatter createFeeFormatter(UnitFormat unitFormat, BitcoinUnit bitcoinUnit) {
+        return new CoinTextFormatter(unitFormat, bitcoinUnit, btcAmount -> {
+            feeAmountUnit.getSelectionModel().select(BitcoinUnit.BTC);
+            fee.setText(btcAmount);
+            fee.end();
+        });
+    }
+
     private Long getFeeValueSats() {
         return getFeeValueSats(feeAmountUnit.getSelectionModel().getSelectedItem());
     }
@@ -820,7 +828,7 @@ public class SendController extends WalletFormController implements Initializabl
     private Long getFeeValueSats(UnitFormat unitFormat, BitcoinUnit bitcoinUnit) {
         if(fee.getText() != null && !fee.getText().isEmpty()) {
             UnitFormat format = unitFormat == null ? UnitFormat.DOT : unitFormat;
-            double fieldValue = Double.parseDouble(fee.getText().replaceAll(Pattern.quote(format.getGroupingSeparator()), "").replaceAll(",", "."));
+            double fieldValue = Double.parseDouble(fee.getText().replaceAll(Pattern.quote(format.getGroupingSeparator()), "").replaceAll(Pattern.quote(format.getDecimalSeparator()), "."));
             return bitcoinUnit.getSatsValue(fieldValue);
         }
 
@@ -1277,6 +1285,7 @@ public class SendController extends WalletFormController implements Initializabl
         fee.textProperty().removeListener(feeListener);
         fee.setText("");
         fee.textProperty().addListener(feeListener);
+        feeAmountUnit.getSelectionModel().select(getBitcoinUnit(Config.get().getBitcoinUnit()));
 
         cpfpFeeRate.setVisible(false);
         fiatFeeAmount.setText("");
@@ -1549,8 +1558,9 @@ public class SendController extends WalletFormController implements Initializabl
         Wallet masterWallet = getWalletForm().getMasterWallet();
         Storage storage = AppServices.get().getOpenWallets().get(masterWallet);
         List<ScriptType> scriptTypes = PayNym.getSegwitScriptTypes();
+        String nymName = PayNym.getChildWalletNymName(masterWallet, externalPaymentCode, payNym);
         for(ScriptType childScriptType : scriptTypes) {
-            String label = (payNym == null ? externalPaymentCode.toAbbreviatedString() : payNym.nymName()) + " " + childScriptType.getName();
+            String label = nymName + " " + childScriptType.getName();
             Wallet addedWallet = masterWallet.addChildWallet(externalPaymentCode, childScriptType, label);
             if(!storage.isPersisted(addedWallet)) {
                 try {
@@ -1778,9 +1788,12 @@ public class SendController extends WalletFormController implements Initializabl
         transactionDiagram.update(transactionDiagram.getWalletTransaction());
         setEffectiveFeeRate(getWalletTransaction());
         setFeeRate(getFeeRate());
+        blockTargetFeeRatesChart.setUnitFormat(event.getUnitFormat());
+        mempoolSizeFeeRatesChart.update(getMempoolHistogram());
+        feeRange.refreshTickLabels();
         if(fee.getTextFormatter() instanceof CoinTextFormatter coinTextFormatter && coinTextFormatter.getUnitFormat() != event.getUnitFormat()) {
             Long value = getFeeValueSats(coinTextFormatter.getUnitFormat(), feeAmountUnit.getSelectionModel().getSelectedItem());
-            fee.setTextFormatter(new CoinTextFormatter(event.getUnitFormat(), feeAmountUnit.getValue()));
+            fee.setTextFormatter(createFeeFormatter(event.getUnitFormat(), feeAmountUnit.getValue()));
 
             if(value != null) {
                 setFeeValueSats(value);

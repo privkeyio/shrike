@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class KeycardApi extends CardApi {
@@ -64,7 +65,7 @@ public class KeycardApi extends CardApi {
 
         if(!cardStatus.isInitializedCard()) {
             try {
-                String puk = String.format("%012d", new SecureRandom().nextLong(999999999999L));
+                String puk = String.format(Locale.ROOT, "%012d", new SecureRandom().nextLong(999999999999L));
                 this.cardProtocol.init(pin, puk, "KeycardDefaultPairing").checkOK();
                 this.cardProtocol.select().checkOK();
             } catch(IOException | APDUException e) {
@@ -233,6 +234,7 @@ public class KeycardApi extends CardApi {
 
     void sign(Wallet wallet, PSBT psbt) throws CardException {
         Map<PSBTInput, WalletNode> signingNodes = wallet.getSigningNodes(psbt);
+        signingNodes.keySet().forEach(PSBTInput::verifySilentPaymentSigHash);
         for(PSBTInput psbtInput : psbt.getPsbtInputs()) {
             if(!psbtInput.isSigned()) {
                 WalletNode signingNode = signingNodes.get(psbtInput);

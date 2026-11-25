@@ -366,7 +366,7 @@ public class SettingsController extends WalletFormController implements Initiali
         if(optionalResult.isPresent()) {
             QRScanDialog.Result result = optionalResult.get();
             if(result.outputDescriptor != null) {
-                rederiveAndReplaceWallet(result.outputDescriptor.toWallet());
+                replaceWalletFromDescriptor(result.outputDescriptor);
             } else if(result.wallets != null) {
                 for(Wallet wallet : result.wallets) {
                     if(scriptType.getValue().equals(wallet.getScriptType()) && !wallet.getKeystores().isEmpty()) {
@@ -502,13 +502,9 @@ public class SettingsController extends WalletFormController implements Initiali
                     }
                 }
                 String extKey = matcher.group(2);
-                String childDerivationPath = matcher.group(3);
 
-                if(ExtendedKey.Header.getHeaders(Network.get()).stream().anyMatch(header -> header.isPrivateKey() && extKey.startsWith(header.name())) &&
-                        (keyDerivationPath != null || (childDerivationPath != null && !(childDerivationPath.equals("/0/*") || childDerivationPath.equals("/1/*") || childDerivationPath.equals("/<0;1>/*"))))) {
+                if(keyDerivationPath != null && ExtendedKey.Header.getHeaders(Network.get()).stream().anyMatch(header -> header.isPrivateKey() && extKey.startsWith(header.name()))) {
                     AppServices.showWarningDialog("Private extended key detected", "Sparrow will convert the provided private key to a public key for use in a watch only wallet.\n\nTo import a private key, use the Master Private Key option when creating a Software Wallet.");
-                } else if(childDerivationPath != null && !(childDerivationPath.endsWith("/0/*") || childDerivationPath.endsWith("/1/*") || childDerivationPath.endsWith("/<0;1>/*"))) {
-                    AppServices.showWarningDialog("Non standard child derivation detected", "Sparrow does not support non-BIP32 wallets without standard receive and change chains.\n\nThe provided descriptor will be amended if necessary.");
                 }
             }
 
@@ -518,12 +514,19 @@ public class SettingsController extends WalletFormController implements Initiali
 
     private void setDescriptorText(String text) {
         try {
-            OutputDescriptor editedOutputDescriptor = OutputDescriptor.getOutputDescriptor(text.trim().replace("\\", ""));
-            Wallet editedWallet = editedOutputDescriptor.toWallet();
-            rederiveAndReplaceWallet(editedWallet);
+            replaceWalletFromDescriptor(OutputDescriptor.getOutputDescriptor(text.trim().replace("\\", "")));
         } catch(Exception e) {
             AppServices.showErrorDialog("Invalid output descriptor", e.getMessage());
         }
+    }
+
+    private void replaceWalletFromDescriptor(OutputDescriptor outputDescriptor) {
+        if(!outputDescriptor.hasStandardChildDerivations()) {
+            AppServices.showWarningDialog("Non standard child derivation detected",
+                    "Sparrow does not support non-BIP32 wallets without standard receive and change chains.\n\nThe provided descriptor will be amended if necessary.");
+        }
+
+        rederiveAndReplaceWallet(outputDescriptor.toWallet());
     }
 
     private void rederiveAndReplaceWallet(Wallet editedWallet) {
@@ -697,9 +700,8 @@ public class SettingsController extends WalletFormController implements Initiali
                         EventManager.get().post(new StorageEvent(walletId, TimedEvent.Action.END, "Done"));
                         ECKey encryptionFullKey = keyDerivationService.getValue();
                         Key key = new Key(encryptionFullKey.getPrivKeyBytes(), walletForm.getStorage().getKeyDeriver().getSalt(), EncryptionType.Deriver.ARGON2);
-                        masterWallet.decrypt(key);
-
                         if(masterWallet.getKeystores().stream().anyMatch(ks -> ks.getSource() != KeystoreSource.SW_SEED)) {
+                            masterWallet.decrypt(key);
                             try {
                                 for(StandardAccount standardAccount : standardAccounts) {
                                     Wallet childWallet = masterWallet.addChildWallet(standardAccount);
@@ -711,8 +713,12 @@ public class SettingsController extends WalletFormController implements Initiali
                                 key.clear();
                             }
                         } else if(discoverAccounts) {
-                            ElectrumServer.AccountDiscoveryService accountDiscoveryService = new ElectrumServer.AccountDiscoveryService(masterWallet, standardAccounts);
+                            //Discovery can take a while, during which the open wallet stays encrypted
+                            Wallet discoveryWallet = masterWallet.copy();
+                            discoveryWallet.decrypt(key);
+                            ElectrumServer.AccountDiscoveryService accountDiscoveryService = new ElectrumServer.AccountDiscoveryService(discoveryWallet, standardAccounts);
                             accountDiscoveryService.setOnSucceeded(event -> {
+                                masterWallet.decrypt(key);
                                 addAndEncryptAccounts(masterWallet, accountDiscoveryService.getValue(), key);
                                 if(accountDiscoveryService.getValue().isEmpty()) {
                                     AppServices.showAlertDialog("No Accounts Found", "No new accounts with existing transactions were found. " +
@@ -722,11 +728,12 @@ public class SettingsController extends WalletFormController implements Initiali
                             });
                             accountDiscoveryService.setOnFailed(event -> {
                                 log.error("Failed to discover accounts", event.getSource().getException());
-                                addAndEncryptAccounts(masterWallet, Collections.emptyList(), key);
+                                key.clear();
                                 AppServices.showErrorDialog("Failed to discover accounts", event.getSource().getException().getMessage());
                             });
                             accountDiscoveryService.start();
                         } else {
+                            masterWallet.decrypt(key);
                             addAndEncryptAccounts(masterWallet, standardAccounts, key);
                         }
                     });
@@ -949,6 +956,8 @@ public class SettingsController extends WalletFormController implements Initiali
         if(event.getExistingWalletId().equals(getWalletForm().getWalletId())) {
             Wallet importedWallet = event.getImportedWallet();
             List<Keystore> importedKeystores = importedWallet.getKeystores();
+            importedKeystores.stream().filter(keystore -> keystore.getLabel() != null)
+                    .forEach(keystore -> keystore.setLabel(keystore.getLabel().replaceAll("[\\p{Cc}\\p{Cf}]+", " ").trim()));
             List<Keystore> nonWatchKeystores = walletForm.getWallet().getKeystores().stream().filter(k -> k.isValid() && k.getSource() != KeystoreSource.SW_WATCH).collect(Collectors.toList());
 
             //BIP129 requires a signer to verify its own key is present in the imported descriptor by an exact match, and not by a shortcut such as the master fingerprint
@@ -1049,7 +1058,8 @@ public class SettingsController extends WalletFormController implements Initiali
             }
         }
 
-        WalletPasswordDialog dlg = new WalletPasswordDialog(null, requirement, suggestChangePassword, walletForm.getStorage().isInWalletsDir());
+        WalletPasswordDialog dlg = new WalletPasswordDialog(null, requirement, suggestChangePassword, walletForm.getStorage().isInWalletsDir(),
+                walletForm.getStorage().isInWalletsDir() || walletForm.getStorage().hasBackups());
         dlg.initOwner(apply.getScene().getWindow());
         Optional<SecureString> password = walletForm.isLocked() ? Optional.empty() : dlg.showAndWait();
         if(password.isPresent() && walletForm.isLocked()) {
@@ -1072,11 +1082,8 @@ public class SettingsController extends WalletFormController implements Initiali
 
             if(password.get().length() == 0 && requirement != WalletPasswordDialog.PasswordRequirement.UPDATE_SET) {
                 try {
-                    walletForm.getStorage().setEncryptionPubKey(Storage.NO_PASSWORD_KEY);
+                    walletForm.getStorage().setEncryptionPubKey(Storage.NO_PASSWORD_KEY, deleteBackups);
                     walletForm.saveAndRefresh();
-                    if(deleteBackups) {
-                        walletForm.deleteBackups();
-                    }
                     EventManager.get().post(new RequestOpenWalletsEvent());
                 } catch (IOException | StorageException e) {
                     log.error("Error saving wallet", e);
@@ -1131,11 +1138,8 @@ public class SettingsController extends WalletFormController implements Initiali
                                 childWallet.encrypt(key);
                             }
                         }
-                        walletForm.getStorage().setEncryptionPubKey(encryptionPubKey);
+                        walletForm.getStorage().setEncryptionPubKey(encryptionPubKey, deleteBackups || dlg.isDeleteBackups());
                         walletForm.saveAndRefresh();
-                        if(deleteBackups || dlg.isDeleteBackups()) {
-                            walletForm.deleteBackups();
-                        }
                         EventManager.get().post(new RequestOpenWalletsEvent());
                     } catch (Exception e) {
                         log.error("Error saving wallet", e);

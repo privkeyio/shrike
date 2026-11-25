@@ -22,6 +22,7 @@ import com.sparrowwallet.sparrow.io.*;
 import com.sparrowwallet.sparrow.io.bbqr.BBQR;
 import com.sparrowwallet.sparrow.io.bbqr.BBQRType;
 import com.sparrowwallet.sparrow.net.ElectrumServer;
+import com.sparrowwallet.sparrow.net.Protocol;
 import com.sparrowwallet.sparrow.net.ServerType;
 import com.sparrowwallet.sparrow.settings.SettingsGroup;
 import com.sparrowwallet.sparrow.settings.SettingsDialog;
@@ -83,6 +84,7 @@ import static com.sparrowwallet.sparrow.control.DownloadVerifierDialog.*;
 
 public class AppController implements Initializable {
     private static final Logger log = LoggerFactory.getLogger(AppController.class);
+    private static final double NARROW_WINDOW_WIDTH = 900;
 
     //Must match the file configured in logback.xml, which cannot reference this constant
     public static final String LOG_FILE_NAME = SparrowWallet.APP_ID + ".log";
@@ -261,7 +263,10 @@ public class AppController implements Initializable {
     private final Map<File, File> renamedWallets = new HashMap<>();
 
     private final ChangeListener<Boolean> serverToggleOnlineListener = (observable, oldValue, newValue) -> {
-        Platform.runLater(() -> setServerToggleTooltip(getCurrentBlockHeight()));
+        Platform.runLater(() -> {
+            setServerToggleTooltip(getCurrentBlockHeight());
+            setTorIcon();
+        });
     };
 
     private final ListChangeListener<Tab> tabsChangeListener = (c) -> {
@@ -401,6 +406,14 @@ public class AppController implements Initializable {
         if(Config.get().isChunkAddresses()) {
             rootBox.getStyleClass().add("chunk-addresses");
         }
+        rootBox.widthProperty().addListener((_, _, width) -> {
+            boolean narrow = width.doubleValue() < NARROW_WINDOW_WIDTH;
+            if(narrow && !rootBox.getStyleClass().contains("narrow-window")) {
+                rootBox.getStyleClass().add("narrow-window");
+            } else if(!narrow) {
+                rootBox.getStyleClass().remove("narrow-window");
+            }
+        });
         hideEmptyUsedAddressesProperty.set(Config.get().isHideEmptyUsedAddresses());
         hideEmptyUsedAddresses.selectedProperty().bindBidirectional(hideEmptyUsedAddressesProperty);
 
@@ -431,7 +444,7 @@ public class AppController implements Initializable {
         MenuItem homeItem = new MenuItem("Home Folder...");
         homeItem.setOnAction(this::restartInHome);
         restart.getItems().add(homeItem);
-        List<Network> networks = new ArrayList<>(List.of(Network.MAINNET, Network.TESTNET, Network.TESTNET4, Network.SIGNET));
+        List<Network> networks = new ArrayList<>(List.of(Network.MAINNET, Network.TESTNET, Network.TESTNET4, Network.TESTNET5, Network.SIGNET));
         networks.remove(Network.get());
         for(Network network : networks) {
             MenuItem networkItem = new MenuItem(network.toDisplayString());
@@ -1842,7 +1855,9 @@ public class AppController implements Initializable {
 
             File oldWalletFile = renamedWallets.remove(storage.getWalletFile());
             if(oldWalletFile != null) {
-                deleteStorage(new Storage(oldWalletFile), false);
+                Storage oldStorage = new Storage(oldWalletFile);
+                oldStorage.renameBackups(storage);
+                deleteStorage(oldStorage, false);
             }
         } else {
             for(Tab walletTab : tabs.getTabs()) {
@@ -2242,7 +2257,7 @@ public class AppController implements Initializable {
                 try {
                     PSBT combinedPsbt = currentPsbt.verifyCombinedSignatures(psbt);
                     //A combine can resolve a silent payment output script, which is only valid if the metadata provided with it proves the claimed address
-                    verifySilentPaymentScripts(transactionTabData.getTransactionData().getSigningWallet(), combinedPsbt);
+                    AppServices.verifySilentPaymentScripts(transactionTabData.getTransactionData().getSigningWallet(), combinedPsbt);
                     currentPsbt.combine(psbt);
                     setTabName(tab, name);
                     EventManager.get().post(new PSBTCombinedEvent(currentPsbt));
@@ -2270,19 +2285,13 @@ public class AppController implements Initializable {
 
     private boolean verifyPSBT(Wallet signingWallet, PSBT psbt) {
         try {
-            verifySilentPaymentScripts(signingWallet, psbt);
+            AppServices.verifySilentPaymentScripts(signingWallet, psbt);
         } catch(InvalidSilentPaymentException e) {
             showErrorDialog("Unverified Silent Payment Outputs", e.getMessage());
             return false;
         }
 
         return true;
-    }
-
-    private void verifySilentPaymentScripts(Wallet signingWallet, PSBT psbt) throws InvalidSilentPaymentException {
-        if(signingWallet != null) {
-            signingWallet.verifySilentPaymentScripts(psbt);
-        }
     }
 
     private boolean verifyTransactionContext(PSBT contextPsbt, Transaction transaction, PSBT psbt, String source) {
@@ -2515,7 +2524,9 @@ public class AppController implements Initializable {
     }
 
     private void deleteWallet(WalletForm selectedWalletForm) {
-        Optional<ButtonType> optButtonType = AppServices.showWarningDialog("Delete " + selectedWalletForm.getWallet().getMasterName() + "?", "The wallet file" + (selectedWalletForm.getStorage().isInWalletsDir() ? " and any backups" : "") + " will be deleted. Are you sure?", ButtonType.NO, ButtonType.YES);
+        boolean deletesBackups = selectedWalletForm.getStorage().isInWalletsDir() || selectedWalletForm.getStorage().hasBackups();
+        Optional<ButtonType> optButtonType = AppServices.showWarningDialog("Delete " + selectedWalletForm.getWallet().getMasterName() + "?",
+                "The wallet file" + (deletesBackups ? " and any backups" : "") + " will be deleted. Are you sure?", ButtonType.NO, ButtonType.YES);
         if(optButtonType.isPresent() && optButtonType.get() == ButtonType.YES) {
             Storage storage = selectedWalletForm.getStorage();
             if(selectedWalletForm.getMasterWallet().isEncrypted()) {
@@ -3278,7 +3289,7 @@ public class AppController implements Initializable {
 
     @Subscribe
     public void cormorantPruneStatus(CormorantPruneStatusEvent event) {
-        if(event.legacyWalletExists()) {
+        if(event.legacyWalletExists() && Config.get().getCoreServer().getProtocol() != Protocol.HTTPS) {
             Optional<ButtonType> optButtonType = AppServices.showErrorDialog("Error importing Bitcoin Knots descriptor wallet",
                     "The connected node is pruned at " + event.getPruneDateAsString() + ", but the wallet birthday for " + event.getWallet().getFullDisplayName() + " is set to " + event.getScanDateAsString() + ".\n\n" +
                             "Do you want to try using the existing legacy Bitcoin Knots wallet?", ButtonType.YES, ButtonType.NO);

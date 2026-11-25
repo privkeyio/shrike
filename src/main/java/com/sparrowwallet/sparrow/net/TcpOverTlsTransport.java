@@ -15,6 +15,7 @@ import java.security.*;
 import java.security.cert.*;
 import java.security.cert.Certificate;
 import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 public class TcpOverTlsTransport extends TcpTransport {
@@ -132,6 +133,21 @@ public class TcpOverTlsTransport extends TcpTransport {
         return trustManagerFactory.getTrustManagers();
     }
 
+    /**
+     * Returns the expiry date of the certificate in the given file if it has expired, otherwise null.
+     */
+    public static Date getExpiredAt(File crtFile) {
+        try(FileInputStream fis = new FileInputStream(crtFile)) {
+            if(CertificateFactory.getInstance("X.509").generateCertificate(fis) instanceof X509Certificate x509Certificate && x509Certificate.getNotAfter().before(new Date())) {
+                return x509Certificate.getNotAfter();
+            }
+        } catch(IOException | CertificateException e) {
+            log.warn("Could not read certificate at " + crtFile.getAbsolutePath(), e);
+        }
+
+        return null;
+    }
+
     protected void createSocket() throws IOException {
         socket = sslSocketFactory.createSocket();
         socket.connect(new InetSocketAddress(server.getHost(), server.getPortOrDefault(Protocol.SSL.getDefaultPort())));
@@ -197,7 +213,7 @@ public class TcpOverTlsTransport extends TcpTransport {
                 x509Certs[i] = (X509Certificate)certs[i];
             }
 
-            String authType = x509Certs[0].getPublicKey().getAlgorithm().equals("EC") ? "ECDHE_ECDSA" : "RSA";
+            String authType = x509Certs[0].getPublicKey().getAlgorithm().equals("EC") ? "ECDHE_ECDSA" : "ECDHE_RSA";
             defaultTm.checkServerTrusted(x509Certs, authType);
 
             //Match the hostname as CA validated connections do, so that a certificate saved here can be validated when it is used

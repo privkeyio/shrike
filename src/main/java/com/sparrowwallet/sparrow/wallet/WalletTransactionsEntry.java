@@ -163,6 +163,7 @@ public class WalletTransactionsEntry extends Entry {
                         walletTransactionMap.put(inputTx, inputWalletTx);
                     }
                     inputWalletTx.incoming.put(hashIndex, keyPurpose);
+                    inputWalletTx.owningWallets.put(hashIndex, wallet);
 
                     if(hashIndex.getSpentBy() != null) {
                         BlockTransaction outputTx = transactionsWallet.getWalletTransaction(hashIndex.getSpentBy().getHash());
@@ -173,6 +174,7 @@ public class WalletTransactionsEntry extends Entry {
                                 walletTransactionMap.put(outputTx, outputWalletTx);
                             }
                             outputWalletTx.outgoing.put(hashIndex.getSpentBy(), keyPurpose);
+                            outputWalletTx.owningWallets.put(hashIndex.getSpentBy(), wallet);
                         }
                     }
                 }
@@ -259,6 +261,7 @@ public class WalletTransactionsEntry extends Entry {
         private final BlockTransaction blockTransaction;
         private final Map<BlockTransactionHashIndex, KeyPurpose> incoming = new TreeMap<>();
         private final Map<BlockTransactionHashIndex, KeyPurpose> outgoing = new TreeMap<>();
+        private final Map<BlockTransactionHashIndex, Wallet> owningWallets = new IdentityHashMap<>();
 
         public WalletTransaction(Wallet wallet, BlockTransaction blockTransaction) {
             this.wallet = wallet;
@@ -266,7 +269,7 @@ public class WalletTransactionsEntry extends Entry {
         }
 
         public TransactionEntry getTransactionEntry() {
-            return new TransactionEntry(wallet, blockTransaction, incoming, outgoing);
+            return new TransactionEntry(wallet, blockTransaction, incoming, outgoing, owningWallets);
         }
 
         public long getValue() {
@@ -285,10 +288,7 @@ public class WalletTransactionsEntry extends Entry {
         public int compareTo(WalletTransactionsEntry.WalletTransaction other) {
             //This comparison must be identical to that of TransactionEntry so we can avoid a resort calculating balances when creating WalletTransactionsEntry
             if(blockTransaction.getHeight() != other.blockTransaction.getHeight()) {
-                int blockOrder = blockTransaction.getComparisonHeight() - other.blockTransaction.getComparisonHeight();
-                if(blockOrder != 0) {
-                    return blockOrder;
-                }
+                return blockTransaction.compareHeight(other.blockTransaction);
             }
 
             int valueOrder = Long.compare(other.getValue(), getValue());

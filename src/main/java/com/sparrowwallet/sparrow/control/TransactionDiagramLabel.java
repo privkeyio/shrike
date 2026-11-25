@@ -2,8 +2,10 @@ package com.sparrowwallet.sparrow.control;
 
 import com.sparrowwallet.drongo.wallet.*;
 import com.sparrowwallet.sparrow.AppServices;
+import com.sparrowwallet.sparrow.UnitFormat;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.glyphfont.GlyphUtils;
+import com.sparrowwallet.sparrow.io.Config;
 import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.geometry.Pos;
@@ -85,6 +87,16 @@ public class TransactionDiagramLabel extends HBox {
             List<Payment> badbankOutputs = walletTx.getPayments().stream().filter(walletTx::isBadbankSend).collect(Collectors.toList());
             List<OutputLabel> badbankOutputLabels = badbankOutputs.stream().map(payment -> getBadbankOutputLabel(transactionDiagram, payment)).collect(Collectors.toList());
             outputLabels.addAll(badbankOutputLabels);
+
+            for(WalletTransaction.Output output : walletTx.getOutputs()) {
+                if(transactionDiagram.isPaymentAndNotChange(output)) {
+                    Payment payment = output instanceof WalletTransaction.PaymentOutput po ? po.getPayment()
+                            : ((WalletTransaction.ConsolidationOutput)output).getWalletNodePayment();
+                    if(!walletTx.isPremixSend(payment) && payment.getType() != Payment.Type.WHIRLPOOL_FEE && !walletTx.isBadbankSend(payment)) {
+                        outputLabels.add(getOutputLabel(transactionDiagram, output));
+                    }
+                }
+            }
         } else if(walletTx.getPayments().size() >= 5 && walletTx.getPayments().stream().mapToLong(Payment::getAmount).distinct().count() <= 1 && walletTx.getWallet() != null
                 && walletTx.getWallet().getStandardAccountType() == StandardAccount.WHIRLPOOL_PREMIX  && walletTx.getPayments().stream().anyMatch(walletTx::isPostmixSend)) {
             OutputLabel mixOutputLabel = getMixOutputLabel(transactionDiagram, walletTx.getPayments());
@@ -185,7 +197,8 @@ public class TransactionDiagramLabel extends HBox {
         long total = premixOutputs.stream().mapToLong(Payment::getAmount).sum();
         double feePercentage = (double)whirlpoolFee.getAmount() / (total - whirlpoolFee.getAmount());
         Glyph glyph = GlyphUtils.getOutputGlyph(transactionDiagram.getWalletTransaction(), whirlpoolFee);
-        String text = "Whirlpool fee of " + transactionDiagram.getCoinValue(whirlpoolFee.getAmount()) + " (" + String.format("%.2f", feePercentage * 100.0) + "% of total premix value)";
+        UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
+        String text = "Whirlpool fee of " + transactionDiagram.getCoinValue(whirlpoolFee.getAmount()) + " (" + format.formatDecimalValue(feePercentage * 100.0, 2) + "% of total premix value)";
 
         return getOutputLabel(glyph, text);
     }
@@ -254,7 +267,8 @@ public class TransactionDiagramLabel extends HBox {
         }
 
         Glyph glyph = GlyphUtils.getFeeGlyph();
-        String percentage = walletTx.getFeePercentage() < 0.0001d ? "<0.01" : String.format("%.2f", walletTx.getFeePercentage() * 100.0);
+        UnitFormat format = Config.get().getUnitFormat() == null ? UnitFormat.DOT : Config.get().getUnitFormat();
+        String percentage = walletTx.getFeePercentage() < 0.0001d ? "<" + format.formatDecimalValue(0.01, 2) : format.formatDecimalValue(walletTx.getFeePercentage() * 100.0, 2);
         String text = "Fee of " + transactionDiagram.getCoinValue(walletTx.getFee()) + " (" + percentage + "%)";
 
         return getOutputLabel(glyph, text);

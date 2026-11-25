@@ -148,10 +148,6 @@ public class WalletForm {
         }
     }
 
-    public void deleteBackups() {
-        storage.deleteBackups();
-    }
-
     public void refreshHistory(Integer blockHeight) {
         refreshHistory(blockHeight, null, null);
     }
@@ -250,6 +246,9 @@ public class WalletForm {
             if(scanService.getValue()) {
                 EventManager.get().post(new WalletHistoryFinishedEvent(wallet));
                 updateWallets(blockHeight, previousWallet);
+            } else {
+                //The payments a scan finds are added to the wallet before their history is fetched, and must be saved even where that fetch is not made
+                updateWallets(null, previousWallet);
             }
             firePendingRefreshIfRequested();
         });
@@ -279,7 +278,7 @@ public class WalletForm {
         }
     }
 
-    private void handleHistoryFailed(Wallet previousWallet, Throwable exception) {
+    void handleHistoryFailed(Wallet previousWallet, Throwable exception) {
         if(exception instanceof AllHistoryChangedException) {
             if(getWallet().isMasterWallet() && getWallet().getKeystores().stream().anyMatch(Keystore::needsPassphrase)) {
                 Optional<ButtonType> optType = AppServices.showWarningDialog("Reopen " + getWallet().getMasterName() + "?",
@@ -313,6 +312,10 @@ public class WalletForm {
             }
 
             EventManager.get().post(new WalletHistoryFailedEvent(wallet, exception));
+
+            //A refresh can change the wallet before failing, as a silent payments scan does in adding the payments it finds before fetching their history.
+            //The next refresh copies a wallet already holding those changes and would not report them, so they are saved here, without advancing the block height
+            updateWallets(null, previousWallet);
         }
     }
 
@@ -719,41 +722,17 @@ public class WalletForm {
     public void walletLabelsChanged(WalletEntryLabelsChangedEvent event) {
         if(event.toThisOrNested(wallet)) {
             Map<Entry, Entry> labelChangedEntries = new LinkedHashMap<>();
+            Map<Sha256Hash, Entry> transactionEntries = new LinkedHashMap<>();
             Collection<Entry> entries = event.propagate() ? event.getEntries() : Collections.emptyList();
             for(Entry entry : entries) {
                 if(entry.getLabel() != null && !entry.getLabel().isEmpty()) {
                     if(entry instanceof TransactionEntry transactionEntry) {
-                        for(KeyPurpose keyPurpose : KeyPurpose.DEFAULT_PURPOSES) {
-                            for(WalletNode childNode : wallet.getNode(keyPurpose).getChildren()) {
-                                for(BlockTransactionHashIndex receivedRef : childNode.getTransactionOutputs()) {
-                                    if(receivedRef.getHash().equals(transactionEntry.getBlockTransaction().getHash())) {
-                                        String prevRefLabel = "";
-                                        if((receivedRef.getLabel() == null || receivedRef.getLabel().isEmpty()
-                                                || receivedRef.getLabel().endsWith(" (sent)") || receivedRef.getLabel().endsWith(" (change)") || receivedRef.getLabel().endsWith(" (received)"))
-                                                && wallet.getStandardAccountType() != StandardAccount.WHIRLPOOL_PREMIX) {
-                                            prevRefLabel = receivedRef.getLabel() == null ? "" : receivedRef.getLabel();
-                                            receivedRef.setLabel(entry.getLabel() + (keyPurpose == KeyPurpose.CHANGE ? (event.getWallet().isBip47() ? " (sent)" : " (change)") : " (received)"));
-                                            labelChangedEntries.put(new HashIndexEntry(event.getWallet(), receivedRef, HashIndexEntry.Type.OUTPUT, keyPurpose), entry);
-                                        }
-                                        if(childNode.getLabel() == null || childNode.getLabel().isEmpty()
-                                                || prevRefLabel.equals(childNode.getLabel() + " (sent)") || prevRefLabel.equals(childNode.getLabel() + " (change)") || prevRefLabel.equals(childNode.getLabel() + " (received)")) {
-                                            childNode.setLabel(entry.getLabel());
-                                            labelChangedEntries.put(new NodeEntry(event.getWallet(), childNode), entry);
-                                        }
-                                    }
-                                    if(receivedRef.isSpent() && receivedRef.getSpentBy().getHash().equals(transactionEntry.getBlockTransaction().getHash())
-                                            && (receivedRef.getSpentBy().getLabel() == null || receivedRef.getSpentBy().getLabel().isEmpty() || receivedRef.getSpentBy().getLabel().endsWith(" (input)"))) {
-                                        receivedRef.getSpentBy().setLabel(entry.getLabel() + " (input)");
-                                        labelChangedEntries.put(new HashIndexEntry(event.getWallet(), receivedRef.getSpentBy(), HashIndexEntry.Type.INPUT, keyPurpose), entry);
-                                    }
-                                }
-                            }
-                        }
+                        transactionEntries.put(transactionEntry.getBlockTransaction().getHash(), entry);
                     }
                     if(entry instanceof NodeEntry nodeEntry) {
                         for(BlockTransactionHashIndex receivedRef : nodeEntry.getNode().getTransactionOutputs()) {
                             BlockTransaction blockTransaction = event.getWallet().getTransactions().get(receivedRef.getHash());
-                            if(blockTransaction.getLabel() == null || blockTransaction.getLabel().isEmpty()) {
+                            if(blockTransaction != null && (blockTransaction.getLabel() == null || blockTransaction.getLabel().isEmpty())) {
                                 blockTransaction.setLabel(entry.getLabel());
                                 labelChangedEntries.put(new TransactionEntry(event.getWallet(), blockTransaction, Collections.emptyMap(), Collections.emptyMap()), entry);
                             }
@@ -762,9 +741,39 @@ public class WalletForm {
                     if(entry instanceof HashIndexEntry hashIndexEntry) {
                         BlockTransaction blockTransaction = hashIndexEntry.getBlockTransaction();
                         //Avoid recursive changes from hashIndexEntries
-                        if((blockTransaction.getLabel() == null || blockTransaction.getLabel().isEmpty()) && event.getSource(entry) == null) {
+                        if(blockTransaction != null && (blockTransaction.getLabel() == null || blockTransaction.getLabel().isEmpty()) && event.getSource(entry) == null) {
                             blockTransaction.setLabel(entry.getLabel());
                             labelChangedEntries.put(new TransactionEntry(event.getWallet(), blockTransaction, Collections.emptyMap(), Collections.emptyMap()), entry);
+                        }
+                    }
+                }
+            }
+
+            if(!transactionEntries.isEmpty()) {
+                for(KeyPurpose keyPurpose : KeyPurpose.DEFAULT_PURPOSES) {
+                    for(WalletNode childNode : wallet.getNode(keyPurpose).getChildren()) {
+                        for(BlockTransactionHashIndex receivedRef : childNode.getTransactionOutputs()) {
+                            Entry entry = transactionEntries.get(receivedRef.getHash());
+                            if(entry != null) {
+                                String prevRefLabel = "";
+                                if((receivedRef.getLabel() == null || receivedRef.getLabel().isEmpty()
+                                        || receivedRef.getLabel().endsWith(" (sent)") || receivedRef.getLabel().endsWith(" (change)") || receivedRef.getLabel().endsWith(" (received)"))
+                                        && wallet.getStandardAccountType() != StandardAccount.WHIRLPOOL_PREMIX) {
+                                    prevRefLabel = receivedRef.getLabel() == null ? "" : receivedRef.getLabel();
+                                    receivedRef.setLabel(entry.getLabel() + (keyPurpose == KeyPurpose.CHANGE ? (event.getWallet().isBip47() ? " (sent)" : " (change)") : " (received)"));
+                                    labelChangedEntries.put(new HashIndexEntry(event.getWallet(), receivedRef, HashIndexEntry.Type.OUTPUT, keyPurpose), entry);
+                                }
+                                if(childNode.getLabel() == null || childNode.getLabel().isEmpty()
+                                        || prevRefLabel.equals(childNode.getLabel() + " (sent)") || prevRefLabel.equals(childNode.getLabel() + " (change)") || prevRefLabel.equals(childNode.getLabel() + " (received)")) {
+                                    childNode.setLabel(entry.getLabel());
+                                    labelChangedEntries.put(new NodeEntry(event.getWallet(), childNode, false), entry);
+                                }
+                            }
+                            Entry spendingEntry = receivedRef.isSpent() ? transactionEntries.get(receivedRef.getSpentBy().getHash()) : null;
+                            if(spendingEntry != null && (receivedRef.getSpentBy().getLabel() == null || receivedRef.getSpentBy().getLabel().isEmpty() || receivedRef.getSpentBy().getLabel().endsWith(" (input)"))) {
+                                receivedRef.getSpentBy().setLabel(spendingEntry.getLabel() + " (input)");
+                                labelChangedEntries.put(new HashIndexEntry(event.getWallet(), receivedRef.getSpentBy(), HashIndexEntry.Type.INPUT, keyPurpose), spendingEntry);
+                            }
                         }
                     }
                 }
@@ -788,7 +797,7 @@ public class WalletForm {
 
     @Subscribe
     public void walletUtxoStatusChanged(WalletUtxoStatusChangedEvent event) {
-        if(event.getWallet() == wallet) {
+        if(event.fromThisOrNested(wallet)) {
             Platform.runLater(() -> EventManager.get().post(new WalletDataChangedEvent(wallet)));
         }
     }

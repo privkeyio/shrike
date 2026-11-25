@@ -21,8 +21,8 @@ import java.util.*;
 public class SparrowWallet {
     public static final String APP_ID = "shrike";
     public static final String APP_NAME = "Shrike";
-    public static final String APP_VERSION = "2.5.6";
-    public static final String APP_VERSION_SUFFIX = "-blake2b.2";
+    public static final String APP_VERSION = "2.5.7";
+    public static final String APP_VERSION_SUFFIX = "-blake2b.1";
     public static final String APP_HOME_PROPERTY = ApplicationDir.getHomeProperty(APP_NAME);
     public static final String NETWORK_ENV_PROPERTY = "SPARROW_NETWORK";
     public static final String JPACKAGE_APP_PATH = "jpackage.app-path";
@@ -105,6 +105,11 @@ public class SparrowWallet {
         File testnet4Flag = new File(Storage.getConfigHome(), "network-" + Network.TESTNET4.getName());
         if(testnet4Flag.exists()) {
             Network.set(Network.TESTNET4);
+        }
+
+        File testnet5Flag = new File(Storage.getConfigHome(), "network-" + Network.TESTNET5.getName());
+        if(testnet5Flag.exists()) {
+            Network.set(Network.TESTNET5);
         }
 
         File signetFlag = new File(Storage.getConfigHome(), "network-" + Network.SIGNET.getName());

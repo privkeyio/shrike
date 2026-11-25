@@ -24,10 +24,21 @@ import java.util.stream.Collectors;
 public class TransactionEntry extends Entry implements Comparable<TransactionEntry> {
     private static final Logger log = LoggerFactory.getLogger(TransactionEntry.class);
 
+    private final Wallet owningWallet;
     private final BlockTransaction blockTransaction;
 
     public TransactionEntry(Wallet wallet, BlockTransaction blockTransaction, Map<BlockTransactionHashIndex, KeyPurpose> inputs, Map<BlockTransactionHashIndex, KeyPurpose> outputs) {
-        super(wallet.isNested() ? wallet.getMasterWallet() : wallet, blockTransaction.getLabel(), createChildEntries(wallet, inputs, outputs));
+        this(wallet, blockTransaction, inputs, outputs, Collections.emptyMap());
+    }
+
+    /**
+     * Creates an entry whose inputs and outputs may belong to other wallets of the same master, as for a transaction between a wallet and its nested
+     * wallets, with the wallet storing each given where it is not the transaction's own.
+     */
+    public TransactionEntry(Wallet wallet, BlockTransaction blockTransaction, Map<BlockTransactionHashIndex, KeyPurpose> inputs, Map<BlockTransactionHashIndex, KeyPurpose> outputs,
+                            Map<BlockTransactionHashIndex, Wallet> owningWallets) {
+        super(wallet.isNested() ? wallet.getMasterWallet() : wallet, blockTransaction.getLabel(), createChildEntries(wallet, inputs, outputs, owningWallets));
+        this.owningWallet = wallet;
         this.blockTransaction = blockTransaction;
 
         labelProperty().addListener((observable, oldValue, newValue) -> {
@@ -48,6 +59,11 @@ public class TransactionEntry extends Entry implements Comparable<TransactionEnt
                 return "confirmations";
             }
         };
+    }
+
+    @Override
+    public Wallet getOwningWallet() {
+        return owningWallet;
     }
 
     public BlockTransaction getBlockTransaction() {
@@ -135,9 +151,12 @@ public class TransactionEntry extends Entry implements Comparable<TransactionEnt
                 .map(entry -> new HashIndex(entry.getHashIndex().getHash(), entry.getHashIndex().getIndex())).collect(Collectors.toSet());
     }
 
-    private static List<Entry> createChildEntries(Wallet wallet, Map<BlockTransactionHashIndex, KeyPurpose> incoming, Map<BlockTransactionHashIndex, KeyPurpose> outgoing) {
-        List<Entry> incomingOutputEntries = incoming.entrySet().stream().map(input -> new TransactionHashIndexEntry(wallet, input.getKey(), HashIndexEntry.Type.OUTPUT, input.getValue())).collect(Collectors.toList());
-        List<Entry> outgoingInputEntries = outgoing.entrySet().stream().map(output -> new TransactionHashIndexEntry(wallet, output.getKey(), HashIndexEntry.Type.INPUT, output.getValue())).collect(Collectors.toList());
+    private static List<Entry> createChildEntries(Wallet wallet, Map<BlockTransactionHashIndex, KeyPurpose> incoming, Map<BlockTransactionHashIndex, KeyPurpose> outgoing,
+                                                  Map<BlockTransactionHashIndex, Wallet> owningWallets) {
+        List<Entry> incomingOutputEntries = incoming.entrySet().stream().map(input -> new TransactionHashIndexEntry(owningWallets.getOrDefault(input.getKey(), wallet),
+                input.getKey(), HashIndexEntry.Type.OUTPUT, input.getValue())).collect(Collectors.toList());
+        List<Entry> outgoingInputEntries = outgoing.entrySet().stream().map(output -> new TransactionHashIndexEntry(owningWallets.getOrDefault(output.getKey(), wallet),
+                output.getKey(), HashIndexEntry.Type.INPUT, output.getValue())).collect(Collectors.toList());
 
         List<Entry> childEntries = new ArrayList<>();
         childEntries.addAll(incomingOutputEntries);
@@ -180,10 +199,7 @@ public class TransactionEntry extends Entry implements Comparable<TransactionEnt
     public int compareTo(TransactionEntry other) {
         //This comparison must be identical to that of WalletTransactionsEntry.WalletTransaction
         if(blockTransaction.getHeight() != other.blockTransaction.getHeight()) {
-            int blockOrder = blockTransaction.getComparisonHeight() - other.blockTransaction.getComparisonHeight();
-            if(blockOrder != 0) {
-                return blockOrder;
-            }
+            return blockTransaction.compareHeight(other.blockTransaction);
         }
 
         int valueOrder = Long.compare(other.getValue(), getValue());

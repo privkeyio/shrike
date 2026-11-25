@@ -32,6 +32,9 @@ public class AddressCell extends TreeTableCell<Entry, UtxoEntry.AddressStatus> {
 
         UtxoEntry utxoEntry = addressStatus == null ? null : addressStatus.getUtxoEntry();
         EntryCell.applyRowStyles(this, utxoEntry);
+        //Kept through empty updates, as the row styles are applied to a refilled cell according to whether it already has this class
+        getStyleClass().add("address-cell");
+        setContextMenu(null);
 
         if (empty) {
             setText(null);
@@ -40,12 +43,12 @@ public class AddressCell extends TreeTableCell<Entry, UtxoEntry.AddressStatus> {
             if(utxoEntry != null) {
                 Address address = addressStatus.getAddress();
                 setText(address.toString());
-                setContextMenu(new EntryCell.AddressContextMenu(address, utxoEntry.getOutputDescriptor(), new NodeEntry(utxoEntry.getWallet(), utxoEntry.getNode()), false, getTreeTableView()));
+                setContextMenu(new EntryCell.AddressContextMenu(address, utxoEntry.getOutputDescriptor(), utxoEntry.getWallet(), utxoEntry.getNode(),
+                        () -> new NodeEntry(utxoEntry.getWallet(), utxoEntry.getNode(), false), false, getTreeTableView()));
                 Tooltip tooltip = new Tooltip();
                 tooltip.setShowDelay(Duration.millis(250));
                 tooltip.setText(getTooltipText(utxoEntry, addressStatus.isDuplicate(), addressStatus.isDustAttack()));
                 setTooltip(tooltip);
-                getStyleClass().add("address-cell");
 
                 if(addressStatus.isDustAttack()) {
                     setGraphic(getDustAttackHyperlink(utxoEntry));
@@ -81,7 +84,7 @@ public class AddressCell extends TreeTableCell<Entry, UtxoEntry.AddressStatus> {
             if(utxoEntry.getHashIndex().getStatus() != Status.FROZEN) {
                 hyperlink.setText("");
                 utxoEntry.getHashIndex().setStatus(Status.FROZEN);
-                EventManager.get().post(new WalletUtxoStatusChangedEvent(utxoEntry.getWallet(), Collections.singletonList(utxoEntry.getHashIndex())));
+                EventManager.get().post(new WalletUtxoStatusChangedEvent(utxoEntry.getOwningWallet(), Collections.singletonList(utxoEntry.getHashIndex())));
             }
         });
 

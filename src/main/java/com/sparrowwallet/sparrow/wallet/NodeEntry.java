@@ -16,7 +16,11 @@ public class NodeEntry extends Entry implements Comparable<NodeEntry> {
     private final WalletNode node;
 
     public NodeEntry(Wallet wallet, WalletNode node) {
-        super(wallet, node.getLabel(), createChildren(wallet, node));
+        this(wallet, node, true);
+    }
+
+    public NodeEntry(Wallet wallet, WalletNode node, boolean createChildren) {
+        super(wallet, node.getLabel(), createChildren ? createChildren(wallet, node) : new ArrayList<>());
         this.node = node;
 
         labelProperty().addListener((observable, oldValue, newValue) -> {

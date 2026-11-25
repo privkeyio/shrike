@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 public class ColdcardMultisigTest extends IoTest {
@@ -58,6 +59,14 @@ public class ColdcardMultisigTest extends IoTest {
     }
 
     @Test
+    public void importKeystoreWrongNetwork() {
+        Network.set(Network.MAINNET);
+        ColdcardMultisig ccMultisig = new ColdcardMultisig();
+        ImportException e = Assertions.assertThrows(ImportException.class, () -> ccMultisig.getKeystore(PolicyType.MULTI_HD, ScriptType.P2WSH, getInputStream("cc-multisig-keystore-2.json"), null));
+        Assertions.assertTrue(e.getCause().getMessage().contains("mainnet"));
+    }
+
+    @Test
     public void importWallet1() throws ImportException {
         ColdcardMultisig ccMultisig = new ColdcardMultisig();
         Wallet wallet = ccMultisig.importWallet(getInputStream("cc-multisig-export-1.txt"), null);
@@ -67,6 +76,32 @@ public class ColdcardMultisigTest extends IoTest {
         Assertions.assertEquals(2, wallet.getDefaultPolicy().getNumSignaturesRequired());
         Assertions.assertEquals("wsh(sortedmulti(2,coldcard1,coldcard2,coldcard3,coldcard4))", wallet.getDefaultPolicy().getMiniscript().getScript().toLowerCase(Locale.ROOT));
         Assertions.assertTrue(wallet.isValid());
+    }
+
+    private Wallet importEdited(String find, String replace) throws Exception {
+        String original = new String(ByteStreams.toByteArray(getInputStream("cc-multisig-export-1.txt")), StandardCharsets.UTF_8);
+        Assertions.assertTrue(original.contains(find));
+        return new ColdcardMultisig().importWallet(new ByteArrayInputStream(original.replace(find, replace).getBytes(StandardCharsets.UTF_8)), null);
+    }
+
+    @Test
+    public void importWalletPolicyVariants() throws Exception {
+        Assertions.assertEquals(2, importEdited("Policy: 2 of 4", "policy: 2 of 4").getDefaultPolicy().getNumSignaturesRequired());
+        Assertions.assertEquals(2, importEdited("\n", "\r\n").getDefaultPolicy().getNumSignaturesRequired());
+        Assertions.assertThrows(ImportException.class, () -> importEdited("Policy: 2 of 4", "Policy: 1 of 4\npolicy: 2 of 4"));
+        Assertions.assertThrows(ImportException.class, () -> importEdited("Policy: 2 of 4", "Policy: 2 of 4\n# note\rPolicy: 1 of 4"));
+        Assertions.assertThrows(ImportException.class, () -> importEdited("Policy: 2 of 4", "Policy: 1 2of 4"));
+        Assertions.assertThrows(ImportException.class, () -> importEdited("Policy: 2 of 4", "Policy: \uFF11 of 4"));
+        Assertions.assertThrows(ImportException.class, () -> importEdited("Format: P2WSH", "Format: P2WSH\nFormat: P2SH"));
+    }
+
+    @Test
+    public void importWalletRefusesExtendedPrivateKey() {
+        String xpub = "xpub6FMGmJccz6dqLo9TMmXYPpZ7HUDm71RHHSTXqTUgkyP9TZmF2uexoB7qttEBtHaotopPwfAVfKfwmdEjCGabVpND1m7ix2AW2LxPuNfLZhi";
+        String xprv = "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7";
+        ImportException e = Assertions.assertThrows(ImportException.class, () -> importEdited(xpub, xprv));
+        Throwable cause = e.getCause() == null ? e : e.getCause();
+        Assertions.assertTrue(cause.getMessage().contains("extended private key"));
     }
 
     @Test

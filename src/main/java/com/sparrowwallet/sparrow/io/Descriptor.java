@@ -114,7 +114,9 @@ public class Descriptor implements WalletImport, WalletExport {
             InputStream secondClone = new ByteArrayInputStream(baos.toByteArray());
 
             try {
-                return checkWallet(ensureKeyDerivations(PdfUtils.getOutputDescriptor(firstClone).toWallet()));
+                OutputDescriptor pdfDescriptor = PdfUtils.getOutputDescriptor(firstClone);
+                pdfDescriptor.verifyStandardChildDerivations();
+                return checkWallet(ensureKeyDerivations(pdfDescriptor.toWallet()));
             } catch(Exception e) {
                 //ignore
             }
@@ -122,6 +124,7 @@ public class Descriptor implements WalletImport, WalletExport {
             List<String> paragraphs = getParagraphs(secondClone);
             for(String paragraph : paragraphs) {
                 OutputDescriptor descriptor = OutputDescriptor.getOutputDescriptor(paragraph);
+                descriptor.verifyStandardChildDerivations();
                 return checkWallet(ensureKeyDerivations(descriptor.toWallet()));
             }
 
@@ -137,7 +140,12 @@ public class Descriptor implements WalletImport, WalletExport {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
         for(String line : reader.lines().map(String::trim).toArray(String[]::new)) {
             if(!line.isEmpty() && !line.startsWith("#")) {
-                paragraphs.add(line.replaceFirst("^.+:", "").trim());
+                String last = paragraphs.isEmpty() ? null : paragraphs.getLast();
+                if(last != null && last.chars().filter(c -> c == '(').count() > last.chars().filter(c -> c == ')').count()) {
+                    paragraphs.set(paragraphs.size() - 1, last + line);
+                } else {
+                    paragraphs.add(line.replaceFirst("^.+:", "").trim());
+                }
             }
         }
 
@@ -147,7 +155,7 @@ public class Descriptor implements WalletImport, WalletExport {
     private static Wallet ensureKeyDerivations(Wallet wallet) {
         for(Keystore keystore : wallet.getKeystores()) {
             if(keystore.getKeyDerivation().getMasterFingerprint() == null || keystore.getKeyDerivation().getDerivationPath() == null) {
-                keystore.setKeyDerivation(new KeyDerivation(KeyDerivation.DEFAULT_WATCH_ONLY_FINGERPRINT, wallet.getScriptType().getDefaultDerivationPath()));
+                keystore.setKeyDerivation(new KeyDerivation(KeyDerivation.DEFAULT_WATCH_ONLY_FINGERPRINT, wallet.getScriptType().getDefaultDerivationPath(wallet.getPolicyType())));
             }
         }
 

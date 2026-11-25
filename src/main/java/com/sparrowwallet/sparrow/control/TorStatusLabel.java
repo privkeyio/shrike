@@ -5,6 +5,7 @@ import com.sparrowwallet.drongo.OsType;
 import com.sparrowwallet.sparrow.AppServices;
 import com.sparrowwallet.sparrow.glyphfont.FontAwesome5;
 import com.sparrowwallet.sparrow.io.Config;
+import com.sparrowwallet.sparrow.net.ProxyTcpOverTlsTransport;
 import javafx.concurrent.ScheduledService;
 import javafx.concurrent.Task;
 import javafx.concurrent.Worker;
@@ -34,7 +35,7 @@ public class TorStatusLabel extends Label {
     }
 
     public void update() {
-        if(!Config.get().isUseProxy()) {
+        if(!Config.get().isUseProxy() || !AppServices.onlineProperty().get()) {
             torConnectionTest.cancel();
             if(AppServices.isTorRunning()) {
                 setTooltip(new Tooltip("Internal Tor proxy enabled"));
@@ -80,7 +81,7 @@ public class TorStatusLabel extends Label {
             return new Task<>() {
                 protected Void call() throws IOException {
                     HostAndPort proxyHostAndPort = HostAndPort.fromString(Config.get().getProxyServer());
-                    Socket socket = new Socket(proxyHostAndPort.getHost(), proxyHostAndPort.getPort());
+                    Socket socket = new Socket(proxyHostAndPort.getHost(), proxyHostAndPort.getPortOrDefault(ProxyTcpOverTlsTransport.DEFAULT_PROXY_PORT));
                     socket.close();
 
                     return null;

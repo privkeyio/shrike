@@ -24,6 +24,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -173,8 +174,11 @@ public class KeystoreUnifiedSigHashPersistenceTest {
             try(ResultSet rs = statement.executeQuery("select count(*) from `" + schema + "`.keystore")) {
                 Assertions.assertTrue(rs.next() && rs.getInt(1) == 2, "the rolled back table must hold rows, or this proves nothing");
             }
+            //Back to a wallet last saved by Sparrow 2.5.6, before both the unified migration and the one Sparrow 2.5.7 added after it
             statement.execute("alter table `" + schema + "`.keystore drop column unifiedSigHashSupported");
-            statement.execute("delete from `" + schema + "`.flyway_schema_history where version = '11'");
+            statement.execute("drop table `" + schema + "`.externalOutputLabel");
+            statement.execute("drop table `" + schema + "`.fiatRate");
+            statement.execute("delete from `" + schema + "`.flyway_schema_history where version in ('11', '12')");
         }
 
         Storage reopened = new Storage(PersistenceType.DB, walletFile);
@@ -184,6 +188,80 @@ public class KeystoreUnifiedSigHashPersistenceTest {
             //The mark itself is gone with the column, which is correct: an upgraded wallet starts unmarked
             Assertions.assertFalse(loaded.getKeystores().get(0).isUnifiedSigHashSupported());
             Assertions.assertFalse(loaded.getKeystores().get(1).isUnifiedSigHashSupported());
+        } finally {
+            reopened.closeAndWait();
+        }
+    }
+
+    @Test
+    public void aWalletSavedBySparrow257Opens() throws Exception {
+        File walletFile = tempDir.resolve("sparrow257." + PersistenceType.DB.getExtension()).toFile();
+        Storage storage = new Storage(PersistenceType.DB, walletFile);
+        try {
+            storage.setEncryptionPubKey(Storage.NO_PASSWORD_KEY);
+            storage.saveWallet(markedWallet());
+        } finally {
+            storage.closeAndWait();
+        }
+
+        String url = "jdbc:h2:" + walletFile.getAbsolutePath().replace("." + PersistenceType.DB.getExtension(), "") + ";DATABASE_TO_UPPER=false";
+        try(Connection connection = DriverManager.getConnection(url, "sa", ""); Statement statement = connection.createStatement()) {
+            String schema;
+            try(ResultSet rs = statement.executeQuery("select TABLE_SCHEMA from INFORMATION_SCHEMA.TABLES where TABLE_NAME = 'keystore'")) {
+                Assertions.assertTrue(rs.next());
+                schema = rs.getString(1);
+            }
+            //Sparrow 2.5.7 applies its transaction metadata migration as version 11, and has no unified column
+            statement.execute("alter table `" + schema + "`.keystore drop column unifiedSigHashSupported");
+            statement.execute("delete from `" + schema + "`.flyway_schema_history where version = '11'");
+            statement.execute("update `" + schema + "`.flyway_schema_history set version = '11', installed_rank = installed_rank - 1, script = 'V11__TransactionMetadata.sql' where version = '12'");
+        }
+
+        for(int open = 0; open < 2; open++) {
+            Storage reopened = new Storage(PersistenceType.DB, walletFile);
+            try {
+                Wallet loaded = reopened.loadUnencryptedWallet().getWallet();
+                Assertions.assertEquals(2, loaded.getKeystores().size());
+                Assertions.assertFalse(loaded.getKeystores().get(0).isUnifiedSigHashSupported());
+            } finally {
+                reopened.closeAndWait();
+            }
+        }
+
+        try(Connection connection = DriverManager.getConnection(url, "sa", ""); Statement statement = connection.createStatement()) {
+            List<String> applied = new ArrayList<>();
+            try(ResultSet rs = statement.executeQuery("select version, description, success from `wallet_master`.flyway_schema_history where version is not null order by installed_rank")) {
+                while(rs.next()) {
+                    Assertions.assertTrue(rs.getBoolean(3));
+                    applied.add(rs.getString(1) + " " + rs.getString(2));
+                }
+            }
+            Assertions.assertEquals(List.of("12 TransactionMetadata", "11 UnifiedSigHash"), applied.subList(applied.size() - 2, applied.size()));
+            Assertions.assertEquals(12, applied.size());
+        }
+    }
+
+    @Test
+    public void anOpenInterruptedAfterRenumberingStillOpens() throws Exception {
+        File walletFile = tempDir.resolve("interrupted." + PersistenceType.DB.getExtension()).toFile();
+        Storage storage = new Storage(PersistenceType.DB, walletFile);
+        try {
+            storage.setEncryptionPubKey(Storage.NO_PASSWORD_KEY);
+            storage.saveWallet(markedWallet());
+        } finally {
+            storage.closeAndWait();
+        }
+
+        String url = "jdbc:h2:" + walletFile.getAbsolutePath().replace("." + PersistenceType.DB.getExtension(), "") + ";DATABASE_TO_UPPER=false";
+        try(Connection connection = DriverManager.getConnection(url, "sa", ""); Statement statement = connection.createStatement()) {
+            //A Sparrow 2.5.7 wallet whose history was renumbered, but whose open failed before the unified migration was applied
+            statement.execute("alter table `wallet_master`.keystore drop column unifiedSigHashSupported");
+            statement.execute("delete from `wallet_master`.flyway_schema_history where version = '11'");
+        }
+
+        Storage reopened = new Storage(PersistenceType.DB, walletFile);
+        try {
+            Assertions.assertEquals(2, reopened.loadUnencryptedWallet().getWallet().getKeystores().size());
         } finally {
             reopened.closeAndWait();
         }
