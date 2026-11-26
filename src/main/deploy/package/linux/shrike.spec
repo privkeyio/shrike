@@ -253,7 +253,7 @@ desktop_trace ()
 
 do_if_file_belongs_to_single_package /opt/shrike/lib/shrike-Shrike.desktop xdg-desktop-menu uninstall /opt/shrike/lib/shrike-Shrike.desktop
 do_if_file_belongs_to_single_package /opt/shrike/lib/shrike-Shrike-MimeInfo.xml xdg-mime uninstall /opt/shrike/lib/shrike-Shrike-MimeInfo.xml
-do_if_file_belongs_to_single_package /opt/shrike/lib/shrike-Shrike.desktop desktop_uninstall_default_mime_handler shrike-Shrike.desktop application/psbt application/bitcoin-transaction application/pgp-signature
+do_if_file_belongs_to_single_package /opt/shrike/lib/shrike-Shrike.desktop desktop_uninstall_default_mime_handler shrike-Shrike.desktop application/psbt application/bitcoin-transaction application/pgp-signature x-scheme-handler/bitcoin x-scheme-handler/auth47 x-scheme-handler/lightning
 
 
 %clean
