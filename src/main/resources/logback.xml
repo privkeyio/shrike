@@ -16,6 +16,9 @@
     <logger name="org.flywaydb.core.internal.schemahistory.JdbcTableSchemaHistory" level="WARN" />
     <logger name="org.flywaydb.core.internal.license.VersionPrinter" level="WARN" />
     <logger name="org.eclipse.jetty" level="INFO" />
+    <!-- At debug these log each request URL, which for LNURL-auth carries the signature and linking key -->
+    <logger name="com.sparrowwallet.tern.http.client.JettyHttpClient" level="INFO" />
+    <logger name="com.sparrowwallet.tern.http.client.JacksonHttpClient" level="INFO" />
     <logger name="org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler" level="OFF" />
     <logger name="org.springframework.core.KotlinDetector" level="OFF" />
     <logger name="org.springframework.http.converter.json.Jackson2ObjectMapperBuilder" level="OFF" />

@@ -31,27 +31,21 @@ public class AuthLogSecretsTest {
     private static final String K1 = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
-    private Level auth47Level;
-    private Level lnurlLevel;
+    private Level rootLevel;
 
+    //Runs at debug the way --level DEBUG does, raising the root logger, so every logger the request passes through is seen
     @BeforeEach
     public void captureLogs() {
         appender.start();
-        auth47Level = logger(Auth47.class).getLevel();
-        lnurlLevel = logger(LnurlAuth.class).getLevel();
-        for(Class<?> type : new Class<?>[] {Auth47.class, LnurlAuth.class}) {
-            logger(type).setLevel(Level.DEBUG);
-            logger(type).addAppender(appender);
-        }
+        rootLevel = root().getLevel();
+        root().setLevel(Level.DEBUG);
+        root().addAppender(appender);
     }
 
     @AfterEach
     public void releaseLogs() {
-        for(Class<?> type : new Class<?>[] {Auth47.class, LnurlAuth.class}) {
-            logger(type).detachAppender(appender);
-        }
-        logger(Auth47.class).setLevel(auth47Level);
-        logger(LnurlAuth.class).setLevel(lnurlLevel);
+        root().detachAppender(appender);
+        root().setLevel(rootLevel);
         Network.set(null);
     }
 
@@ -63,7 +57,7 @@ public class AuthLogSecretsTest {
         send.setAccessible(true);
         InvocationTargetException thrown = assertThrows(InvocationTargetException.class, () -> send.invoke(auth47, "{\"signature\":\"" + secret + "\"}"));
 
-        assertFalse(appender.list.isEmpty(), "the send is still logged");
+        assertTrue(appender.list.stream().anyMatch(event -> event.getFormattedMessage().startsWith("Sending")), "the send is still logged");
         assertNoSecret(secret, thrown.getCause());
     }
 
@@ -81,7 +75,7 @@ public class AuthLogSecretsTest {
         LnurlAuth lnurlAuth = new LnurlAuth(new URI("lightning:" + Bech32.encode("lnurl", Bech32.Encoding.BECH32, Bech32.convertBits(urlBytes, 0, urlBytes.length, 8, 5, true))));
         Exception thrown = assertThrows(Exception.class, () -> lnurlAuth.sendResponse(wallet));
 
-        assertFalse(appender.list.isEmpty(), "the send is still logged");
+        assertTrue(appender.list.stream().anyMatch(event -> event.getFormattedMessage().startsWith("Sending")), "the send is still logged");
         assertNoSecret("sig=", thrown);
         assertNoSecret("key=", thrown);
     }
@@ -96,8 +90,8 @@ public class AuthLogSecretsTest {
         assertFalse(trace.toString().contains(secret), "the failure the caller logs carries it: " + trace);
     }
 
-    private static Logger logger(Class<?> type) {
-        return (Logger)LoggerFactory.getLogger(type);
+    private static Logger root() {
+        return (Logger)LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
     }
 
     private static int closedPort() throws Exception {
