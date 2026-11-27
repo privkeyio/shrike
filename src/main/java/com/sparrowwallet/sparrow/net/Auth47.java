@@ -93,7 +93,7 @@ public class Auth47 {
 
     private void send(String json) throws Exception {
         if(log.isInfoEnabled()) {
-            log.info("Sending auth47 response " + json + " to " + callback);
+            log.info("Sending auth47 response to " + callback);
         }
 
         HttpClientService httpClientService = AppServices.getHttpClientService();

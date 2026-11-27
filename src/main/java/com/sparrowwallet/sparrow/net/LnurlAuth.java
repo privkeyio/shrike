@@ -108,7 +108,7 @@ public class LnurlAuth {
         URL callback = getReturnURL(wallet);
 
         if(log.isInfoEnabled()) {
-            log.info("Sending LNURL-auth response to " + callback);
+            log.info("Sending LNURL-auth response to " + url);
         }
 
         HttpClientService httpClientService = AppServices.getHttpClientService();
@@ -124,7 +124,7 @@ public class LnurlAuth {
         }
 
         if(log.isDebugEnabled()) {
-            log.debug("Received from " + callback + ": " + result);
+            log.debug("Received from " + url + ": " + result);
         }
 
         Object status = result.get("status");
